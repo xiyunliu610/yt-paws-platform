@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -33,6 +32,7 @@ model Pet {
   healthRecords  PetHealthRecord[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+  isNeutered     Boolean?
 }
 
 model PetHealthRecord {
