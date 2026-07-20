@@ -6,42 +6,144 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  customer
+  staff
+  owner
+  admin
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  in_progress
+  completed
+  cancelled
+}
+
+enum PaymentMethod {
+  stripe
+  wechat_qr
+}
+
+enum PaymentStatus {
+  pending
+  pending_verification
+  paid
+  failed
+  refunded
+}
+
+/// A pet care business onboarded to the platform. Version 1 has exactly one
+/// row (Y&T Paws); business_id is carried on core tables from Version 1
+/// onward so future businesses can be added without a schema migration.
+/// See docs/01_Project_Overview.md §11 and docs/03_System_Architecture.md §4.
+model Business {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  region    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  staff     User[]
+  services  Service[]
+  bookings  Booking[]
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  name      String?
-  phone     String?
-  role      String   @default("owner")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  pets      Pet[]
+  id         String    @id @default(uuid()) @db.Uuid
+  businessId String?   @db.Uuid
+  business   Business? @relation(fields: [businessId], references: [id])
+  email      String    @unique
+  password   String
+  name       String?
+  phone      String?
+  role       Role      @default(customer)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  pets       Pet[]
+  bookings   Booking[] @relation("CustomerBookings")
 }
 
 model Pet {
-  id             Int               @id @default(autoincrement())
-  name           String
-  species        String?
-  breed          String?
-  age            Int?
-  weight         Float?
-  personality    String?
-  dietNotes      String?
-  ownerId        Int
-  owner          User              @relation(fields: [ownerId], references: [id])
-  healthRecords  PetHealthRecord[]
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  isNeutered     Boolean?
+  id            String            @id @default(uuid()) @db.Uuid
+  name          String
+  species       String?
+  breed         String?
+  age           Int?
+  weight        Float?
+  personality   String?
+  dietNotes     String?
+  isNeutered    Boolean?
+  ownerId       String            @db.Uuid
+  owner         User              @relation(fields: [ownerId], references: [id])
+  healthRecords PetHealthRecord[]
+  bookings      Booking[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 }
 
 model PetHealthRecord {
-  id        Int       @id @default(autoincrement())
-  petId     Int
+  id        String    @id @default(uuid()) @db.Uuid
+  petId     String    @db.Uuid
   pet       Pet       @relation(fields: [petId], references: [id])
-  type      String    // "vaccination" 或 "deworming"
+  type      String // "vaccination" 或 "deworming"
   date      DateTime
   nextDate  DateTime?
   notes     String?
   createdAt DateTime  @default(now())
+}
+
+model Service {
+  id              String    @id @default(uuid()) @db.Uuid
+  businessId      String    @db.Uuid
+  business        Business  @relation(fields: [businessId], references: [id])
+  name            String
+  description     String?
+  price           Float
+  durationMinutes Int?
+  isActive        Boolean   @default(true)
+  bookings        Booking[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Booking {
+  id           String        @id @default(uuid()) @db.Uuid
+  businessId   String        @db.Uuid
+  business     Business      @relation(fields: [businessId], references: [id])
+  customerId   String        @db.Uuid
+  customer     User          @relation("CustomerBookings", fields: [customerId], references: [id])
+  petId        String        @db.Uuid
+  pet          Pet           @relation(fields: [petId], references: [id])
+  serviceId    String        @db.Uuid
+  service      Service       @relation(fields: [serviceId], references: [id])
+  status       BookingStatus @default(pending)
+  startDate    DateTime
+  endDate      DateTime
+  payments     Payment[]
+  dailyReports DailyReport[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Payment {
+  id            String        @id @default(uuid()) @db.Uuid
+  bookingId     String        @db.Uuid
+  booking       Booking       @relation(fields: [bookingId], references: [id])
+  method        PaymentMethod
+  amount        Float
+  status        PaymentStatus @default(pending)
+  referenceNote String?
+  verifiedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model DailyReport {
+  id        String   @id @default(uuid()) @db.Uuid
+  bookingId String   @db.Uuid
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  text      String?
+  mediaUrls String[]
+  createdAt DateTime @default(now())
 }
