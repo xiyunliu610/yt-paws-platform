@@ -86,7 +86,7 @@ model PetHealthRecord {
   id        String    @id @default(uuid()) @db.Uuid
   petId     String    @db.Uuid
   pet       Pet       @relation(fields: [petId], references: [id])
-  type      String // "vaccination" 或 "deworming"
+  type      String // "vaccination" or "deworming"
   date      DateTime
   nextDate  DateTime?
   notes     String?

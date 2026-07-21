@@ -5,57 +5,50 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth, ApiError } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
+  const { login } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
-    // 基础验证
     if (!email.trim()) {
-      Alert.alert('提示', '请输入邮箱地址');
-      return;
-    }
-    
-    if (!password.trim()) {
-      Alert.alert('提示', '请输入密码');
+      Alert.alert(t.login.errorTitle, t.login.enterEmail);
       return;
     }
 
-    // 邮箱格式验证
+    if (!password.trim()) {
+      Alert.alert(t.login.errorTitle, t.login.enterPassword);
+      return;
+    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('提示', '请输入有效的邮箱地址');
+      Alert.alert(t.login.errorTitle, t.login.invalidEmail);
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // TODO: 连接后端 API
-      // const response = await loginAPI(email, password, rememberMe);
-      
-      // 模拟登录延迟
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // 登录成功后导航到主页
+      await login(email, password);
       navigation.navigate('Home' as never);
-      
-      console.log('登录成功', { email, rememberMe });
-      
     } catch (error) {
-      Alert.alert('错误', '登录失败，请检查邮箱和密码');
-      console.error('登录错误:', error);
+      console.error('Login failed:', error);
+      const message = error instanceof ApiError ? error.message : t.login.loginFailedMessage;
+      Alert.alert(t.login.loginFailedTitle, message);
     } finally {
       setIsLoading(false);
     }
@@ -66,8 +59,11 @@ const LoginScreen = () => {
   };
 
   const handleForgotPassword = () => {
-    Alert.alert('忘记密码', '密码重置功能即将上线');
-    // TODO: 导航到密码重置页面
+    Alert.alert(t.login.forgotPasswordTitle, t.login.forgotPasswordMessage);
+  };
+
+  const toggleLanguage = () => {
+    setLanguage(language === 'en' ? 'zh' : 'en');
   };
 
   return (
@@ -75,30 +71,31 @@ const LoginScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
+      <TouchableOpacity style={styles.languageToggle} onPress={toggleLanguage}>
+        <Text style={styles.languageToggleText}>{language === 'en' ? '中文' : 'EN'}</Text>
+      </TouchableOpacity>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Logo 区域 */}
         <View style={styles.logoContainer}>
           <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>🐾</Text>
+            <Text style={styles.logoText}>Y&T</Text>
           </View>
-          <Text style={styles.brandName}>Y&T Paws</Text>
-          <Text style={styles.tagline}>专业宠物护理服务</Text>
+          <Text style={styles.brandName}>{t.common.brandName}</Text>
+          <Text style={styles.tagline}>{t.login.tagline}</Text>
         </View>
 
-        {/* 登录表单 */}
         <View style={styles.formContainer}>
-          <Text style={styles.title}>欢迎回来</Text>
-          <Text style={styles.subtitle}>登录您的账户</Text>
+          <Text style={styles.title}>{t.login.welcomeBack}</Text>
+          <Text style={styles.subtitle}>{t.login.subtitle}</Text>
 
-          {/* 邮箱输入 */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>邮箱地址</Text>
+            <Text style={styles.label}>{t.login.email}</Text>
             <TextInput
               style={styles.input}
-              placeholder="请输入邮箱"
+              placeholder={t.login.emailPlaceholder}
               placeholderTextColor="#999"
               value={email}
               onChangeText={setEmail}
@@ -109,12 +106,11 @@ const LoginScreen = () => {
             />
           </View>
 
-          {/* 密码输入 */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>密码</Text>
+            <Text style={styles.label}>{t.login.password}</Text>
             <TextInput
               style={styles.input}
-              placeholder="请输入密码"
+              placeholder={t.login.passwordPlaceholder}
               placeholderTextColor="#999"
               value={password}
               onChangeText={setPassword}
@@ -125,57 +121,50 @@ const LoginScreen = () => {
             />
           </View>
 
-          {/* 记住我 & 忘记密码 */}
           <View style={styles.optionsRow}>
             <TouchableOpacity
               style={styles.rememberMeContainer}
               onPress={() => setRememberMe(!rememberMe)}
               disabled={isLoading}
             >
-              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                {rememberMe && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.rememberMeText}>记住我</Text>
+              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]} />
+              <Text style={styles.rememberMeText}>{t.login.rememberMe}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
-              <Text style={styles.forgotPassword}>忘记密码？</Text>
+              <Text style={styles.forgotPassword}>{t.login.forgotPassword}</Text>
             </TouchableOpacity>
           </View>
 
-          {/* 登录按钮 */}
           <TouchableOpacity
             style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
             onPress={handleLogin}
             disabled={isLoading}
           >
             <Text style={styles.loginButtonText}>
-              {isLoading ? '登录中...' : '登录'}
+              {isLoading ? t.login.signingIn : t.login.signIn}
             </Text>
           </TouchableOpacity>
 
-          {/* 分隔线 */}
           <View style={styles.dividerContainer}>
             <View style={styles.divider} />
-            <Text style={styles.dividerText}>或</Text>
+            <Text style={styles.dividerText}>{t.login.or}</Text>
             <View style={styles.divider} />
           </View>
 
-          {/* 社交登录按钮 */}
           <View style={styles.socialContainer}>
             <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>🍎 Apple</Text>
+              <Text style={styles.socialButtonText}>{t.login.apple}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>🔍 Google</Text>
+              <Text style={styles.socialButtonText}>{t.login.google}</Text>
             </TouchableOpacity>
           </View>
 
-          {/* 注册链接 */}
           <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>还没有账户？</Text>
+            <Text style={styles.registerText}>{t.login.noAccount}</Text>
             <TouchableOpacity onPress={navigateToRegister} disabled={isLoading}>
-              <Text style={styles.registerLink}>立即注册</Text>
+              <Text style={styles.registerLink}>{t.login.signUp}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -187,7 +176,23 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8', // 奶油色背景
+    backgroundColor: '#F5EDD8',
+  },
+  languageToggle: {
+    position: 'absolute',
+    top: 56,
+    right: 20,
+    zIndex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2C4A3E',
+  },
+  languageToggleText: {
+    color: '#2C4A3E',
+    fontSize: 13,
+    fontWeight: '600',
   },
   scrollContent: {
     flexGrow: 1,
@@ -202,13 +207,15 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#2C4A3E', // 森林绿
+    backgroundColor: '#2C4A3E',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
   logoText: {
-    fontSize: 40,
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#F5EDD8',
   },
   brandName: {
     fontSize: 32,
@@ -280,16 +287,9 @@ const styles = StyleSheet.create({
     borderColor: '#2C4A3E',
     borderRadius: 4,
     marginRight: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   checkboxChecked: {
     backgroundColor: '#2C4A3E',
-  },
-  checkmark: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
   },
   rememberMeText: {
     fontSize: 14,
