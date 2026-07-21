@@ -11,9 +11,13 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useAuth, ApiError } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 const RegisterScreen = () => {
   const navigation = useNavigation();
+  const { register } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -29,46 +33,40 @@ const RegisterScreen = () => {
   };
 
   const validateForm = () => {
-    // 姓名验证
     if (!formData.fullName.trim()) {
-      Alert.alert('提示', '请输入您的姓名');
+      Alert.alert(t.register.errorTitle, t.register.enterFullName);
       return false;
     }
 
-    // 邮箱验证
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      Alert.alert('提示', '请输入有效的邮箱地址');
+      Alert.alert(t.register.errorTitle, t.register.invalidEmail);
       return false;
     }
 
-    // 手机号验证 (新西兰格式)
     const phoneRegex = /^(\+64|0)[2-9]\d{7,9}$/;
     if (!phoneRegex.test(formData.phone.replace(/\s/g, ''))) {
-      Alert.alert('提示', '请输入有效的新西兰手机号码');
+      Alert.alert(t.register.errorTitle, t.register.invalidPhone);
       return false;
     }
 
-    // 密码强度验证
     if (formData.password.length < 8) {
-      Alert.alert('提示', '密码至少需要8个字符');
+      Alert.alert(t.register.errorTitle, t.register.passwordTooShort);
       return false;
     }
 
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(formData.password)) {
-      Alert.alert('提示', '密码需包含大小写字母和数字');
+      Alert.alert(t.register.errorTitle, t.register.passwordRule);
       return false;
     }
 
-    // 确认密码
     if (formData.password !== formData.confirmPassword) {
-      Alert.alert('提示', '两次输入的密码不一致');
+      Alert.alert(t.register.errorTitle, t.register.passwordMismatch);
       return false;
     }
 
-    // 条款同意
     if (!agreedToTerms) {
-      Alert.alert('提示', '请阅读并同意服务条款和隐私政策');
+      Alert.alert(t.register.errorTitle, t.register.agreeToTerms);
       return false;
     }
 
@@ -83,28 +81,18 @@ const RegisterScreen = () => {
     setIsLoading(true);
 
     try {
-      // TODO: 连接后端 API
-      // const response = await registerAPI(formData);
-      
-      // 模拟注册延迟
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      Alert.alert(
-        '注册成功！',
-        '欢迎加入 Y&T Paws 大家庭',
-        [
-          {
-            text: '前往登录',
-            onPress: () => navigation.navigate('Login' as never),
-          },
-        ]
-      );
-      
-      console.log('注册数据:', formData);
-      
+      await register(formData.email, formData.password, formData.fullName, formData.phone);
+
+      Alert.alert(t.register.successTitle, t.register.successMessage, [
+        {
+          text: t.register.goToLogin,
+          onPress: () => navigation.navigate('Login' as never),
+        },
+      ]);
     } catch (error) {
-      Alert.alert('错误', '注册失败，请稍后重试');
-      console.error('注册错误:', error);
+      console.error('Registration failed:', error);
+      const message = error instanceof ApiError ? error.message : t.register.registerFailedMessage;
+      Alert.alert(t.register.registerFailedTitle, message);
     } finally {
       setIsLoading(false);
     }
@@ -112,6 +100,10 @@ const RegisterScreen = () => {
 
   const navigateToLogin = () => {
     navigation.navigate('Login' as never);
+  };
+
+  const toggleLanguage = () => {
+    setLanguage(language === 'en' ? 'zh' : 'en');
   };
 
   return (
@@ -124,23 +116,26 @@ const RegisterScreen = () => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* 头部 */}
-        <View style={styles.header}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>🐾</Text>
-          </View>
-          <Text style={styles.title}>创建账户</Text>
-          <Text style={styles.subtitle}>加入 Y&T Paws 宠物护理社区</Text>
+        <View style={styles.topRow}>
+          <TouchableOpacity style={styles.languageToggle} onPress={toggleLanguage}>
+            <Text style={styles.languageToggleText}>{language === 'en' ? '中文' : 'EN'}</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* 注册表单 */}
+        <View style={styles.header}>
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoText}>Y&T</Text>
+          </View>
+          <Text style={styles.title}>{t.register.title}</Text>
+          <Text style={styles.subtitle}>{t.register.subtitle}</Text>
+        </View>
+
         <View style={styles.formContainer}>
-          {/* 姓名 */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>姓名 *</Text>
+            <Text style={styles.label}>{t.register.fullName} *</Text>
             <TextInput
               style={styles.input}
-              placeholder="请输入您的姓名"
+              placeholder={t.register.fullNamePlaceholder}
               placeholderTextColor="#999"
               value={formData.fullName}
               onChangeText={(value) => updateField('fullName', value)}
@@ -149,9 +144,8 @@ const RegisterScreen = () => {
             />
           </View>
 
-          {/* 邮箱 */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>邮箱地址 *</Text>
+            <Text style={styles.label}>{t.register.email} *</Text>
             <TextInput
               style={styles.input}
               placeholder="example@email.com"
@@ -165,9 +159,8 @@ const RegisterScreen = () => {
             />
           </View>
 
-          {/* 手机号 */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>手机号码 *</Text>
+            <Text style={styles.label}>{t.register.phone} *</Text>
             <TextInput
               style={styles.input}
               placeholder="021 123 4567"
@@ -178,15 +171,14 @@ const RegisterScreen = () => {
               autoComplete="tel"
               editable={!isLoading}
             />
-            <Text style={styles.hint}>新西兰手机号码</Text>
+            <Text style={styles.hint}>{t.register.phoneHint}</Text>
           </View>
 
-          {/* 密码 */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>密码 *</Text>
+            <Text style={styles.label}>{t.register.password} *</Text>
             <TextInput
               style={styles.input}
-              placeholder="至少8个字符"
+              placeholder="********"
               placeholderTextColor="#999"
               value={formData.password}
               onChangeText={(value) => updateField('password', value)}
@@ -194,15 +186,14 @@ const RegisterScreen = () => {
               autoCapitalize="none"
               editable={!isLoading}
             />
-            <Text style={styles.hint}>需包含大小写字母和数字</Text>
+            <Text style={styles.hint}>{t.register.passwordHint}</Text>
           </View>
 
-          {/* 确认密码 */}
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>确认密码 *</Text>
+            <Text style={styles.label}>{t.register.confirmPassword} *</Text>
             <TextInput
               style={styles.input}
-              placeholder="再次输入密码"
+              placeholder={t.register.confirmPasswordPlaceholder}
               placeholderTextColor="#999"
               value={formData.confirmPassword}
               onChangeText={(value) => updateField('confirmPassword', value)}
@@ -212,56 +203,49 @@ const RegisterScreen = () => {
             />
           </View>
 
-          {/* 服务条款 */}
           <TouchableOpacity
             style={styles.termsContainer}
             onPress={() => setAgreedToTerms(!agreedToTerms)}
             disabled={isLoading}
           >
-            <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
-              {agreedToTerms && <Text style={styles.checkmark}>✓</Text>}
-            </View>
+            <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]} />
             <Text style={styles.termsText}>
-              我已阅读并同意{' '}
-              <Text style={styles.termsLink}>服务条款</Text>
-              {' '}和{' '}
-              <Text style={styles.termsLink}>隐私政策</Text>
+              {t.register.terms}
+              <Text style={styles.termsLink}>{t.register.termsLink}</Text>
+              {t.register.and}
+              <Text style={styles.termsLink}>{t.register.privacyLink}</Text>
             </Text>
           </TouchableOpacity>
 
-          {/* 注册按钮 */}
           <TouchableOpacity
             style={[styles.registerButton, isLoading && styles.registerButtonDisabled]}
             onPress={handleRegister}
             disabled={isLoading}
           >
             <Text style={styles.registerButtonText}>
-              {isLoading ? '注册中...' : '注册'}
+              {isLoading ? t.register.signingUp : t.register.signUp}
             </Text>
           </TouchableOpacity>
 
-          {/* 分隔线 */}
           <View style={styles.dividerContainer}>
             <View style={styles.divider} />
-            <Text style={styles.dividerText}>或使用社交账号注册</Text>
+            <Text style={styles.dividerText}>{t.register.orSocial}</Text>
             <View style={styles.divider} />
           </View>
 
-          {/* 社交注册按钮 */}
           <View style={styles.socialContainer}>
             <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>🍎 Apple</Text>
+              <Text style={styles.socialButtonText}>{t.register.apple}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>🔍 Google</Text>
+              <Text style={styles.socialButtonText}>{t.register.google}</Text>
             </TouchableOpacity>
           </View>
 
-          {/* 登录链接 */}
           <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>已有账户？</Text>
+            <Text style={styles.loginText}>{t.register.haveAccount}</Text>
             <TouchableOpacity onPress={navigateToLogin} disabled={isLoading}>
-              <Text style={styles.loginLink}>立即登录</Text>
+              <Text style={styles.loginLink}>{t.register.signIn}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -273,12 +257,29 @@ const RegisterScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8', // 奶油色背景
+    backgroundColor: '#F5EDD8',
   },
   scrollContent: {
     flexGrow: 1,
     padding: 24,
-    paddingTop: 40,
+    paddingTop: 16,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 8,
+  },
+  languageToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2C4A3E',
+  },
+  languageToggleText: {
+    color: '#2C4A3E',
+    fontSize: 13,
+    fontWeight: '600',
   },
   header: {
     alignItems: 'center',
@@ -294,7 +295,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logoText: {
-    fontSize: 36,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#F5EDD8',
   },
   title: {
     fontSize: 28,
@@ -360,17 +363,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginRight: 10,
     marginTop: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
     flexShrink: 0,
   },
   checkboxChecked: {
     backgroundColor: '#2C4A3E',
-  },
-  checkmark: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
   },
   termsText: {
     fontSize: 13,

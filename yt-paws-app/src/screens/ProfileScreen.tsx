@@ -13,6 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
+import { useAuth } from '../context/AuthContext';
 
 type RootStackParamList = {
   Login: undefined;
@@ -24,7 +25,8 @@ type ProfileNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
 
 const ProfileScreen = () => {
   const navigation = useNavigation<ProfileNavigationProp>();
-  
+  const { logout } = useAuth();
+
   // 用户信息（模拟数据）
   const [userInfo] = useState({
     name: 'Lily',
@@ -131,9 +133,9 @@ const ProfileScreen = () => {
         {
           text: '退出',
           style: 'destructive',
-          onPress: () => {
-            // TODO: 清除登录状态
-            navigation.navigate('Login');
+          onPress: async () => {
+            await logout();
+            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
           },
         },
       ]

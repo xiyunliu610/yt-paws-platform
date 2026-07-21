@@ -22,43 +22,43 @@ export class AuthService {
   async register(email: string, password: string, name: string, phone?: string) {
     if (password.length < PASSWORD_MIN_LENGTH || !PASSWORD_RULE.test(password)) {
       throw new BadRequestException(
-        `密码至少需要 ${PASSWORD_MIN_LENGTH} 位,且必须同时包含字母和数字`,
+        `Password must be at least ${PASSWORD_MIN_LENGTH} characters and contain both letters and numbers`,
       );
     }
 
-    // 检查邮箱是否已存在
+    // Check whether the email is already registered
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      throw new ConflictException('该邮箱已被注册');
+      throw new ConflictException('This email is already registered');
     }
 
-    // 加密密码
+    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 创建用户(角色默认为 customer,与 schema 默认值保持一致)
+    // Create the user (role defaults to customer, matching the schema default)
     const user = await this.prisma.user.create({
       data: { email, password: hashedPassword, name, phone },
     });
 
-    // 返回 token(载荷携带 role,供后续模块的权限校验 Guard 使用)
+    // Issue a token (payload carries role for downstream permission guards)
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
     return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
   }
 
   async login(email: string, password: string) {
-    // 查找用户
+    // Look up the user
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new UnauthorizedException('邮箱或密码错误');
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    // 验证密码
+    // Verify the password
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
-      throw new UnauthorizedException('邮箱或密码错误');
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    // 返回 token(载荷携带 role,供后续模块的权限校验 Guard 使用)
+    // Issue a token (payload carries role for downstream permission guards)
     const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
     return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
   }
