@@ -13,66 +13,63 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useLanguage } from '../i18n/LanguageContext';
 
-type Service = {
-  id: number;
-  name: string;
-  icon?: string;
-  description?: string;
-  price: string | number;
-  color?: string;
+type ServiceKey = 'boarding' | 'dayCare' | 'grooming' | 'houseVisit';
+type PetTypeKey = 'dog' | 'cat' | 'other';
+
+type PreselectedService = {
+  key: ServiceKey;
+  name?: string;
 };
 
 type RootStackParamList = {
   Home: undefined;
-  Booking: { service?: Service } | undefined;
+  Booking: { service?: PreselectedService } | undefined;
 };
 
 type BookingNavigationProp = StackNavigationProp<RootStackParamList, 'Booking'>;
 type BookingRouteProp = RouteProp<RootStackParamList, 'Booking'>;
 
+const SERVICE_KEYS: ServiceKey[] = ['boarding', 'dayCare', 'grooming', 'houseVisit'];
+const SERVICE_PRICES: Record<ServiceKey, number> = {
+  boarding: 45,
+  dayCare: 30,
+  grooming: 60,
+  houseVisit: 35,
+};
+const PET_TYPE_KEYS: PetTypeKey[] = ['dog', 'cat', 'other'];
+const DURATION_ELIGIBLE_SERVICES: ServiceKey[] = ['boarding', 'dayCare'];
+
 const BookingScreen = () => {
   const navigation = useNavigation<BookingNavigationProp>();
   const route = useRoute<BookingRouteProp>();
-  
-  // 从路由参数获取预选服务（如果有）
+  const { t } = useLanguage();
+
   const preSelectedService = route.params?.service;
 
-  // 表单状态
-  const [selectedService, setSelectedService] = useState(preSelectedService?.name || '');
+  const [selectedServiceKey, setSelectedServiceKey] = useState<ServiceKey | ''>(
+    preSelectedService?.key ?? '',
+  );
   const [petName, setPetName] = useState('');
-  const [petType, setPetType] = useState('');
+  const [petType, setPetType] = useState<PetTypeKey | ''>('');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
   const [duration, setDuration] = useState('1');
   const [specialRequests, setSpecialRequests] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 日期时间选择器显示状态
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  // 服务列表
-  const services = [
-    { id: 1, name: '寄养服务', price: 45, unit: '天' },
-    { id: 2, name: '日间托管', price: 30, unit: '天' },
-    { id: 3, name: '美容护理', price: 60, unit: '次' },
-    { id: 4, name: '上门探访', price: 35, unit: '次' },
-  ];
-
-  // 宠物类型选项
-  const petTypes = ['狗狗 🐕', '猫咪 🐈', '其他 🐾'];
-
-  // 处理日期选择
   const onDateChange = (event: any, date?: Date) => {
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
     }
-    
+
     if (event.type === 'set' && date) {
       setSelectedDate(date);
       if (Platform.OS === 'ios') {
-        // iOS 上可以同时关闭
         setShowDatePicker(false);
       }
     } else if (event.type === 'dismissed') {
@@ -80,12 +77,11 @@ const BookingScreen = () => {
     }
   };
 
-  // 处理时间选择
   const onTimeChange = (event: any, time?: Date) => {
     if (Platform.OS === 'android') {
       setShowTimePicker(false);
     }
-    
+
     if (event.type === 'set' && time) {
       setSelectedTime(time);
       if (Platform.OS === 'ios') {
@@ -96,7 +92,6 @@ const BookingScreen = () => {
     }
   };
 
-  // 格式化日期显示
   const formatDate = (date: Date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -104,88 +99,75 @@ const BookingScreen = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // 格式化时间显示
   const formatTime = (time: Date) => {
     const hours = String(time.getHours()).padStart(2, '0');
     const minutes = String(time.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
   };
 
-  // 计算总价
   const calculateTotal = () => {
-    const service = services.find(s => s.name === selectedService);
-    if (!service) return 0;
-    return service.price * parseInt(duration || '1');
+    if (!selectedServiceKey) return 0;
+    return SERVICE_PRICES[selectedServiceKey] * parseInt(duration || '1');
   };
 
-  // 验证表单
+  const isDurationEligible = selectedServiceKey
+    ? DURATION_ELIGIBLE_SERVICES.includes(selectedServiceKey)
+    : false;
+
   const validateForm = () => {
-    if (!selectedService) {
-      Alert.alert('提示', '请选择服务类型');
+    if (!selectedServiceKey) {
+      Alert.alert(t.booking.errorTitle, t.booking.selectServiceError);
       return false;
     }
     if (!petName.trim()) {
-      Alert.alert('提示', '请输入宠物名字');
+      Alert.alert(t.booking.errorTitle, t.booking.enterPetName);
       return false;
     }
     if (!petType) {
-      Alert.alert('提示', '请选择宠物类型');
+      Alert.alert(t.booking.errorTitle, t.booking.selectPetType);
       return false;
     }
-    // 检查日期不能是过去的日期
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const selected = new Date(selectedDate);
     selected.setHours(0, 0, 0, 0);
-    
+
     if (selected < today) {
-      Alert.alert('提示', '预约日期不能早于今天');
+      Alert.alert(t.booking.errorTitle, t.booking.dateInPastError);
       return false;
     }
-    
+
     return true;
   };
 
-  // 提交预约
   const handleSubmit = async () => {
-    if (!validateForm()) {
+    if (!validateForm() || !selectedServiceKey) {
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // TODO: 连接后端 API
-      // const response = await bookingAPI({...});
-      
-      // 模拟提交延迟
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // TODO: connect to the bookings API once it exists.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
-      Alert.alert(
-        '预约成功！🎉',
-        `我们已收到您为 ${petName} 预约的 ${selectedService}，预约时间为 ${formatDate(selectedDate)} ${formatTime(selectedTime)}。我们会尽快联系您确认详情。`,
-        [
-          {
-            text: '返回首页',
-            onPress: () => navigation.navigate('Home'),
-          },
-        ]
-      );
+      const serviceName = t.home.services[selectedServiceKey].name;
+      const message = t.booking.successMessage
+        .replace('{pet}', petName)
+        .replace('{service}', serviceName)
+        .replace('{date}', formatDate(selectedDate))
+        .replace('{time}', formatTime(selectedTime));
 
-      console.log('预约信息:', {
-        service: selectedService,
-        petName,
-        petType,
-        date: formatDate(selectedDate),
-        time: formatTime(selectedTime),
-        duration,
-        specialRequests,
-        total: calculateTotal(),
-      });
-
+      Alert.alert(t.booking.successTitle, message, [
+        {
+          text: t.booking.goHome,
+          onPress: () => navigation.navigate('Home'),
+        },
+      ]);
     } catch (error) {
-      Alert.alert('错误', '预约失败，请稍后重试');
-      console.error('预约错误:', error);
+      console.error('Booking submission failed:', error);
+      Alert.alert(t.booking.submitFailedTitle, t.booking.submitFailedMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -193,53 +175,50 @@ const BookingScreen = () => {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        {/* 标题 */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>预约服务</Text>
-          <Text style={styles.headerSubtitle}>为您的爱宠预约专业护理</Text>
+          <Text style={styles.headerTitle}>{t.booking.headerTitle}</Text>
+          <Text style={styles.headerSubtitle}>{t.booking.headerSubtitle}</Text>
         </View>
 
         <View style={styles.content}>
-          {/* 服务选择 */}
           <View style={styles.section}>
-            <Text style={styles.label}>选择服务 *</Text>
+            <Text style={styles.label}>{t.booking.selectService}</Text>
             <View style={styles.optionsGrid}>
-              {services.map((service) => (
+              {SERVICE_KEYS.map((key) => (
                 <TouchableOpacity
-                  key={service.id}
+                  key={key}
                   style={[
                     styles.optionCard,
-                    selectedService === service.name && styles.optionCardSelected,
+                    selectedServiceKey === key && styles.optionCardSelected,
                   ]}
-                  onPress={() => setSelectedService(service.name)}
+                  onPress={() => setSelectedServiceKey(key)}
                 >
                   <Text style={[
                     styles.optionText,
-                    selectedService === service.name && styles.optionTextSelected,
+                    selectedServiceKey === key && styles.optionTextSelected,
                   ]}>
-                    {service.name}
+                    {t.home.services[key].name}
                   </Text>
                   <Text style={[
                     styles.optionPrice,
-                    selectedService === service.name && styles.optionPriceSelected,
+                    selectedServiceKey === key && styles.optionPriceSelected,
                   ]}>
-                    NZD ${service.price}/{service.unit}
+                    NZD ${SERVICE_PRICES[key]}/{t.booking.serviceUnits[key]}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          {/* 宠物信息 */}
           <View style={styles.section}>
-            <Text style={styles.label}>宠物名字 *</Text>
+            <Text style={styles.label}>{t.booking.petNameLabel}</Text>
             <TextInput
               style={styles.input}
-              placeholder="例如：Lucky"
+              placeholder={t.booking.petNamePlaceholder}
               value={petName}
               onChangeText={setPetName}
               editable={!isSubmitting}
@@ -247,42 +226,39 @@ const BookingScreen = () => {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.label}>宠物类型 *</Text>
+            <Text style={styles.label}>{t.booking.petTypeLabel}</Text>
             <View style={styles.petTypeContainer}>
-              {petTypes.map((type) => (
+              {PET_TYPE_KEYS.map((key) => (
                 <TouchableOpacity
-                  key={type}
+                  key={key}
                   style={[
                     styles.petTypeButton,
-                    petType === type && styles.petTypeButtonSelected,
+                    petType === key && styles.petTypeButtonSelected,
                   ]}
-                  onPress={() => setPetType(type)}
+                  onPress={() => setPetType(key)}
                 >
                   <Text style={[
                     styles.petTypeText,
-                    petType === type && styles.petTypeTextSelected,
+                    petType === key && styles.petTypeTextSelected,
                   ]}>
-                    {type}
+                    {t.booking.petTypes[key]}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          {/* 日期选择 */}
           <View style={styles.section}>
-            <Text style={styles.label}>预约日期 *</Text>
-            <TouchableOpacity 
+            <Text style={styles.label}>{t.booking.dateLabel}</Text>
+            <TouchableOpacity
               style={styles.dateInput}
               onPress={() => setShowDatePicker(true)}
             >
               <Text style={styles.dateText}>
                 {formatDate(selectedDate)}
               </Text>
-              <Text style={styles.dateIcon}>📅</Text>
             </TouchableOpacity>
 
-            {/* 日期选择器 */}
             {showDatePicker && (
               <View>
                 <DateTimePicker
@@ -294,14 +270,13 @@ const BookingScreen = () => {
                   textColor="#2C4A3E"
                   themeVariant="light"
                 />
-                {/* iOS 上添加确认按钮 */}
                 {Platform.OS === 'ios' && (
                   <View style={styles.pickerButtonContainer}>
                     <TouchableOpacity
                       style={styles.pickerButton}
                       onPress={() => setShowDatePicker(false)}
                     >
-                      <Text style={styles.pickerButtonText}>确认</Text>
+                      <Text style={styles.pickerButtonText}>{t.booking.confirm}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -309,20 +284,17 @@ const BookingScreen = () => {
             )}
           </View>
 
-          {/* 时间选择 */}
           <View style={styles.section}>
-            <Text style={styles.label}>预约时间 *</Text>
-            <TouchableOpacity 
+            <Text style={styles.label}>{t.booking.timeLabel}</Text>
+            <TouchableOpacity
               style={styles.dateInput}
               onPress={() => setShowTimePicker(true)}
             >
               <Text style={styles.dateText}>
                 {formatTime(selectedTime)}
               </Text>
-              <Text style={styles.dateIcon}>⏰</Text>
             </TouchableOpacity>
 
-            {/* 时间选择器 */}
             {showTimePicker && (
               <View>
                 <DateTimePicker
@@ -334,14 +306,13 @@ const BookingScreen = () => {
                   textColor="#2C4A3E"
                   themeVariant="light"
                 />
-                {/* iOS 上添加确认按钮 */}
                 {Platform.OS === 'ios' && (
                   <View style={styles.pickerButtonContainer}>
                     <TouchableOpacity
                       style={styles.pickerButton}
                       onPress={() => setShowTimePicker(false)}
                     >
-                      <Text style={styles.pickerButtonText}>确认</Text>
+                      <Text style={styles.pickerButtonText}>{t.booking.confirm}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -349,10 +320,9 @@ const BookingScreen = () => {
             )}
           </View>
 
-          {/* 时长/次数 */}
-          {(selectedService === '寄养服务' || selectedService === '日间托管') && (
+          {isDurationEligible && (
             <View style={styles.section}>
-              <Text style={styles.label}>预约天数</Text>
+              <Text style={styles.label}>{t.booking.durationLabel}</Text>
               <View style={styles.durationContainer}>
                 <TouchableOpacity
                   style={styles.durationButton}
@@ -383,12 +353,11 @@ const BookingScreen = () => {
             </View>
           )}
 
-          {/* 特殊要求 */}
           <View style={styles.section}>
-            <Text style={styles.label}>特殊要求（可选）</Text>
+            <Text style={styles.label}>{t.booking.specialRequestsLabel}</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="例如：对某些食物过敏、特殊护理需求等"
+              placeholder={t.booking.specialRequestsPlaceholder}
               value={specialRequests}
               onChangeText={setSpecialRequests}
               multiline
@@ -398,56 +367,53 @@ const BookingScreen = () => {
             />
           </View>
 
-          {/* 价格预览 */}
-          {selectedService && (
+          {selectedServiceKey && (
             <View style={styles.priceCard}>
               <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>服务</Text>
-                <Text style={styles.priceValue}>{selectedService}</Text>
+                <Text style={styles.priceLabel}>{t.booking.priceService}</Text>
+                <Text style={styles.priceValue}>{t.home.services[selectedServiceKey].name}</Text>
               </View>
               <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>日期</Text>
+                <Text style={styles.priceLabel}>{t.booking.priceDate}</Text>
                 <Text style={styles.priceValue}>{formatDate(selectedDate)}</Text>
               </View>
               <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>时间</Text>
+                <Text style={styles.priceLabel}>{t.booking.priceTime}</Text>
                 <Text style={styles.priceValue}>{formatTime(selectedTime)}</Text>
               </View>
-              {(selectedService === '寄养服务' || selectedService === '日间托管') && (
+              {isDurationEligible && (
                 <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>时长</Text>
-                  <Text style={styles.priceValue}>{duration} 天</Text>
+                  <Text style={styles.priceLabel}>{t.booking.priceDuration}</Text>
+                  <Text style={styles.priceValue}>{duration} {t.booking.dayUnit}</Text>
                 </View>
               )}
               <View style={styles.priceDivider} />
               <View style={styles.priceRow}>
-                <Text style={styles.priceTotalLabel}>预估总价</Text>
+                <Text style={styles.priceTotalLabel}>{t.booking.estimatedTotal}</Text>
                 <Text style={styles.priceTotalValue}>
                   NZD ${calculateTotal()}
                 </Text>
               </View>
               <Text style={styles.priceNote}>
-                * 最终价格可能根据实际情况调整
+                {t.booking.priceNote}
               </Text>
             </View>
           )}
 
-          {/* 提交按钮 */}
           <TouchableOpacity
             style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
             onPress={handleSubmit}
             disabled={isSubmitting}
           >
             <Text style={styles.submitButtonText}>
-              {isSubmitting ? '提交中...' : '确认预约'}
+              {isSubmitting ? t.booking.submitting : t.booking.submit}
             </Text>
           </TouchableOpacity>
 
-          {/* 提示信息 */}
           <View style={styles.infoBox}>
-            <Text style={styles.infoIcon}>ℹ️</Text>
+            <View style={styles.infoAccent} />
             <Text style={styles.infoText}>
-              提交后我们会尽快联系您确认预约详情。如有疑问，请致电 021 XXX XXXX
+              {t.booking.infoText}
             </Text>
           </View>
         </View>
@@ -585,9 +551,6 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: '600',
   },
-  dateIcon: {
-    fontSize: 20,
-  },
   pickerButtonContainer: {
     alignItems: 'center',
     paddingVertical: 12,
@@ -699,8 +662,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFE082',
   },
-  infoIcon: {
-    fontSize: 20,
+  infoAccent: {
+    width: 4,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    backgroundColor: '#C9A227',
     marginRight: 12,
   },
   infoText: {

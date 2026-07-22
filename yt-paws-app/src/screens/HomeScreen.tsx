@@ -1,20 +1,22 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
+import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../i18n/LanguageContext';
+
+type ServiceKey = 'boarding' | 'dayCare' | 'grooming' | 'houseVisit';
 
 type Service = {
-  id: number;
+  key: ServiceKey;
   name: string;
-  icon: string;
   description: string;
   price: string;
   color: string;
@@ -28,52 +30,37 @@ type RootStackParamList = {
 
 type HomeNavigationProp = StackNavigationProp<RootStackParamList>;
 
+const SERVICE_COLORS: Record<ServiceKey, string> = {
+  boarding: '#2C4A3E',
+  dayCare: '#4A6B5E',
+  grooming: '#6B8B7E',
+  houseVisit: '#8BAB9E',
+};
+
+const FEATURE_KEYS = ['team', 'care', 'local', 'updates'] as const;
+
 const HomeScreen = () => {
   const navigation = useNavigation<HomeNavigationProp>();
-  const [userName] = useState('Lily'); // TODO: 从登录状态获取真实用户名
+  const { user } = useAuth();
+  const { t } = useLanguage();
+  const userName = user?.name ?? 'Guest';
 
-  // 服务列表
-  const services: Service[] = [
-    {
-      id: 1,
-      name: '寄养服务',
-      icon: '🏠',
-      description: '24小时专业照护',
-      price: 'NZD 45/天起',
-      color: '#2C4A3E',
-    },
-    {
-      id: 2,
-      name: '日间托管',
-      icon: '☀️',
-      description: '白天照看，晚上接回',
-      price: 'NZD 30/天起',
-      color: '#4A6B5E',
-    },
-    {
-      id: 3,
-      name: '美容护理',
-      icon: '✨',
-      description: '洗澡、修剪、造型',
-      price: 'NZD 60起',
-      color: '#6B8B7E',
-    },
-    {
-      id: 4,
-      name: '上门探访',
-      icon: '🚗',
-      description: '专人上门喂养遛狗',
-      price: 'NZD 35/次起',
-      color: '#8BAB9E',
-    },
-  ];
+  const services: Service[] = (['boarding', 'dayCare', 'grooming', 'houseVisit'] as ServiceKey[]).map(
+    (key) => ({
+      key,
+      name: t.home.services[key].name,
+      description: t.home.services[key].description,
+      price: t.home.services[key].price,
+      color: SERVICE_COLORS[key],
+    }),
+  );
 
-  // 即将到来的预约（模拟数据）
+  // Mock data until the bookings module exists.
   const upcomingBookings = [
     {
       id: 1,
       petName: 'Lucky',
-      service: '寄养服务',
+      serviceKey: 'boarding' as ServiceKey,
       date: '2026-05-18',
       time: '09:00',
     },
@@ -99,72 +86,68 @@ const HomeScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#2C4A3E" />
-      
-      <ScrollView 
+
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        {/* 头部欢迎区域 */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
             <View>
-              <Text style={styles.greeting}>您好，</Text>
-              <Text style={styles.userName}>{userName} 👋</Text>
+              <Text style={styles.greeting}>{t.home.greeting}</Text>
+              <Text style={styles.userName}>{userName}</Text>
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.avatarButton}
               onPress={navigateToProfile}
             >
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>L</Text>
+                <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
               </View>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* 主要内容区域 */}
         <View style={styles.content}>
-          {/* 快捷预约按钮 */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.quickBookingCard}
             onPress={() => navigateToBooking()}
           >
             <View style={styles.quickBookingContent}>
               <View style={styles.quickBookingTextContainer}>
-                <Text style={styles.quickBookingTitle}>快速预约</Text>
+                <Text style={styles.quickBookingTitle}>{t.home.quickBookingTitle}</Text>
                 <Text style={styles.quickBookingSubtitle}>
-                  为您的爱宠预约服务
+                  {t.home.quickBookingSubtitle}
                 </Text>
               </View>
               <View style={styles.quickBookingIcon}>
-                <Text style={styles.quickBookingIconText}>🐾</Text>
+                <Text style={styles.quickBookingIconText}>›</Text>
               </View>
             </View>
           </TouchableOpacity>
 
-          {/* 即将到来的预约 */}
           {upcomingBookings.length > 0 && (
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>即将到来</Text>
+                <Text style={styles.sectionTitle}>{t.home.upcoming}</Text>
                 <TouchableOpacity>
-                  <Text style={styles.seeAllText}>查看全部</Text>
+                  <Text style={styles.seeAllText}>{t.home.seeAll}</Text>
                 </TouchableOpacity>
               </View>
 
               {upcomingBookings.map((booking) => (
-                <TouchableOpacity 
+                <TouchableOpacity
                   key={booking.id}
                   style={styles.bookingCard}
                 >
                   <View style={styles.bookingIcon}>
-                    <Text style={styles.bookingIconText}>🐕</Text>
+                    <Text style={styles.bookingIconText}>{booking.petName.charAt(0)}</Text>
                   </View>
                   <View style={styles.bookingInfo}>
                     <Text style={styles.bookingPetName}>{booking.petName}</Text>
-                    <Text style={styles.bookingService}>{booking.service}</Text>
+                    <Text style={styles.bookingService}>{t.home.services[booking.serviceKey].name}</Text>
                     <Text style={styles.bookingDateTime}>
-                      📅 {booking.date} · ⏰ {booking.time}
+                      {booking.date} · {booking.time}
                     </Text>
                   </View>
                   <View style={styles.bookingArrow}>
@@ -175,25 +158,24 @@ const HomeScreen = () => {
             </View>
           )}
 
-          {/* 服务列表 */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>我们的服务</Text>
-            
+            <Text style={styles.sectionTitle}>{t.home.ourServices}</Text>
+
             <View style={styles.servicesGrid}>
               {services.map((service) => (
                 <TouchableOpacity
-                  key={service.id}
+                  key={service.key}
                   style={styles.serviceCard}
                   onPress={() => navigateToBooking(service)}
                   activeOpacity={0.7}
                 >
-                  <View 
+                  <View
                     style={[
                       styles.serviceIconContainer,
-                      { backgroundColor: service.color }
+                      { backgroundColor: service.color },
                     ]}
                   >
-                    <Text style={styles.serviceIcon}>{service.icon}</Text>
+                    <Text style={styles.serviceIcon}>{service.name.charAt(0)}</Text>
                   </View>
                   <Text style={styles.serviceName}>{service.name}</Text>
                   <Text style={styles.serviceDescription}>
@@ -205,76 +187,64 @@ const HomeScreen = () => {
             </View>
           </View>
 
-          {/* 为什么选择我们 */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>为什么选择 Y&T Paws</Text>
-            
+            <Text style={styles.sectionTitle}>{t.home.whyChooseUs}</Text>
+
             <View style={styles.featuresList}>
-              {[
-                { icon: '✅', title: '专业团队', desc: '持证宠物护理师' },
-                { icon: '💚', title: '用心服务', desc: '像对待自己宠物一样' },
-                { icon: '📍', title: 'Remuera 本地', desc: '接送方便快捷' },
-                { icon: '📸', title: '实时更新', desc: '随时了解宠物状态' },
-              ].map((feature, index) => (
-                <View key={index} style={styles.featureItem}>
-                  <Text style={styles.featureIcon}>{feature.icon}</Text>
+              {FEATURE_KEYS.map((key) => (
+                <View key={key} style={styles.featureItem}>
+                  <View style={styles.featureAccent} />
                   <View style={styles.featureContent}>
-                    <Text style={styles.featureTitle}>{feature.title}</Text>
-                    <Text style={styles.featureDesc}>{feature.desc}</Text>
+                    <Text style={styles.featureTitle}>{t.home.features[key].title}</Text>
+                    <Text style={styles.featureDesc}>{t.home.features[key].desc}</Text>
                   </View>
                 </View>
               ))}
             </View>
           </View>
 
-          {/* 底部联系方式 */}
           <View style={styles.contactSection}>
-            <Text style={styles.contactTitle}>需要帮助？</Text>
+            <Text style={styles.contactTitle}>{t.home.needHelp}</Text>
             <Text style={styles.contactText}>
-              📞 联系我们：021 XXX XXXX
+              {t.home.phoneLabel}: 021 XXX XXXX
             </Text>
             <Text style={styles.contactText}>
-              📧 邮箱：hello@ytpaws.co.nz
+              {t.home.emailLabel}: hello@ytpaws.co.nz
             </Text>
             <Text style={styles.contactText}>
-              📍 地址：Remuera, Auckland
+              {t.home.addressLabel}: Remuera, Auckland
             </Text>
           </View>
         </View>
       </ScrollView>
 
-      {/* 底部导航栏 */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={() => {}}
         >
-          <Text style={styles.navIconActive}>🏠</Text>
-          <Text style={styles.navTextActive}>首页</Text>
+          <Text style={styles.navTextActive}>{t.home.navHome}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={() => navigateToBooking()}
         >
-          <Text style={styles.navIcon}>📅</Text>
-          <Text style={styles.navText}>预约</Text>
+          <Text style={styles.navText}>{t.home.navBooking}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={navigateToReport}
         >
-          <Text style={styles.navIcon}>📊</Text>
-          <Text style={styles.navText}>记录</Text>
+          <Text style={styles.navText}>{t.home.navReport}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.navItem}
           onPress={navigateToProfile}
         >
-          <Text style={styles.navIcon}>👤</Text>
-          <Text style={styles.navText}>我的</Text>
+          <Text style={styles.navText}>{t.home.navProfile}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -368,15 +338,17 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   quickBookingIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(245, 237, 216, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   quickBookingIconText: {
-    fontSize: 32,
+    fontSize: 28,
+    color: '#F5EDD8',
+    fontWeight: '300',
   },
   section: {
     marginTop: 32,
@@ -422,7 +394,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   bookingIconText: {
-    fontSize: 24,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2C4A3E',
   },
   bookingInfo: {
     flex: 1,
@@ -483,7 +457,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   serviceIcon: {
-    fontSize: 24,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
   },
   serviceName: {
     fontSize: 16,
@@ -521,8 +497,11 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  featureIcon: {
-    fontSize: 28,
+  featureAccent: {
+    width: 4,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    backgroundColor: '#2C4A3E',
     marginRight: 16,
   },
   featureContent: {
@@ -560,7 +539,7 @@ const styles = StyleSheet.create({
   bottomNav: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingBottom: 20,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
@@ -578,23 +557,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  navIcon: {
-    fontSize: 24,
-    marginBottom: 4,
-    opacity: 0.5,
-  },
-  navIconActive: {
-    fontSize: 24,
-    marginBottom: 4,
-  },
   navText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#999',
   },
   navTextActive: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#2C4A3E',
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
 

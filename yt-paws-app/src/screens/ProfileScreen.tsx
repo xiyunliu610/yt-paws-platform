@@ -8,12 +8,14 @@ import {
   Image,
   Alert,
   Switch,
-  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../i18n/LanguageContext';
+
+type PetTypeKey = 'dog' | 'cat';
 
 type RootStackParamList = {
   Login: undefined;
@@ -23,43 +25,33 @@ type RootStackParamList = {
 
 type ProfileNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
 
+const MOCK_PETS: { id: number; name: string; type: PetTypeKey; breed: string; age: string }[] = [
+  { id: 1, name: 'Lucky', type: 'dog', breed: 'Golden Retriever', age: '3' },
+  { id: 2, name: 'Mimi', type: 'cat', breed: 'British Shorthair', age: '2' },
+];
+
 const ProfileScreen = () => {
   const navigation = useNavigation<ProfileNavigationProp>();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
 
-  // 用户信息（模拟数据）
-  const [userInfo] = useState({
-    name: 'Lily',
-    email: 'lily@example.com',
-    phone: '021 XXX XXXX',
-    memberSince: '2025-01',
-  });
+  const displayName = user?.name ?? 'Guest';
+  const displayEmail = user?.email ?? '';
 
-  // 头像 URI
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
-
-  // 我的宠物（模拟数据）
-  const [pets] = useState([
-    { id: 1, name: 'Lucky', type: '狗狗', breed: '金毛', age: '3岁' },
-    { id: 2, name: 'Mimi', type: '猫咪', breed: '英短', age: '2岁' },
-  ]);
-
-  // 设置选项
+  const [pets] = useState(MOCK_PETS);
   const [notifications, setNotifications] = useState(true);
   const [emailUpdates, setEmailUpdates] = useState(true);
 
-  // 请求相册权限并选择图片
   const pickImage = async () => {
     try {
-      // 请求权限
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
+
       if (status !== 'granted') {
-        Alert.alert('权限不足', '需要访问相册的权限才能选择照片');
+        Alert.alert(t.profile.permissionRequiredTitle, t.profile.libraryPermissionMessage);
         return;
       }
 
-      // 打开图片选择器
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -69,29 +61,24 @@ const ProfileScreen = () => {
 
       if (!result.canceled && result.assets[0]) {
         setAvatarUri(result.assets[0].uri);
-        Alert.alert('成功', '头像更新成功！');
-        
-        // TODO: 上传到服务器
-        // await uploadAvatar(result.assets[0].uri);
+        Alert.alert(t.profile.avatarUpdatedTitle, t.profile.avatarUpdatedMessage);
+        // TODO: upload to the server once a media endpoint exists.
       }
     } catch (error) {
-      console.error('选择图片错误:', error);
-      Alert.alert('错误', '选择图片失败，请重试');
+      console.error('Choosing an avatar photo failed:', error);
+      Alert.alert(t.profile.pickImageErrorTitle, t.profile.pickImageErrorMessage);
     }
   };
 
-  // 拍照
   const takePhoto = async () => {
     try {
-      // 请求相机权限
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      
+
       if (status !== 'granted') {
-        Alert.alert('权限不足', '需要相机权限才能拍照');
+        Alert.alert(t.profile.permissionRequiredTitle, t.profile.cameraPermissionMessage);
         return;
       }
 
-      // 打开相机
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
@@ -100,38 +87,35 @@ const ProfileScreen = () => {
 
       if (!result.canceled && result.assets[0]) {
         setAvatarUri(result.assets[0].uri);
-        Alert.alert('成功', '头像更新成功！');
-        
-        // TODO: 上传到服务器
-        // await uploadAvatar(result.assets[0].uri);
+        Alert.alert(t.profile.avatarUpdatedTitle, t.profile.avatarUpdatedMessage);
+        // TODO: upload to the server once a media endpoint exists.
       }
     } catch (error) {
-      console.error('拍照错误:', error);
-      Alert.alert('错误', '拍照失败，请重试');
+      console.error('Taking an avatar photo failed:', error);
+      Alert.alert(t.profile.pickImageErrorTitle, t.profile.takePhotoErrorMessage);
     }
   };
 
-  // 选择头像方式
   const selectAvatarMethod = () => {
     Alert.alert(
-      '选择头像',
-      '请选择获取头像的方式',
+      t.profile.chooseAvatarTitle,
+      t.profile.chooseAvatarMessage,
       [
-        { text: '从相册选择', onPress: pickImage },
-        { text: '拍照', onPress: takePhoto },
-        { text: '取消', style: 'cancel' },
+        { text: t.profile.chooseFromLibrary, onPress: pickImage },
+        { text: t.profile.takePhoto, onPress: takePhoto },
+        { text: t.profile.cancel, style: 'cancel' },
       ]
     );
   };
 
   const handleLogout = () => {
     Alert.alert(
-      '退出登录',
-      '确定要退出登录吗？',
+      t.profile.logoutConfirmTitle,
+      t.profile.logoutConfirmMessage,
       [
-        { text: '取消', style: 'cancel' },
+        { text: t.profile.cancel, style: 'cancel' },
         {
-          text: '退出',
+          text: t.profile.logout,
           style: 'destructive',
           onPress: async () => {
             await logout();
@@ -143,24 +127,27 @@ const ProfileScreen = () => {
   };
 
   const handleEditProfile = () => {
-    Alert.alert('编辑资料', '此功能即将上线');
+    Alert.alert(t.profile.editProfileTitle, t.profile.comingSoon);
   };
 
   const handleAddPet = () => {
-    Alert.alert('添加宠物', '此功能即将上线');
+    Alert.alert(t.profile.addPetTitle, t.profile.comingSoon);
   };
 
   const handleViewBookings = () => {
     navigation.navigate('Report');
   };
 
+  const toggleLanguage = () => {
+    setLanguage(language === 'en' ? 'zh' : 'en');
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        {/* 头部个人信息卡片 */}
         <View style={styles.header}>
           <View style={styles.profileCard}>
             <View style={styles.avatarContainer}>
@@ -169,51 +156,45 @@ const ProfileScreen = () => {
               ) : (
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>
-                    {userInfo.name.charAt(0).toUpperCase()}
+                    {displayName.charAt(0).toUpperCase()}
                   </Text>
                 </View>
               )}
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.editAvatarButton}
                 onPress={selectAvatarMethod}
               >
-                <Text style={styles.editAvatarText}>📷</Text>
+                <Text style={styles.editAvatarText}>Edit</Text>
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.userInfoContainer}>
-              <Text style={styles.userName}>{userInfo.name}</Text>
-              <Text style={styles.userEmail}>{userInfo.email}</Text>
-              <Text style={styles.memberSince}>
-                会员时间：{userInfo.memberSince}
-              </Text>
+              <Text style={styles.userName}>{displayName}</Text>
+              <Text style={styles.userEmail}>{displayEmail}</Text>
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.editButton}
               onPress={handleEditProfile}
             >
-              <Text style={styles.editButtonText}>编辑资料</Text>
+              <Text style={styles.editButtonText}>{t.profile.editProfile}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.content}>
-          {/* 我的宠物 */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>我的宠物</Text>
+              <Text style={styles.sectionTitle}>{t.profile.myPets}</Text>
               <TouchableOpacity onPress={handleAddPet}>
-                <Text style={styles.addButton}>+ 添加</Text>
+                <Text style={styles.addButton}>{t.profile.addPet}</Text>
               </TouchableOpacity>
             </View>
 
             {pets.map((pet) => (
               <View key={pet.id} style={styles.petCard}>
                 <View style={styles.petIcon}>
-                  <Text style={styles.petIconText}>
-                    {pet.type === '狗狗' ? '🐕' : '🐈'}
-                  </Text>
+                  <Text style={styles.petIconText}>{pet.name.charAt(0)}</Text>
                 </View>
                 <View style={styles.petInfo}>
                   <Text style={styles.petName}>{pet.name}</Text>
@@ -228,40 +209,30 @@ const ProfileScreen = () => {
             ))}
           </View>
 
-          {/* 快捷功能 */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>快捷功能</Text>
-            
-            <TouchableOpacity 
+            <Text style={styles.sectionTitle}>{t.profile.quickActions}</Text>
+
+            <TouchableOpacity
               style={styles.menuItem}
               onPress={handleViewBookings}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>📅</Text>
-              </View>
-              <Text style={styles.menuText}>我的预约</Text>
+              <Text style={styles.menuText}>{t.profile.myBookings}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('收藏', '此功能即将上线')}
+              onPress={() => Alert.alert(t.profile.favoritesTitle, t.profile.comingSoon)}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>❤️</Text>
-              </View>
-              <Text style={styles.menuText}>我的收藏</Text>
+              <Text style={styles.menuText}>{t.profile.myFavorites}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('优惠券', '此功能即将上线')}
+              onPress={() => Alert.alert(t.profile.couponsTitle, t.profile.comingSoon)}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>🎟️</Text>
-              </View>
-              <Text style={styles.menuText}>优惠券</Text>
+              <Text style={styles.menuText}>{t.profile.coupons}</Text>
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>3</Text>
               </View>
@@ -269,15 +240,11 @@ const ProfileScreen = () => {
             </TouchableOpacity>
           </View>
 
-          {/* 设置 */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>设置</Text>
-            
+            <Text style={styles.sectionTitle}>{t.profile.settings}</Text>
+
             <View style={styles.menuItem}>
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>🔔</Text>
-              </View>
-              <Text style={styles.menuText}>推送通知</Text>
+              <Text style={styles.menuText}>{t.profile.pushNotifications}</Text>
               <Switch
                 value={notifications}
                 onValueChange={setNotifications}
@@ -287,10 +254,7 @@ const ProfileScreen = () => {
             </View>
 
             <View style={styles.menuItem}>
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>📧</Text>
-              </View>
-              <Text style={styles.menuText}>邮件通知</Text>
+              <Text style={styles.menuText}>{t.profile.emailNotifications}</Text>
               <Switch
                 value={emailUpdates}
                 onValueChange={setEmailUpdates}
@@ -299,74 +263,57 @@ const ProfileScreen = () => {
               />
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('隐私设置', '此功能即将上线')}
+              onPress={() => Alert.alert(t.profile.privacyTitle, t.profile.comingSoon)}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>🔒</Text>
-              </View>
-              <Text style={styles.menuText}>隐私设置</Text>
+              <Text style={styles.menuText}>{t.profile.privacySettings}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('语言', '当前：简体中文')}
+              onPress={toggleLanguage}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>🌐</Text>
-              </View>
-              <Text style={styles.menuText}>语言</Text>
-              <Text style={styles.menuValue}>简体中文</Text>
+              <Text style={styles.menuText}>{t.profile.language}</Text>
+              <Text style={styles.menuValue}>{t.profile.languageCurrent[language]}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
           </View>
 
-          {/* 帮助与支持 */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>帮助与支持</Text>
-            
-            <TouchableOpacity 
+            <Text style={styles.sectionTitle}>{t.profile.helpSupport}</Text>
+
+            <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('客服', '联系电话：021 XXX XXXX')}
+              onPress={() => Alert.alert(t.profile.contactSupportTitle, t.profile.contactSupportMessage)}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>💬</Text>
-              </View>
-              <Text style={styles.menuText}>联系客服</Text>
+              <Text style={styles.menuText}>{t.profile.contactSupport}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('帮助中心', '此功能即将上线')}
+              onPress={() => Alert.alert(t.profile.helpCenterTitle, t.profile.comingSoon)}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>❓</Text>
-              </View>
-              <Text style={styles.menuText}>帮助中心</Text>
+              <Text style={styles.menuText}>{t.profile.helpCenter}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('关于我们', 'Y&T Paws v1.0.0')}
+              onPress={() => Alert.alert(t.profile.aboutUsTitle, 'Y&T Paws v1.0.0')}
             >
-              <View style={styles.menuIconContainer}>
-                <Text style={styles.menuIcon}>ℹ️</Text>
-              </View>
-              <Text style={styles.menuText}>关于我们</Text>
+              <Text style={styles.menuText}>{t.profile.aboutUs}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
           </View>
 
-          {/* 退出登录 */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.logoutButton}
             onPress={handleLogout}
           >
-            <Text style={styles.logoutButtonText}>退出登录</Text>
+            <Text style={styles.logoutButtonText}>{t.profile.logout}</Text>
           </TouchableOpacity>
 
           <Text style={styles.version}>Y&T Paws v1.0.0</Text>
@@ -431,9 +378,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    minWidth: 34,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
     backgroundColor: '#2C4A3E',
     justifyContent: 'center',
     alignItems: 'center',
@@ -441,7 +389,9 @@ const styles = StyleSheet.create({
     borderColor: 'white',
   },
   editAvatarText: {
-    fontSize: 14,
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#F5EDD8',
   },
   userInfoContainer: {
     alignItems: 'center',
@@ -457,10 +407,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 4,
-  },
-  memberSince: {
-    fontSize: 12,
-    color: '#999',
   },
   editButton: {
     backgroundColor: '#2C4A3E',
@@ -522,7 +468,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   petIconText: {
-    fontSize: 24,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2C4A3E',
   },
   petInfo: {
     flex: 1,
@@ -563,18 +511,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
-  },
-  menuIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F5EDD8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  menuIcon: {
-    fontSize: 18,
   },
   menuText: {
     flex: 1,

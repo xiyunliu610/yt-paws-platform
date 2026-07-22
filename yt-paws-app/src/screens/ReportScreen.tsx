@@ -5,105 +5,93 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
+  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useLanguage } from '../i18n/LanguageContext';
 
-const { width } = Dimensions.get('window');
+type ServiceKey = 'boarding' | 'dayCare' | 'grooming' | 'houseVisit';
+type BookingStatus = 'completed' | 'upcoming';
+type Period = 'week' | 'month' | 'year';
+
+const SERVICE_COLORS: Record<ServiceKey, string> = {
+  boarding: '#2C4A3E',
+  dayCare: '#4A6B5E',
+  grooming: '#6B8B7E',
+  houseVisit: '#8BAB9E',
+};
+
+const bookingHistory: {
+  id: number;
+  date: string;
+  serviceKey: ServiceKey;
+  petName: string;
+  status: BookingStatus;
+  amount: number;
+}[] = [
+  { id: 1, date: '2026-05-10', serviceKey: 'boarding', petName: 'Lucky', status: 'completed', amount: 135 },
+  { id: 2, date: '2026-05-05', serviceKey: 'grooming', petName: 'Mimi', status: 'completed', amount: 60 },
+  { id: 3, date: '2026-04-28', serviceKey: 'dayCare', petName: 'Lucky', status: 'completed', amount: 90 },
+  { id: 4, date: '2026-04-20', serviceKey: 'houseVisit', petName: 'Mimi', status: 'completed', amount: 35 },
+  { id: 5, date: '2026-05-18', serviceKey: 'boarding', petName: 'Lucky', status: 'upcoming', amount: 135 },
+];
+
+const serviceStats: { key: ServiceKey; count: number }[] = [
+  { key: 'boarding', count: 5 },
+  { key: 'dayCare', count: 3 },
+  { key: 'grooming', count: 3 },
+  { key: 'houseVisit', count: 1 },
+];
+
+const monthlyData = [
+  { month: 1, amount: 120 },
+  { month: 2, amount: 180 },
+  { month: 3, amount: 90 },
+  { month: 4, amount: 220 },
+  { month: 5, amount: 540 },
+];
+
+const stats = {
+  totalBookings: 12,
+  totalSpent: 540,
+  favoriteServiceKey: 'boarding' as ServiceKey,
+  activePets: 2,
+};
 
 const ReportScreen = () => {
-  const navigation = useNavigation();
-  
-  // 选择的时间范围
-  const [selectedPeriod, setSelectedPeriod] = useState('month');
+  const { t } = useLanguage();
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>('month');
 
-  // 统计数据（模拟）
-  const stats = {
-    totalBookings: 12,
-    totalSpent: 540,
-    favoritService: '寄养服务',
-    activePets: 2,
+  const periodLabels: Record<Period, string> = {
+    week: t.report.periodWeek,
+    month: t.report.periodMonth,
+    year: t.report.periodYear,
   };
 
-  // 预约历史（模拟数据）
-  const bookingHistory = [
-    {
-      id: 1,
-      date: '2026-05-10',
-      service: '寄养服务',
-      petName: 'Lucky',
-      status: 'completed',
-      amount: 135,
-    },
-    {
-      id: 2,
-      date: '2026-05-05',
-      service: '美容护理',
-      petName: 'Mimi',
-      status: 'completed',
-      amount: 60,
-    },
-    {
-      id: 3,
-      date: '2026-04-28',
-      service: '日间托管',
-      petName: 'Lucky',
-      status: 'completed',
-      amount: 90,
-    },
-    {
-      id: 4,
-      date: '2026-04-20',
-      service: '上门探访',
-      petName: 'Mimi',
-      status: 'completed',
-      amount: 35,
-    },
-    {
-      id: 5,
-      date: '2026-05-18',
-      service: '寄养服务',
-      petName: 'Lucky',
-      status: 'upcoming',
-      amount: 135,
-    },
-  ];
-
-  // 月度数据（模拟简单柱状图数据）
-  const monthlyData = [
-    { month: '1月', amount: 120 },
-    { month: '2月', amount: 180 },
-    { month: '3月', amount: 90 },
-    { month: '4月', amount: 220 },
-    { month: '5月', amount: 540 },
-  ];
-
-  const getStatusText = (status: string) => {
-    return status === 'completed' ? '已完成' : '即将到来';
+  const statusLabels: Record<BookingStatus, string> = {
+    completed: t.report.statusCompleted,
+    upcoming: t.report.statusUpcoming,
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: BookingStatus) => {
     return status === 'completed' ? '#4CAF50' : '#FF9800';
   };
 
-  const maxAmount = Math.max(...monthlyData.map(d => d.amount));
+  const maxAmount = Math.max(...monthlyData.map((d) => d.amount));
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        {/* 头部统计卡片 */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>我的记录</Text>
-          <Text style={styles.headerSubtitle}>查看预约历史和统计数据</Text>
+          <Text style={styles.headerTitle}>{t.report.headerTitle}</Text>
+          <Text style={styles.headerSubtitle}>{t.report.headerSubtitle}</Text>
         </View>
 
         <View style={styles.content}>
-          {/* 时间范围选择 */}
           <View style={styles.periodSelector}>
-            {['week', 'month', 'year'].map((period) => (
+            {(['week', 'month', 'year'] as Period[]).map((period) => (
               <TouchableOpacity
                 key={period}
                 style={[
@@ -116,40 +104,37 @@ const ReportScreen = () => {
                   styles.periodText,
                   selectedPeriod === period && styles.periodTextActive,
                 ]}>
-                  {period === 'week' ? '本周' : period === 'month' ? '本月' : '本年'}
+                  {periodLabels[period]}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* 统计卡片 */}
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
               <Text style={styles.statNumber}>{stats.totalBookings}</Text>
-              <Text style={styles.statLabel}>总预约数</Text>
+              <Text style={styles.statLabel}>{t.report.totalBookings}</Text>
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statNumber}>${stats.totalSpent}</Text>
-              <Text style={styles.statLabel}>总消费</Text>
+              <Text style={styles.statLabel}>{t.report.totalSpent}</Text>
             </View>
             <View style={styles.statCard}>
               <Text style={styles.statNumber}>{stats.activePets}</Text>
-              <Text style={styles.statLabel}>活跃宠物</Text>
+              <Text style={styles.statLabel}>{t.report.activePets}</Text>
             </View>
             <View style={styles.statCard}>
-              <Text style={styles.statIcon}>⭐</Text>
-              <Text style={styles.statLabel}>最爱服务</Text>
-              <Text style={styles.statService}>{stats.favoritService}</Text>
+              <Text style={styles.statLabel}>{t.report.favoriteService}</Text>
+              <Text style={styles.statService}>{t.home.services[stats.favoriteServiceKey].name}</Text>
             </View>
           </View>
 
-          {/* 月度消费图表 */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>月度消费趋势</Text>
+            <Text style={styles.sectionTitle}>{t.report.monthlyTrend}</Text>
             <View style={styles.chartCard}>
               <View style={styles.chart}>
-                {monthlyData.map((data, index) => (
-                  <View key={index} style={styles.barContainer}>
+                {monthlyData.map((data) => (
+                  <View key={data.month} style={styles.barContainer}>
                     <View style={styles.barWrapper}>
                       <View
                         style={[
@@ -160,7 +145,7 @@ const ReportScreen = () => {
                         ]}
                       />
                     </View>
-                    <Text style={styles.barLabel}>{data.month}</Text>
+                    <Text style={styles.barLabel}>{t.report.months[data.month - 1]}</Text>
                     <Text style={styles.barAmount}>${data.amount}</Text>
                   </View>
                 ))}
@@ -168,24 +153,23 @@ const ReportScreen = () => {
             </View>
           </View>
 
-          {/* 预约历史 */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>预约历史</Text>
+              <Text style={styles.sectionTitle}>{t.report.bookingHistory}</Text>
               <TouchableOpacity>
-                <Text style={styles.filterText}>筛选</Text>
+                <Text style={styles.filterText}>{t.report.filter}</Text>
               </TouchableOpacity>
             </View>
 
             {bookingHistory.map((booking) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={booking.id}
                 style={styles.bookingCard}
               >
                 <View style={styles.bookingLeft}>
                   <View style={styles.bookingDateContainer}>
                     <Text style={styles.bookingMonth}>
-                      {booking.date.split('-')[1]}月
+                      {t.report.months[Number(booking.date.split('-')[1]) - 1]}
                     </Text>
                     <Text style={styles.bookingDay}>
                       {booking.date.split('-')[2]}
@@ -194,20 +178,20 @@ const ReportScreen = () => {
                 </View>
 
                 <View style={styles.bookingMiddle}>
-                  <Text style={styles.bookingService}>{booking.service}</Text>
-                  <Text style={styles.bookingPet}>🐾 {booking.petName}</Text>
+                  <Text style={styles.bookingService}>{t.home.services[booking.serviceKey].name}</Text>
+                  <Text style={styles.bookingPet}>{booking.petName}</Text>
                   <View style={styles.bookingStatusContainer}>
-                    <View 
+                    <View
                       style={[
                         styles.statusDot,
-                        { backgroundColor: getStatusColor(booking.status) }
+                        { backgroundColor: getStatusColor(booking.status) },
                       ]}
                     />
                     <Text style={[
                       styles.bookingStatus,
-                      { color: getStatusColor(booking.status) }
+                      { color: getStatusColor(booking.status) },
                     ]}>
-                      {getStatusText(booking.status)}
+                      {statusLabels[booking.status]}
                     </Text>
                   </View>
                 </View>
@@ -222,48 +206,40 @@ const ReportScreen = () => {
             ))}
           </View>
 
-          {/* 服务分类统计 */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>服务使用统计</Text>
+            <Text style={styles.sectionTitle}>{t.report.serviceUsage}</Text>
             <View style={styles.serviceStats}>
-              {[
-                { name: '寄养服务', count: 5, color: '#2C4A3E' },
-                { name: '日间托管', count: 3, color: '#4A6B5E' },
-                { name: '美容护理', count: 3, color: '#6B8B7E' },
-                { name: '上门探访', count: 1, color: '#8BAB9E' },
-              ].map((service, index) => (
-                <View key={index} style={styles.serviceStatItem}>
+              {serviceStats.map((service) => (
+                <View key={service.key} style={styles.serviceStatItem}>
                   <View style={styles.serviceStatLeft}>
-                    <View 
+                    <View
                       style={[
                         styles.serviceColorDot,
-                        { backgroundColor: service.color }
+                        { backgroundColor: SERVICE_COLORS[service.key] },
                       ]}
                     />
-                    <Text style={styles.serviceStatName}>{service.name}</Text>
+                    <Text style={styles.serviceStatName}>{t.home.services[service.key].name}</Text>
                   </View>
                   <View style={styles.serviceStatRight}>
-                    <View 
+                    <View
                       style={[
                         styles.serviceStatBar,
                         { width: `${(service.count / 12) * 100}%` },
-                        { backgroundColor: service.color }
+                        { backgroundColor: SERVICE_COLORS[service.key] },
                       ]}
                     />
-                    <Text style={styles.serviceStatCount}>{service.count}次</Text>
+                    <Text style={styles.serviceStatCount}>{service.count} {t.report.timesUnit}</Text>
                   </View>
                 </View>
               ))}
             </View>
           </View>
 
-          {/* 导出报告按钮 */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.exportButton}
-            onPress={() => alert('导出功能即将上线')}
+            onPress={() => Alert.alert(t.report.exportComingSoonTitle, t.report.exportComingSoonMessage)}
           >
-            <Text style={styles.exportButtonIcon}>📊</Text>
-            <Text style={styles.exportButtonText}>导出完整报告</Text>
+            <Text style={styles.exportButtonText}>{t.report.exportReport}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -350,10 +326,6 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: '#2C4A3E',
-    marginBottom: 6,
-  },
-  statIcon: {
-    fontSize: 32,
     marginBottom: 6,
   },
   statLabel: {
@@ -563,10 +535,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderWidth: 1.5,
     borderColor: '#2C4A3E',
-  },
-  exportButtonIcon: {
-    fontSize: 20,
-    marginRight: 10,
   },
   exportButtonText: {
     fontSize: 16,
