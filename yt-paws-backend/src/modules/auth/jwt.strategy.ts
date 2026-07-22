@@ -7,6 +7,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
+  businessId: string | null;
 }
 
 @Injectable()
@@ -21,6 +22,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   // Whatever is returned here becomes `req.user` for guarded routes.
   validate(payload: JwtPayload) {
-    return { userId: payload.sub, email: payload.email, role: payload.role };
+    return {
+      userId: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      businessId: payload.businessId,
+    };
   }
 }
