@@ -1,6 +1,6 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.3
+**Document Status:** Draft v0.5
 **Related Document:** `01_Project_Overview.md`
 **Last Updated:** 2026-07-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -30,10 +30,12 @@ Before diving into individual modules, roles need to be defined clearly — beca
 |---|---|---|
 | **Customer** | The platform's end user: books services, manages pet profiles, views daily reports | ✅ Implemented |
 | **Business Owner** (currently Y&T Paws) | Manages bookings, confirms payments, publishes daily reports, views their own business's operational data | ✅ Implemented |
-| **Staff** | As a business grows, the Business Owner may invite staff to help manage bookings and publish daily reports, without business-level admin permissions (e.g. payment verification, account management) | ⏳ Reserved role — no functional UI in Version 1; only reserved as an enum value in the database `role` field |
+| **Staff** | As a business grows, the Business Owner creates staff accounts under their business and assigns incoming bookings to them to carry out; staff have no business-level admin permissions (e.g. payment verification, account management) | ⏳ Planned for Version 1 — see US-03.5/US-03.6 |
 | **System Administrator** | Represents the PetHome platform operator itself (not a business), for cross-business, system-level management, in preparation for future multi-business SaaS (Version 4) | ⏳ Reserved role — not implemented in Version 1 |
 
-**Design Principle:** The `User` table includes a `role` field from Version 1 onward (enum: `customer` / `staff` / `owner` / `admin`), even though Staff and Admin have no corresponding functional screens yet — this avoids a future data migration. See `04_Database_Design.md` for detailed field design.
+**Design Principle:** The `User` table includes a `role` field from Version 1 onward (enum: `customer` / `staff` / `owner` / `admin`), even though Admin has no corresponding functional screens yet — this avoids a future data migration. See `04_Database_Design.md` for detailed field design.
+
+**Staff assignment scope (decided 2026-07-22):** Version 1 supports the Business Owner assigning a booking to one of their staff internally (`Booking.assignedStaffId`). Customers choosing a specific staff member themselves is explicitly deferred — it needs staff profile pages, availability, and possibly ratings, none of which are justified while Y&T Paws has only a handful of staff. Revisit once the owner-assignment flow is validated in real use and staff headcount grows; it should layer on top of the existing design (customer selection would just pre-fill `assignedStaffId` subject to the owner's confirmation) rather than requiring rework.
 
 Throughout this document, "user / customer" refers to the `Customer` role, and "business / service provider" refers to the `Business Owner` role (currently Y&T Paws).
 
@@ -67,6 +69,15 @@ Corresponding backend module: `auth`
 **Acceptance Criteria**
 - Given a user opens the app for the first time, When no language has been set, Then the system suggests a default based on device language, and the user can switch manually
 - Given the user switches language, When the change takes effect, Then all interface text and date formats update immediately, and the setting is persisted for next launch
+
+### US-01.4 Business (Owner) Registration
+> As a pet care business owner (a "sitter"), I want to register my own business on the platform myself, so that I get my own isolated tenant without the platform operator setting anything up for me.
+
+**Acceptance Criteria**
+- Given a business owner submits a business name plus their own email/password/name, When they submit, Then the system creates a new `Business` row and a `User` with role `owner` and `businessId` pointing to that business, and returns a JWT token like normal registration
+- Given the email is already registered, When they submit, Then the system rejects it with "email already exists" (same rule as US-01.1)
+- This is the *only* way a `Business` row and an `owner` user come into existence in Version 1 — there is no separate admin-run setup step, including for Y&T Paws itself. This keeps onboarding identical whether it's the first business or the hundredth, which matters because the platform is intended to be resold to other pet care businesses later (see `01_Project_Overview.md` §5, §11)
+- Out of scope for Version 1: business verification/approval workflow, billing/subscription for the business itself
 
 ---
 
@@ -130,6 +141,23 @@ Corresponding backend modules: `services`, `bookings`
 **Acceptance Criteria**
 - Given a booking's status is "Pending Confirmation" or "Confirmed" within the cancellation policy window, When the user taps cancel, Then the system updates the status to "Cancelled" and releases the time slot
 - Given a booking has passed the non-cancellable time window (exact rule to be confirmed with the business), When the user attempts to cancel, Then the system shows that cancellation is not allowed and why
+
+### US-03.5 Business Owner Creates a Staff Account
+> As a Business Owner, I want to create an account for a staff member under my business, so that I can start assigning them bookings.
+
+**Acceptance Criteria**
+- Given the Business Owner submits a new staff member's name, email and phone, When they submit, Then the system creates a User with role `staff` and `businessId` set to the owner's business, and returns login credentials for that staff member
+- Given the email is already registered, When the owner submits, Then the system rejects it with "email already registered" (same rule as US-01.1)
+- Given the requester is not a Business Owner (or Admin) for that business, When they call this action, Then the system returns 403
+
+### US-03.6 Business Owner Assigns a Booking to Staff
+> As a Business Owner, I want to assign an incoming booking to one of my staff, so that the right person carries it out.
+
+**Acceptance Criteria**
+- Given a booking belongs to the owner's business and a staff member also belongs to that business, When the owner assigns the booking to that staff member, Then `Booking.assignedStaffId` is set and the staff member can see the booking in their own list
+- Given the chosen staff member belongs to a different business, When the owner attempts the assignment, Then the system rejects it
+- Given a booking is reassigned to a different staff member, When the change is saved, Then only the newly assigned staff member sees it going forward (the previous assignee loses visibility)
+- Out of scope for Version 1: customers choosing their own staff member (see User Roles section above)
 
 ---
 
@@ -238,3 +266,5 @@ Corresponding backend module: `reports`
 | 2026-07-02 | v0.1 | Initial draft covering User Stories and acceptance criteria for the six Version 1 modules | Xiyun Liu |
 | 2026-07-02 | v0.2 | Aligned with PetHome/Y\&T Paws two-tier naming; added multi-tenant data isolation requirement | Xiyun Liu |
 | 2026-07-02 | v0.3 | Added User Roles section (Customer/Business Owner/Staff/Admin); added Payment Strategy and Future Expansion subsection; added Notification Center future note to the Notifications module; translated to English | Xiyun Liu |
+| 2026-07-22 | v0.4 | Decided Staff scope for Version 1: Business Owner creates staff accounts and assigns bookings to them (US-03.5, US-03.6); customers choosing their own staff member is explicitly deferred until staff headcount justifies it | Xiyun Liu |
+| 2026-07-22 | v0.5 | Added US-01.4 Business (Owner) Registration: business onboarding is self-service from Version 1 onward (including for Y&T Paws itself), not an admin-provisioned setup step — this is the mechanism that will let the platform be resold to other businesses later without rework | Xiyun Liu |

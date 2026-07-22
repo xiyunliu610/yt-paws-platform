@@ -1,6 +1,6 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.3
+**Document Status:** Draft v0.4
 **Last Updated:** 2026-07-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
@@ -166,6 +166,7 @@ Multi-business support, AI business analytics, AI Vision, open APIs
 
 - **Multi-tenant extensibility is reflected in the data model starting from Version 1:** core tables (e.g. Booking, Pet, Service) reserve a `business_id` field, so that even though only Y&T Paws currently uses the platform, onboarding future businesses will not require a destructive schema migration
 - **Version 1's business logic and permission scope still serve Y&T Paws exclusively.** Multi-business capability is a "reserved structure," not a "fully implemented multi-business operation" (e.g. business-level dashboard switching or full cross-business data isolation belongs to Version 4)
+- **Business onboarding itself is self-service starting from Version 1, not just reserved.** A business owner creates their own `Business` row and `owner` account through the same registration flow Y&T Paws itself uses (see `02_Product_Requirements.md` US-01.4) — the platform operator never manually provisions a tenant. This is a deliberate exception to "reserved structure, not implemented": self-service onboarding is cheap to build now and is exactly the mechanism Version 4's resale model depends on, so it is built once, correctly, rather than retrofitted later
 - Detailed table structures will be defined in `04_Database_Design.md`
 
 ---
@@ -249,3 +250,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-07-02 | v0.1 | Initial draft | Xiyun Liu |
 | 2026-07-02 | v0.2 | Adopted PetHome/Y\&T Paws two-tier naming; confirmed multi-tenant extensibility direction; integrated content from uploaded project_overview.docx; added business challenges, design principles, concrete NFR targets, and the full Version 1–4 roadmap | Xiyun Liu |
 | 2026-07-02 | v0.3 | Added project positioning statement (commercial-grade standard, not an academic demo); added Assumptions section; added the 15-document documentation map; translated to English | Xiyun Liu |
+| 2026-07-22 | v0.4 | Clarified in Section 11 that business onboarding is self-service from Version 1 onward (not admin-provisioned), since the platform is intended to be resold to other pet care businesses later | Xiyun Liu |

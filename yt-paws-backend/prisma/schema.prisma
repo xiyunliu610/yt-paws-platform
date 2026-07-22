@@ -50,18 +50,19 @@ model Business {
 }
 
 model User {
-  id         String    @id @default(uuid()) @db.Uuid
-  businessId String?   @db.Uuid
-  business   Business? @relation(fields: [businessId], references: [id])
-  email      String    @unique
-  password   String
-  name       String?
-  phone      String?
-  role       Role      @default(customer)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  pets       Pet[]
-  bookings   Booking[] @relation("CustomerBookings")
+  id               String    @id @default(uuid()) @db.Uuid
+  businessId       String?   @db.Uuid
+  business         Business? @relation(fields: [businessId], references: [id])
+  email            String    @unique
+  password         String
+  name             String?
+  phone            String?
+  role             Role      @default(customer)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  pets             Pet[]
+  bookings         Booking[] @relation("CustomerBookings")
+  assignedBookings Booking[] @relation("StaffAssignedBookings")
 }
 
 model Pet {
@@ -108,22 +109,26 @@ model Service {
 }
 
 model Booking {
-  id           String        @id @default(uuid()) @db.Uuid
-  businessId   String        @db.Uuid
-  business     Business      @relation(fields: [businessId], references: [id])
-  customerId   String        @db.Uuid
-  customer     User          @relation("CustomerBookings", fields: [customerId], references: [id])
-  petId        String        @db.Uuid
-  pet          Pet           @relation(fields: [petId], references: [id])
-  serviceId    String        @db.Uuid
-  service      Service       @relation(fields: [serviceId], references: [id])
-  status       BookingStatus @default(pending)
-  startDate    DateTime
-  endDate      DateTime
-  payments     Payment[]
-  dailyReports DailyReport[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id              String        @id @default(uuid()) @db.Uuid
+  businessId      String        @db.Uuid
+  business        Business      @relation(fields: [businessId], references: [id])
+  customerId      String        @db.Uuid
+  customer        User          @relation("CustomerBookings", fields: [customerId], references: [id])
+  // Nullable: a booking starts unassigned; the business owner assigns it to
+  // a staff member (role = staff, same businessId) after it comes in.
+  assignedStaffId String?       @db.Uuid
+  assignedStaff   User?         @relation("StaffAssignedBookings", fields: [assignedStaffId], references: [id])
+  petId           String        @db.Uuid
+  pet             Pet           @relation(fields: [petId], references: [id])
+  serviceId       String        @db.Uuid
+  service         Service       @relation(fields: [serviceId], references: [id])
+  status          BookingStatus @default(pending)
+  startDate       DateTime
+  endDate         DateTime
+  payments        Payment[]
+  dailyReports    DailyReport[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 }
 
 model Payment {

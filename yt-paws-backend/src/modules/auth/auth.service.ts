@@ -7,10 +7,25 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
+import { Role, User } from '@prisma/client';
 
 // PRD US-01.1: at least 8 characters, containing both letters and numbers.
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).+$/;
+
+// Unambiguous charset (no 0/O/1/l/I) for temporary passwords handed to owners
+// to relay to new staff (PRD US-03.5).
+const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+function generateTemporaryPassword(length = 12): string {
+  const bytes = crypto.randomBytes(length);
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += TEMP_PASSWORD_CHARS[bytes[i] % TEMP_PASSWORD_CHARS.length];
+  }
+  return password;
+}
 
 @Injectable()
 export class AuthService {
@@ -19,47 +34,123 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async register(email: string, password: string, name: string, phone?: string) {
+  private validatePasswordStrength(password: string) {
     if (password.length < PASSWORD_MIN_LENGTH || !PASSWORD_RULE.test(password)) {
       throw new BadRequestException(
         `Password must be at least ${PASSWORD_MIN_LENGTH} characters and contain both letters and numbers`,
       );
     }
+  }
 
-    // Check whether the email is already registered
+  private async assertEmailAvailable(email: string) {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('This email is already registered');
     }
+  }
 
-    // Hash the password
+  private signToken(user: Pick<User, 'id' | 'email' | 'role' | 'businessId'>) {
+    return this.jwtService.sign({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      businessId: user.businessId,
+    });
+  }
+
+  private toAuthResponse(user: User, token: string) {
+    return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
+  }
+
+  async register(email: string, password: string, name: string, phone?: string) {
+    this.validatePasswordStrength(password);
+    await this.assertEmailAvailable(email);
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create the user (role defaults to customer, matching the schema default)
+    // Role defaults to customer, matching the schema default.
     const user = await this.prisma.user.create({
       data: { email, password: hashedPassword, name, phone },
     });
 
-    // Issue a token (payload carries role for downstream permission guards)
-    const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
-    return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
+    return this.toAuthResponse(user, this.signToken(user));
   }
 
   async login(email: string, password: string) {
-    // Look up the user
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Verify the password
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    // Issue a token (payload carries role for downstream permission guards)
-    const token = this.jwtService.sign({ sub: user.id, email: user.email, role: user.role });
-    return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
+    return this.toAuthResponse(user, this.signToken(user));
+  }
+
+  // PRD US-01.4: a business owner registers their own business and owner
+  // account in one step. This is the only way a Business row and an owner
+  // user come into existence — no admin-provisioned setup, even for Y&T Paws.
+  async registerBusiness(
+    businessName: string,
+    email: string,
+    password: string,
+    name: string,
+    phone?: string,
+  ) {
+    if (!businessName?.trim()) {
+      throw new BadRequestException('Business name is required');
+    }
+    this.validatePasswordStrength(password);
+    await this.assertEmailAvailable(email);
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.create({ data: { name: businessName } });
+      return tx.user.create({
+        data: {
+          email,
+          password: hashedPassword,
+          name,
+          phone,
+          role: Role.owner,
+          businessId: business.id,
+        },
+      });
+    });
+
+    return this.toAuthResponse(user, this.signToken(user));
+  }
+
+  // PRD US-03.5: the owner creates a staff account under their own business.
+  // No email infrastructure exists yet, so the temporary password is
+  // returned to the owner to relay to the staff member directly.
+  async createStaff(ownerBusinessId: string | null, email: string, name: string, phone?: string) {
+    if (!ownerBusinessId) {
+      throw new BadRequestException('Your account is not associated with a business');
+    }
+    await this.assertEmailAvailable(email);
+
+    const temporaryPassword = generateTemporaryPassword();
+    const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+
+    const user = await this.prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        name,
+        phone,
+        role: Role.staff,
+        businessId: ownerBusinessId,
+      },
+    });
+
+    return {
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      temporaryPassword,
+    };
   }
 }

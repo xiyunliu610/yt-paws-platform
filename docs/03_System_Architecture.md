@@ -1,6 +1,6 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.3
+**Document Status:** Draft v0.5
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
 **Last Updated:** 2026-07-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -114,11 +114,11 @@ The following principles underpin all subsequent design decisions (database, API
 
 | Module | Responsibility | Corresponding PRD Module |
 |---|---|---|
-| `auth` | Registration, login, JWT issuance/validation, role management | Module 1 |
+| `auth` | Registration (customer and self-service business/owner registration), login, JWT issuance/validation, role management | Module 1 |
 | `users` | Basic user information management | Module 1 (supporting) |
 | `pets` | Pet profiles, health records | Module 2 |
 | `services` | Display and management of service offerings (boarding / drop-in, etc.) | Module 3 |
-| `bookings` | Booking creation, status transitions, cancellation logic | Module 3 |
+| `bookings` | Booking creation, status transitions, cancellation logic, owner-to-staff assignment | Module 3 |
 | `payments` | Payment initiation, WeChat manual verification flow, payment records | Module 4 |
 | `reports` | Creation and viewing of pet daily reports | Module 6 |
 
@@ -156,6 +156,7 @@ erDiagram
     BUSINESS ||--o{ BOOKING : receives
     USER ||--o{ PET : owns
     USER ||--o{ BOOKING : makes
+    USER ||--o{ BOOKING : "is assigned (staff)"
     PET ||--o{ BOOKING : "is subject of"
     SERVICE ||--o{ BOOKING : "ordered as"
     BOOKING ||--o{ PAYMENT : "paid via"
@@ -184,6 +185,7 @@ erDiagram
         uuid id PK
         uuid business_id FK
         uuid customer_id FK
+        uuid assigned_staff_id FK "nullable, owner assigns after booking comes in"
         uuid pet_id FK
         uuid service_id FK
         enum status
@@ -205,13 +207,16 @@ erDiagram
 - Core business tables — `Booking`, `Service`, `Payment` (indirectly via Booking) — all carry a `business_id` foreign key
 - The `User` table's `business_id` is **nullable**: a regular Customer does not belong to any business (`business_id = null`); only Owner/Staff roles are associated with a specific business
 - The benefit of this design: in Version 1, all query logic naturally filters by `business_id = Y&T Paws's ID`, so the code is nearly as simple as "pretending there's no multi-tenancy"; but when a second business is actually onboarded in the future, no schema changes are needed — only the application-layer logic for "how to isolate permissions across multiple business_id values" needs to be handled
+- `Booking.assigned_staff_id` (nullable, FK to `User`) lets the Owner assign an incoming booking to one of their staff internally; assignment is required to reference a staff/owner user with the same `business_id` as the booking (see PRD US-03.5/US-03.6). Customers picking their own staff member is out of scope for now — see 4.2
 
 ### 4.2 What's Deliberately Out of Scope for Now
 Written down explicitly to avoid scope creep during development:
 - ❌ No multi-business switching UI in the business dashboard
 - ❌ No cross-business aggregated reporting
 - ❌ No complex permission matrix based on `business_id` (Version 1 permission logic remains a simple binary: "Customers can only see their own data; Owners can see all of Y&T Paws's data")
+- ❌ No customer-facing staff selection (customers don't see or choose `assigned_staff_id`; only the Owner sets it) — deferred until staff headcount justifies the extra UI (profiles, availability, etc.)
 - ✅ Only: core tables carry a `business_id` field, and queries consistently apply this filter
+- ✅ Owner-to-staff booking assignment via `assigned_staff_id`
 
 ---
 
@@ -399,6 +404,8 @@ flowchart TB
 | Media upload approach | Client uploads directly to cloud storage (presigned URL) | Avoids backend bearing large-file traffic load; better upload experience |
 | WeChat payment integration approach | Personal QR code + manual verification, rather than the official merchant API | The official merchant API has a high application threshold; manual verification is a pragmatic transitional approach for now, with an extension point reserved for switching to the official API in the future |
 | Third-party service description approach | Provider-agnostic | Storage, push, AI, camera, etc. categories only define responsibilities without binding to a specific vendor, reducing future documentation and code changes when switching providers |
+| Business onboarding | Self-service registration (`POST /auth/register-business`) creates the `Business` row and its first `owner` User atomically; no admin-run setup step, not even for Y&T Paws | Keeps onboarding identical for the first tenant and the hundredth, which the Version 4 resale model depends on; building it self-service now is no more expensive than a one-off script and avoids retrofitting later |
+| Staff provisioning | Owner creates staff accounts directly (`POST /auth/staff`) with a system-generated temporary password returned to the owner, rather than an email invite flow | No transactional email infrastructure exists yet; owners already relay information to staff manually (WeChat, phone), so this fits current operating reality without new infrastructure |
 
 ---
 
@@ -409,3 +416,5 @@ flowchart TB
 | 2026-07-02 | v0.1 | Initial draft: overall architecture diagram, module responsibilities, multi-tenant design principles, media storage architecture, payment architecture (Stripe + WeChat), simplified notification architecture, security baseline, deployment placeholder, technology stack summary, architecture decision records | Xiyun Liu |
 | 2026-07-02 | v0.2 | Added API Gateway conceptual layer; architecture diagram annotated with Version 1 / Reserved zones; added future Media Service evolution note to the `reports` module; storage/push/AI/camera all changed to provider-agnostic phrasing; added "Architecture Principles," "Logging and Monitoring," and "Environments" sections | Xiyun Liu |
 | 2026-07-02 | v0.3 | Renamed "API Gateway" to "API Entry Point (Gateway Layer)" for accuracy (not an independent component like Kong/Nginx/AWS API Gateway); clarified Media Service is an architectural abstraction not implemented in Version 1; added Metrics step to the logging/monitoring pipeline; translated to English | Xiyun Liu |
+| 2026-07-22 | v0.4 | Added `Booking.assigned_staff_id` to the multi-tenant ERD and design notes for owner-to-staff booking assignment; documented that customer-facing staff selection is deliberately out of scope for now | Xiyun Liu |
+| 2026-07-22 | v0.5 | Documented self-service business registration and owner-provisioned staff accounts as ADR entries; updated `auth` module responsibility to include business/owner registration | Xiyun Liu |
