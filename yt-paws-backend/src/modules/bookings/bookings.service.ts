@@ -1,11 +1,24 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { Role, BookingStatus } from '@prisma/client';
 
 interface RequestingUser {
   userId: string;
   role: string;
   businessId: string | null;
+}
+
+interface CreateBookingInput {
+  serviceId: string;
+  petId: string;
+  startDate: string;
+  endDate: string;
 }
 
 @Injectable()
@@ -36,6 +49,80 @@ export class BookingsService {
     return this.prisma.booking.findMany({
       where: { businessId: user.businessId },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // US-03.2: creates a Booking in "pending" status. The pet must belong to
+  // the requester and the service must be published; businessId is derived
+  // from the service so the customer never has to know/supply it.
+  async create(user: RequestingUser, data: CreateBookingInput) {
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+      throw new BadRequestException('startDate must be before endDate');
+    }
+
+    const pet = await this.prisma.pet.findUnique({ where: { id: data.petId } });
+    if (!pet || pet.ownerId !== user.userId) {
+      throw new ForbiddenException('You can only book for your own pet');
+    }
+
+    const service = await this.prisma.service.findUnique({ where: { id: data.serviceId } });
+    if (!service || !service.isActive) {
+      throw new NotFoundException('Service not available');
+    }
+
+    // Conflict scope: a pet can't be in two places at once. Business-capacity
+    // limits beyond that aren't modeled yet (no capacity field on
+    // Service/Business), so this only checks the pet's own overlapping bookings.
+    const conflict = await this.prisma.booking.findFirst({
+      where: {
+        petId: data.petId,
+        status: { in: [BookingStatus.pending, BookingStatus.confirmed, BookingStatus.in_progress] },
+        startDate: { lt: end },
+        endDate: { gt: start },
+      },
+    });
+    if (conflict) {
+      throw new ConflictException('This pet already has a booking during that time');
+    }
+
+    return this.prisma.booking.create({
+      data: {
+        businessId: service.businessId,
+        customerId: user.userId,
+        petId: data.petId,
+        serviceId: data.serviceId,
+        startDate: start,
+        endDate: end,
+      },
+    });
+  }
+
+  // US-03.4: the customer who made the booking, or the business managing it,
+  // can cancel while it's still pending/confirmed. The exact non-cancellable
+  // time window is still TBD with the business (see PRD US-03.4 note), so
+  // only the status check is enforced for now.
+  async cancel(user: RequestingUser, bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    const isRequestersBooking = booking.customerId === user.userId;
+    const managesThisBusiness =
+      (user.role === Role.owner || user.role === Role.admin) && user.businessId === booking.businessId;
+    if (!isRequestersBooking && !managesThisBusiness) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    if (booking.status !== BookingStatus.pending && booking.status !== BookingStatus.confirmed) {
+      throw new BadRequestException(`Booking cannot be cancelled once it is ${booking.status}`);
+    }
+
+    return this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: BookingStatus.cancelled },
     });
   }
 
