@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npx prisma *)",
-      "Bash(psql \"postgresql://lily@localhost:5432/ytpaws\" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;')"
-    ]
-  }
-}
