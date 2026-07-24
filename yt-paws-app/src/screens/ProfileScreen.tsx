@@ -1,21 +1,24 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   Image,
   Alert,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
+import { ApiError, petsApi, Pet } from '../api/client';
 
-type PetTypeKey = 'dog' | 'cat';
+type PetTypeKey = 'dog' | 'cat' | 'other';
 
 type RootStackParamList = {
   Login: undefined;
@@ -25,23 +28,37 @@ type RootStackParamList = {
 
 type ProfileNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
 
-const MOCK_PETS: { id: number; name: string; type: PetTypeKey; breed: string; age: string }[] = [
-  { id: 1, name: 'Lucky', type: 'dog', breed: 'Golden Retriever', age: '3' },
-  { id: 2, name: 'Mimi', type: 'cat', breed: 'British Shorthair', age: '2' },
-];
+const PET_TYPE_KEYS: PetTypeKey[] = ['dog', 'cat', 'other'];
 
 const ProfileScreen = () => {
   const navigation = useNavigation<ProfileNavigationProp>();
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const { language, setLanguage, t } = useLanguage();
 
   const displayName = user?.name ?? 'Guest';
   const displayEmail = user?.email ?? '';
 
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
-  const [pets] = useState(MOCK_PETS);
+  const [pets, setPets] = useState<Pet[] | null>(null);
+  const [petsFailed, setPetsFailed] = useState(false);
+  const [isAddingPet, setIsAddingPet] = useState(false);
+  const [newPetName, setNewPetName] = useState('');
+  const [newPetType, setNewPetType] = useState<PetTypeKey | ''>('');
+  const [isSavingPet, setIsSavingPet] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const [emailUpdates, setEmailUpdates] = useState(true);
+
+  // Refetch on focus (not just mount) so a pet added from the Booking
+  // screen's inline form shows up here without needing a full app restart.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      petsApi
+        .list(token)
+        .then(setPets)
+        .catch(() => setPetsFailed(true));
+    }, [token]),
+  );
 
   const pickImage = async () => {
     try {
@@ -131,7 +148,36 @@ const ProfileScreen = () => {
   };
 
   const handleAddPet = () => {
-    Alert.alert(t.profile.addPetTitle, t.profile.comingSoon);
+    setIsAddingPet((prev) => !prev);
+  };
+
+  const handleSaveNewPet = async () => {
+    if (!token) return;
+    if (!newPetName.trim()) {
+      Alert.alert(t.booking.errorTitle, t.booking.enterPetName);
+      return;
+    }
+    if (!newPetType) {
+      Alert.alert(t.booking.errorTitle, t.booking.selectPetType);
+      return;
+    }
+
+    setIsSavingPet(true);
+    try {
+      const created = await petsApi.create(token, {
+        name: newPetName.trim(),
+        species: t.booking.petTypes[newPetType],
+      });
+      setPets((prev) => [...(prev ?? []), created]);
+      setNewPetName('');
+      setNewPetType('');
+      setIsAddingPet(false);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.booking.addPetFailedMessage;
+      Alert.alert(t.booking.addPetFailedTitle, message);
+    } finally {
+      setIsSavingPet(false);
+    }
   };
 
   const handleViewBookings = () => {
@@ -187,26 +233,80 @@ const ProfileScreen = () => {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{t.profile.myPets}</Text>
               <TouchableOpacity onPress={handleAddPet}>
-                <Text style={styles.addButton}>{t.profile.addPet}</Text>
+                <Text style={styles.addButton}>
+                  {isAddingPet ? t.profile.cancel : t.profile.addPet}
+                </Text>
               </TouchableOpacity>
             </View>
 
-            {pets.map((pet) => (
-              <View key={pet.id} style={styles.petCard}>
-                <View style={styles.petIcon}>
-                  <Text style={styles.petIconText}>{pet.name.charAt(0)}</Text>
-                </View>
-                <View style={styles.petInfo}>
-                  <Text style={styles.petName}>{pet.name}</Text>
-                  <Text style={styles.petDetails}>
-                    {pet.breed} · {pet.age}
-                  </Text>
-                </View>
-                <TouchableOpacity style={styles.petArrow}>
-                  <Text style={styles.arrowText}>›</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+            {pets === null ? (
+              <ActivityIndicator color="#2C4A3E" />
+            ) : petsFailed ? (
+              <Text style={styles.helperText}>{t.booking.loadPetsFailed}</Text>
+            ) : (
+              <>
+                {pets.length === 0 && !isAddingPet && (
+                  <Text style={styles.helperText}>{t.booking.noPetsYet}</Text>
+                )}
+
+                {pets.map((pet) => (
+                  <View key={pet.id} style={styles.petCard}>
+                    <View style={styles.petIcon}>
+                      <Text style={styles.petIconText}>{pet.name.charAt(0)}</Text>
+                    </View>
+                    <View style={styles.petInfo}>
+                      <Text style={styles.petName}>{pet.name}</Text>
+                      <Text style={styles.petDetails}>
+                        {[pet.breed, pet.species].filter(Boolean).join(' · ') || '—'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity style={styles.petArrow}>
+                      <Text style={styles.arrowText}>›</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {isAddingPet && (
+                  <View style={styles.addPetForm}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder={t.booking.petNamePlaceholder}
+                      value={newPetName}
+                      onChangeText={setNewPetName}
+                      editable={!isSavingPet}
+                    />
+                    <View style={styles.petTypeContainer}>
+                      {PET_TYPE_KEYS.map((key) => (
+                        <TouchableOpacity
+                          key={key}
+                          style={[
+                            styles.petTypeButton,
+                            newPetType === key && styles.petTypeButtonSelected,
+                          ]}
+                          onPress={() => setNewPetType(key)}
+                        >
+                          <Text style={[
+                            styles.petTypeText,
+                            newPetType === key && styles.petTypeTextSelected,
+                          ]}>
+                            {t.booking.petTypes[key]}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.saveButton, isSavingPet && styles.saveButtonDisabled]}
+                      onPress={handleSaveNewPet}
+                      disabled={isSavingPet}
+                    >
+                      <Text style={styles.saveButtonText}>
+                        {isSavingPet ? t.booking.submitting : t.booking.addPetConfirm}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -441,6 +541,67 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2C4A3E',
     fontWeight: '600',
+  },
+  helperText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+  },
+  addPetForm: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+  },
+  input: {
+    backgroundColor: '#F5EDD8',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#333',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginBottom: 12,
+  },
+  petTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  petTypeButton: {
+    flex: 1,
+    backgroundColor: '#F5EDD8',
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+  },
+  petTypeButtonSelected: {
+    borderColor: '#2C4A3E',
+    backgroundColor: '#2C4A3E',
+  },
+  petTypeText: {
+    fontSize: 15,
+    color: '#2C4A3E',
+    fontWeight: '600',
+  },
+  petTypeTextSelected: {
+    color: '#F5EDD8',
+  },
+  saveButton: {
+    backgroundColor: '#2C4A3E',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F5EDD8',
   },
   petCard: {
     backgroundColor: 'white',
