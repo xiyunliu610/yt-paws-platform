@@ -79,6 +79,10 @@ export interface Service {
   name: string;
   description: string | null;
   price: number;
+  // 'flat': price is a one-off charge for the whole booking (e.g. grooming).
+  // 'per_day': price is multiplied by the number of days in the booking's
+  // date range (e.g. boarding).
+  pricingUnit: 'flat' | 'per_day';
   durationMinutes: number | null;
   isActive: boolean;
 }

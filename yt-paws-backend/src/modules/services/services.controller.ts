@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
+import type { PricingUnit } from '@prisma/client';
 
 @Controller('services')
 @UseGuards(JwtAuthGuard)
@@ -20,7 +21,14 @@ export class ServicesController {
   @Roles('owner', 'admin')
   create(
     @Req() req: AuthenticatedRequest,
-    @Body() body: { name: string; description?: string; price: number; durationMinutes?: number },
+    @Body()
+    body: {
+      name: string;
+      description?: string;
+      price: number;
+      pricingUnit?: PricingUnit;
+      durationMinutes?: number;
+    },
   ) {
     return this.servicesService.create(req.user, body);
   }
@@ -36,6 +44,7 @@ export class ServicesController {
       name?: string;
       description?: string;
       price?: number;
+      pricingUnit?: PricingUnit;
       durationMinutes?: number;
       isActive?: boolean;
     },

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Role } from '@prisma/client';
+import { Role, PricingUnit } from '@prisma/client';
 
 interface RequestingUser {
   userId: string;
@@ -12,6 +12,7 @@ interface CreateServiceInput {
   name: string;
   description?: string;
   price: number;
+  pricingUnit?: PricingUnit;
   durationMinutes?: number;
 }
 
@@ -53,6 +54,9 @@ export class ServicesService {
     if (data.price === undefined || data.price < 0) {
       throw new BadRequestException('Service price must be a non-negative number');
     }
+    if (data.pricingUnit !== undefined && !Object.values(PricingUnit).includes(data.pricingUnit)) {
+      throw new BadRequestException('pricingUnit must be "flat" or "per_day"');
+    }
 
     return this.prisma.service.create({
       data: {
@@ -60,6 +64,7 @@ export class ServicesService {
         name: data.name,
         description: data.description,
         price: data.price,
+        pricingUnit: data.pricingUnit,
         durationMinutes: data.durationMinutes,
       },
     });
@@ -78,6 +83,9 @@ export class ServicesService {
     }
     if (data.price !== undefined && data.price < 0) {
       throw new BadRequestException('Service price must be a non-negative number');
+    }
+    if (data.pricingUnit !== undefined && !Object.values(PricingUnit).includes(data.pricingUnit)) {
+      throw new BadRequestException('pricingUnit must be "flat" or "per_day"');
     }
 
     return this.prisma.service.update({ where: { id: serviceId }, data });

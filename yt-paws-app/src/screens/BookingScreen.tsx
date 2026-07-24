@@ -132,6 +132,11 @@ const BookingScreen = () => {
 
   const selectedService = services?.find((s) => s.id === selectedServiceId) ?? null;
   const selectedPet = pets?.find((p) => p.id === selectedPetId) ?? null;
+  const isPerDay = selectedService?.pricingUnit === 'per_day';
+  const durationDays = parseInt(duration || '1', 10);
+  const estimatedTotal = selectedService
+    ? (isPerDay ? selectedService.price * durationDays : selectedService.price)
+    : 0;
 
   const validateForm = () => {
     if (!selectedService) {
@@ -195,7 +200,9 @@ const BookingScreen = () => {
 
     const startDate = new Date(selectedDate);
     startDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
-    const endDate = new Date(startDate.getTime() + parseInt(duration || '1', 10) * 24 * 60 * 60 * 1000);
+    const endDate = isPerDay
+      ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
+      : new Date(startDate.getTime() + (selectedService.durationMinutes ?? 60) * 60 * 1000);
 
     try {
       await bookingsApi.create(token, {
@@ -270,7 +277,7 @@ const BookingScreen = () => {
                       styles.optionPrice,
                       selectedServiceId === service.id && styles.optionPriceSelected,
                     ]}>
-                      NZD ${service.price}
+                      NZD ${service.price}{service.pricingUnit === 'per_day' ? `/${t.booking.dayUnit.replace(/s$/, '')}` : ''}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -446,36 +453,38 @@ const BookingScreen = () => {
             )}
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.label}>{t.booking.durationLabel}</Text>
-            <View style={styles.durationContainer}>
-              <TouchableOpacity
-                style={styles.durationButton}
-                onPress={() => {
-                  const current = parseInt(duration);
-                  if (current > 1) setDuration((current - 1).toString());
-                }}
-              >
-                <Text style={styles.durationButtonText}>-</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={styles.durationInput}
-                value={duration}
-                onChangeText={setDuration}
-                keyboardType="number-pad"
-                editable={!isSubmitting}
-              />
-              <TouchableOpacity
-                style={styles.durationButton}
-                onPress={() => {
-                  const current = parseInt(duration);
-                  setDuration((current + 1).toString());
-                }}
-              >
-                <Text style={styles.durationButtonText}>+</Text>
-              </TouchableOpacity>
+          {isPerDay && (
+            <View style={styles.section}>
+              <Text style={styles.label}>{t.booking.durationLabel}</Text>
+              <View style={styles.durationContainer}>
+                <TouchableOpacity
+                  style={styles.durationButton}
+                  onPress={() => {
+                    const current = parseInt(duration);
+                    if (current > 1) setDuration((current - 1).toString());
+                  }}
+                >
+                  <Text style={styles.durationButtonText}>-</Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.durationInput}
+                  value={duration}
+                  onChangeText={setDuration}
+                  keyboardType="number-pad"
+                  editable={!isSubmitting}
+                />
+                <TouchableOpacity
+                  style={styles.durationButton}
+                  onPress={() => {
+                    const current = parseInt(duration);
+                    setDuration((current + 1).toString());
+                  }}
+                >
+                  <Text style={styles.durationButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          )}
 
           {selectedService && (
             <View style={styles.priceCard}>
@@ -491,15 +500,17 @@ const BookingScreen = () => {
                 <Text style={styles.priceLabel}>{t.booking.priceTime}</Text>
                 <Text style={styles.priceValue}>{formatTime(selectedTime)}</Text>
               </View>
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>{t.booking.priceDuration}</Text>
-                <Text style={styles.priceValue}>{duration} {t.booking.dayUnit}</Text>
-              </View>
+              {isPerDay && (
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>{t.booking.priceDuration}</Text>
+                  <Text style={styles.priceValue}>{duration} {t.booking.dayUnit}</Text>
+                </View>
+              )}
               <View style={styles.priceDivider} />
               <View style={styles.priceRow}>
                 <Text style={styles.priceTotalLabel}>{t.booking.estimatedTotal}</Text>
                 <Text style={styles.priceTotalValue}>
-                  NZD ${selectedService.price}
+                  NZD ${estimatedTotal}
                 </Text>
               </View>
               <Text style={styles.priceNote}>
