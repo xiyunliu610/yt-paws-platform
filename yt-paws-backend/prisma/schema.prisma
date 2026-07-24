@@ -26,6 +26,11 @@ enum PaymentMethod {
   wechat_qr
 }
 
+enum PricingUnit {
+  flat
+  per_day
+}
+
 enum PaymentStatus {
   pending
   pending_verification
@@ -101,6 +106,11 @@ model Service {
   name            String
   description     String?
   price           Float
+  // Whether `price` is charged once per booking (e.g. grooming) or per
+  // calendar day of the booking's date range (e.g. boarding). Booking itself
+  // has no stored total; this only drives the estimate shown to the customer
+  // until the payments module computes a real charge.
+  pricingUnit     PricingUnit @default(flat)
   durationMinutes Int?
   isActive        Boolean   @default(true)
   bookings        Booking[]

@@ -72,3 +72,54 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     }),
 };
+
+export interface Service {
+  id: string;
+  businessId: string;
+  name: string;
+  description: string | null;
+  price: number;
+  // 'flat': price is a one-off charge for the whole booking (e.g. grooming).
+  // 'per_day': price is multiplied by the number of days in the booking's
+  // date range (e.g. boarding).
+  pricingUnit: 'flat' | 'per_day';
+  durationMinutes: number | null;
+  isActive: boolean;
+}
+
+export const servicesApi = {
+  list: (token: string) => request<Service[]>('/services', {}, token),
+};
+
+export interface Pet {
+  id: string;
+  ownerId: string;
+  name: string;
+  species: string | null;
+  breed: string | null;
+}
+
+export const petsApi = {
+  list: (token: string) => request<Pet[]>('/pets', {}, token),
+
+  create: (token: string, data: { name: string; species?: string }) =>
+    request<Pet>('/pets', { method: 'POST', body: JSON.stringify(data) }, token),
+};
+
+export interface Booking {
+  id: string;
+  businessId: string;
+  customerId: string;
+  petId: string;
+  serviceId: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+}
+
+export const bookingsApi = {
+  create: (
+    token: string,
+    data: { serviceId: string; petId: string; startDate: string; endDate: string },
+  ) => request<Booking>('/bookings', { method: 'POST', body: JSON.stringify(data) }, token),
+};

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,19 +8,20 @@ import {
   TextInput,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import { ApiError, servicesApi, petsApi, bookingsApi, Service, Pet } from '../api/client';
 
-type ServiceKey = 'boarding' | 'dayCare' | 'grooming' | 'houseVisit';
 type PetTypeKey = 'dog' | 'cat' | 'other';
 
 type PreselectedService = {
-  key: ServiceKey;
-  name?: string;
+  name: string;
 };
 
 type RootStackParamList = {
@@ -31,36 +32,60 @@ type RootStackParamList = {
 type BookingNavigationProp = StackNavigationProp<RootStackParamList, 'Booking'>;
 type BookingRouteProp = RouteProp<RootStackParamList, 'Booking'>;
 
-const SERVICE_KEYS: ServiceKey[] = ['boarding', 'dayCare', 'grooming', 'houseVisit'];
-const SERVICE_PRICES: Record<ServiceKey, number> = {
-  boarding: 45,
-  dayCare: 30,
-  grooming: 60,
-  houseVisit: 35,
-};
 const PET_TYPE_KEYS: PetTypeKey[] = ['dog', 'cat', 'other'];
-const DURATION_ELIGIBLE_SERVICES: ServiceKey[] = ['boarding', 'dayCare'];
 
 const BookingScreen = () => {
   const navigation = useNavigation<BookingNavigationProp>();
   const route = useRoute<BookingRouteProp>();
   const { t } = useLanguage();
+  const { token } = useAuth();
 
-  const preSelectedService = route.params?.service;
+  const preSelectedServiceName = route.params?.service?.name;
 
-  const [selectedServiceKey, setSelectedServiceKey] = useState<ServiceKey | ''>(
-    preSelectedService?.key ?? '',
-  );
-  const [petName, setPetName] = useState('');
-  const [petType, setPetType] = useState<PetTypeKey | ''>('');
+  const [services, setServices] = useState<Service[] | null>(null);
+  const [servicesFailed, setServicesFailed] = useState(false);
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+
+  const [pets, setPets] = useState<Pet[] | null>(null);
+  const [petsFailed, setPetsFailed] = useState(false);
+  const [selectedPetId, setSelectedPetId] = useState('');
+  const [isAddingPet, setIsAddingPet] = useState(false);
+  const [newPetName, setNewPetName] = useState('');
+  const [newPetType, setNewPetType] = useState<PetTypeKey | ''>('');
+  const [isSavingPet, setIsSavingPet] = useState(false);
+
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
   const [duration, setDuration] = useState('1');
-  const [specialRequests, setSpecialRequests] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+
+    servicesApi
+      .list(token)
+      .then((list) => {
+        setServices(list);
+        if (preSelectedServiceName) {
+          const match = list.find(
+            (s) => s.name.toLowerCase() === preSelectedServiceName.toLowerCase(),
+          );
+          if (match) setSelectedServiceId(match.id);
+        }
+      })
+      .catch(() => setServicesFailed(true));
+
+    petsApi
+      .list(token)
+      .then((list) => {
+        setPets(list);
+        setIsAddingPet(list.length === 0);
+      })
+      .catch(() => setPetsFailed(true));
+  }, [token]);
 
   const onDateChange = (event: any, date?: Date) => {
     if (Platform.OS === 'android') {
@@ -105,26 +130,21 @@ const BookingScreen = () => {
     return `${hours}:${minutes}`;
   };
 
-  const calculateTotal = () => {
-    if (!selectedServiceKey) return 0;
-    return SERVICE_PRICES[selectedServiceKey] * parseInt(duration || '1');
-  };
-
-  const isDurationEligible = selectedServiceKey
-    ? DURATION_ELIGIBLE_SERVICES.includes(selectedServiceKey)
-    : false;
+  const selectedService = services?.find((s) => s.id === selectedServiceId) ?? null;
+  const selectedPet = pets?.find((p) => p.id === selectedPetId) ?? null;
+  const isPerDay = selectedService?.pricingUnit === 'per_day';
+  const durationDays = parseInt(duration || '1', 10);
+  const estimatedTotal = selectedService
+    ? (isPerDay ? selectedService.price * durationDays : selectedService.price)
+    : 0;
 
   const validateForm = () => {
-    if (!selectedServiceKey) {
+    if (!selectedService) {
       Alert.alert(t.booking.errorTitle, t.booking.selectServiceError);
       return false;
     }
-    if (!petName.trim()) {
-      Alert.alert(t.booking.errorTitle, t.booking.enterPetName);
-      return false;
-    }
-    if (!petType) {
-      Alert.alert(t.booking.errorTitle, t.booking.selectPetType);
+    if (!selectedPet) {
+      Alert.alert(t.booking.errorTitle, t.booking.selectPetError);
       return false;
     }
 
@@ -141,21 +161,60 @@ const BookingScreen = () => {
     return true;
   };
 
+  const handleAddPet = async () => {
+    if (!token) return;
+    if (!newPetName.trim()) {
+      Alert.alert(t.booking.errorTitle, t.booking.enterPetName);
+      return;
+    }
+    if (!newPetType) {
+      Alert.alert(t.booking.errorTitle, t.booking.selectPetType);
+      return;
+    }
+
+    setIsSavingPet(true);
+    try {
+      const created = await petsApi.create(token, {
+        name: newPetName.trim(),
+        species: t.booking.petTypes[newPetType],
+      });
+      setPets((prev) => [...(prev ?? []), created]);
+      setSelectedPetId(created.id);
+      setNewPetName('');
+      setNewPetType('');
+      setIsAddingPet(false);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.booking.addPetFailedMessage;
+      Alert.alert(t.booking.addPetFailedTitle, message);
+    } finally {
+      setIsSavingPet(false);
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!validateForm() || !selectedServiceKey) {
+    if (!validateForm() || !selectedService || !selectedPet || !token) {
       return;
     }
 
     setIsSubmitting(true);
 
-    try {
-      // TODO: connect to the bookings API once it exists.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+    const startDate = new Date(selectedDate);
+    startDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+    const endDate = isPerDay
+      ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
+      : new Date(startDate.getTime() + (selectedService.durationMinutes ?? 60) * 60 * 1000);
 
-      const serviceName = t.home.services[selectedServiceKey].name;
+    try {
+      await bookingsApi.create(token, {
+        serviceId: selectedService.id,
+        petId: selectedPet.id,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      });
+
       const message = t.booking.successMessage
-        .replace('{pet}', petName)
-        .replace('{service}', serviceName)
+        .replace('{pet}', selectedPet.name)
+        .replace('{service}', selectedService.name)
         .replace('{date}', formatDate(selectedDate))
         .replace('{time}', formatTime(selectedTime));
 
@@ -166,8 +225,12 @@ const BookingScreen = () => {
         },
       ]);
     } catch (error) {
-      console.error('Booking submission failed:', error);
-      Alert.alert(t.booking.submitFailedTitle, t.booking.submitFailedMessage);
+      if (error instanceof ApiError && error.statusCode === 409) {
+        Alert.alert(t.booking.errorTitle, t.booking.conflictErrorMessage);
+      } else {
+        const message = error instanceof ApiError ? error.message : t.booking.submitFailedMessage;
+        Alert.alert(t.booking.submitFailedTitle, message);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -187,65 +250,135 @@ const BookingScreen = () => {
         <View style={styles.content}>
           <View style={styles.section}>
             <Text style={styles.label}>{t.booking.selectService}</Text>
-            <View style={styles.optionsGrid}>
-              {SERVICE_KEYS.map((key) => (
-                <TouchableOpacity
-                  key={key}
-                  style={[
-                    styles.optionCard,
-                    selectedServiceKey === key && styles.optionCardSelected,
-                  ]}
-                  onPress={() => setSelectedServiceKey(key)}
-                >
-                  <Text style={[
-                    styles.optionText,
-                    selectedServiceKey === key && styles.optionTextSelected,
-                  ]}>
-                    {t.home.services[key].name}
-                  </Text>
-                  <Text style={[
-                    styles.optionPrice,
-                    selectedServiceKey === key && styles.optionPriceSelected,
-                  ]}>
-                    NZD ${SERVICE_PRICES[key]}/{t.booking.serviceUnits[key]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {services === null ? (
+              <ActivityIndicator color="#2C4A3E" />
+            ) : servicesFailed ? (
+              <Text style={styles.helperText}>{t.booking.loadServicesFailed}</Text>
+            ) : services.length === 0 ? (
+              <Text style={styles.helperText}>{t.booking.noServicesAvailable}</Text>
+            ) : (
+              <View style={styles.optionsGrid}>
+                {services.map((service) => (
+                  <TouchableOpacity
+                    key={service.id}
+                    style={[
+                      styles.optionCard,
+                      selectedServiceId === service.id && styles.optionCardSelected,
+                    ]}
+                    onPress={() => setSelectedServiceId(service.id)}
+                  >
+                    <Text style={[
+                      styles.optionText,
+                      selectedServiceId === service.id && styles.optionTextSelected,
+                    ]}>
+                      {service.name}
+                    </Text>
+                    <Text style={[
+                      styles.optionPrice,
+                      selectedServiceId === service.id && styles.optionPriceSelected,
+                    ]}>
+                      NZD ${service.price}{service.pricingUnit === 'per_day' ? `/${t.booking.dayUnit.replace(/s$/, '')}` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.label}>{t.booking.petNameLabel}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder={t.booking.petNamePlaceholder}
-              value={petName}
-              onChangeText={setPetName}
-              editable={!isSubmitting}
-            />
-          </View>
+            <Text style={styles.label}>{t.booking.selectPetLabel}</Text>
+            {pets === null ? (
+              <ActivityIndicator color="#2C4A3E" />
+            ) : petsFailed ? (
+              <Text style={styles.helperText}>{t.booking.loadPetsFailed}</Text>
+            ) : (
+              <>
+                {pets.length > 0 && !isAddingPet && (
+                  <View style={styles.optionsGrid}>
+                    {pets.map((pet) => (
+                      <TouchableOpacity
+                        key={pet.id}
+                        style={[
+                          styles.optionCard,
+                          selectedPetId === pet.id && styles.optionCardSelected,
+                        ]}
+                        onPress={() => setSelectedPetId(pet.id)}
+                      >
+                        <Text style={[
+                          styles.optionText,
+                          selectedPetId === pet.id && styles.optionTextSelected,
+                        ]}>
+                          {pet.name}
+                        </Text>
+                        {!!pet.species && (
+                          <Text style={[
+                            styles.optionPrice,
+                            selectedPetId === pet.id && styles.optionPriceSelected,
+                          ]}>
+                            {pet.species}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
 
-          <View style={styles.section}>
-            <Text style={styles.label}>{t.booking.petTypeLabel}</Text>
-            <View style={styles.petTypeContainer}>
-              {PET_TYPE_KEYS.map((key) => (
-                <TouchableOpacity
-                  key={key}
-                  style={[
-                    styles.petTypeButton,
-                    petType === key && styles.petTypeButtonSelected,
-                  ]}
-                  onPress={() => setPetType(key)}
-                >
-                  <Text style={[
-                    styles.petTypeText,
-                    petType === key && styles.petTypeTextSelected,
-                  ]}>
-                    {t.booking.petTypes[key]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                {pets.length === 0 && !isAddingPet && (
+                  <Text style={styles.helperText}>{t.booking.noPetsYet}</Text>
+                )}
+
+                {!isAddingPet && (
+                  <TouchableOpacity onPress={() => setIsAddingPet(true)}>
+                    <Text style={styles.addPetLink}>+ {t.booking.addPetInline}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {isAddingPet && (
+                  <View style={styles.addPetForm}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder={t.booking.petNamePlaceholder}
+                      value={newPetName}
+                      onChangeText={setNewPetName}
+                      editable={!isSavingPet}
+                    />
+                    <View style={styles.petTypeContainer}>
+                      {PET_TYPE_KEYS.map((key) => (
+                        <TouchableOpacity
+                          key={key}
+                          style={[
+                            styles.petTypeButton,
+                            newPetType === key && styles.petTypeButtonSelected,
+                          ]}
+                          onPress={() => setNewPetType(key)}
+                        >
+                          <Text style={[
+                            styles.petTypeText,
+                            newPetType === key && styles.petTypeTextSelected,
+                          ]}>
+                            {t.booking.petTypes[key]}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.submitButton, isSavingPet && styles.submitButtonDisabled]}
+                      onPress={handleAddPet}
+                      disabled={isSavingPet}
+                    >
+                      <Text style={styles.submitButtonText}>
+                        {isSavingPet ? t.booking.submitting : t.booking.addPetConfirm}
+                      </Text>
+                    </TouchableOpacity>
+                    {pets.length > 0 && (
+                      <TouchableOpacity onPress={() => setIsAddingPet(false)}>
+                        <Text style={styles.addPetLink}>{t.profile.cancel}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -320,7 +453,7 @@ const BookingScreen = () => {
             )}
           </View>
 
-          {isDurationEligible && (
+          {isPerDay && (
             <View style={styles.section}>
               <Text style={styles.label}>{t.booking.durationLabel}</Text>
               <View style={styles.durationContainer}>
@@ -353,25 +486,11 @@ const BookingScreen = () => {
             </View>
           )}
 
-          <View style={styles.section}>
-            <Text style={styles.label}>{t.booking.specialRequestsLabel}</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder={t.booking.specialRequestsPlaceholder}
-              value={specialRequests}
-              onChangeText={setSpecialRequests}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              editable={!isSubmitting}
-            />
-          </View>
-
-          {selectedServiceKey && (
+          {selectedService && (
             <View style={styles.priceCard}>
               <View style={styles.priceRow}>
                 <Text style={styles.priceLabel}>{t.booking.priceService}</Text>
-                <Text style={styles.priceValue}>{t.home.services[selectedServiceKey].name}</Text>
+                <Text style={styles.priceValue}>{selectedService.name}</Text>
               </View>
               <View style={styles.priceRow}>
                 <Text style={styles.priceLabel}>{t.booking.priceDate}</Text>
@@ -381,7 +500,7 @@ const BookingScreen = () => {
                 <Text style={styles.priceLabel}>{t.booking.priceTime}</Text>
                 <Text style={styles.priceValue}>{formatTime(selectedTime)}</Text>
               </View>
-              {isDurationEligible && (
+              {isPerDay && (
                 <View style={styles.priceRow}>
                   <Text style={styles.priceLabel}>{t.booking.priceDuration}</Text>
                   <Text style={styles.priceValue}>{duration} {t.booking.dayUnit}</Text>
@@ -391,7 +510,7 @@ const BookingScreen = () => {
               <View style={styles.priceRow}>
                 <Text style={styles.priceTotalLabel}>{t.booking.estimatedTotal}</Text>
                 <Text style={styles.priceTotalValue}>
-                  NZD ${calculateTotal()}
+                  NZD ${estimatedTotal}
                 </Text>
               </View>
               <Text style={styles.priceNote}>
@@ -460,6 +579,10 @@ const styles = StyleSheet.create({
     color: '#2C4A3E',
     marginBottom: 12,
   },
+  helperText: {
+    fontSize: 14,
+    color: '#666',
+  },
   optionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -497,6 +620,15 @@ const styles = StyleSheet.create({
     color: '#F5EDD8',
     opacity: 0.9,
   },
+  addPetLink: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2C4A3E',
+    marginTop: 4,
+  },
+  addPetForm: {
+    marginTop: 12,
+  },
   input: {
     backgroundColor: 'white',
     borderRadius: 12,
@@ -505,14 +637,12 @@ const styles = StyleSheet.create({
     color: '#333',
     borderWidth: 1,
     borderColor: '#E0E0E0',
-  },
-  textArea: {
-    height: 100,
-    paddingTop: 16,
+    marginBottom: 12,
   },
   petTypeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 12,
   },
   petTypeButton: {
     flex: 1,
