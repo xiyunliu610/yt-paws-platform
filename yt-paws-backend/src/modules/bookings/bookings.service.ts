@@ -29,10 +29,15 @@ export class BookingsService {
   // booked, a staff member sees what's assigned to them, and an
   // owner/admin sees everything in their business.
   async findMine(user: RequestingUser) {
+    // Pet/service names are joined in so list screens (e.g. the Home
+    // screen's "Upcoming" widget) don't need a second round-trip per booking.
+    const include = { pet: { select: { name: true } }, service: { select: { name: true } } };
+
     if (user.role === Role.customer) {
       return this.prisma.booking.findMany({
         where: { customerId: user.userId },
         orderBy: { createdAt: 'desc' },
+        include,
       });
     }
 
@@ -40,6 +45,7 @@ export class BookingsService {
       return this.prisma.booking.findMany({
         where: { assignedStaffId: user.userId },
         orderBy: { createdAt: 'desc' },
+        include,
       });
     }
 
@@ -49,6 +55,7 @@ export class BookingsService {
     return this.prisma.booking.findMany({
       where: { businessId: user.businessId },
       orderBy: { createdAt: 'desc' },
+      include,
     });
   }
 
@@ -123,6 +130,38 @@ export class BookingsService {
     return this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: BookingStatus.cancelled },
+    });
+  }
+
+  // Forward-only lifecycle steps a booking passes through on its way to
+  // completion. Not itself a named PRD user story, but required plumbing:
+  // nothing else in the API can ever move a booking to in_progress, which
+  // US-06.1 (daily reports) requires as a precondition.
+  private static readonly NEXT_STATUS: Partial<Record<BookingStatus, BookingStatus>> = {
+    [BookingStatus.pending]: BookingStatus.confirmed,
+    [BookingStatus.confirmed]: BookingStatus.in_progress,
+    [BookingStatus.in_progress]: BookingStatus.completed,
+  };
+
+  async updateStatus(requester: RequestingUser, bookingId: string, nextStatus: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+    if (!requester.businessId || booking.businessId !== requester.businessId) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    const expectedNext = BookingsService.NEXT_STATUS[booking.status];
+    if (!expectedNext || expectedNext !== nextStatus) {
+      throw new BadRequestException(
+        `Cannot move a booking from "${booking.status}" to "${nextStatus}"`,
+      );
+    }
+
+    return this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: expectedNext },
     });
   }
 

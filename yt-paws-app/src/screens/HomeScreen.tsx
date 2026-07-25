@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   StatusBar,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
+import { bookingsApi, Booking } from '../api/client';
 
 type ServiceKey = 'boarding' | 'dayCare' | 'grooming' | 'houseVisit';
 
@@ -41,7 +42,7 @@ const FEATURE_KEYS = ['team', 'care', 'local', 'updates'] as const;
 
 const HomeScreen = () => {
   const navigation = useNavigation<HomeNavigationProp>();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { t } = useLanguage();
   const userName = user?.name ?? 'Guest';
 
@@ -55,16 +56,36 @@ const HomeScreen = () => {
     }),
   );
 
-  // Mock data until the bookings module exists.
-  const upcomingBookings = [
-    {
-      id: 1,
-      petName: 'Lucky',
-      serviceKey: 'boarding' as ServiceKey,
-      date: '2026-05-18',
-      time: '09:00',
-    },
-  ];
+  const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
+
+  // Refetch on focus so a booking made from BookingScreen shows up here as
+  // soon as the user comes back to Home, without needing an app restart.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      bookingsApi
+        .mine(token)
+        .then((bookings) => {
+          const now = new Date();
+          const upcoming = bookings
+            .filter((b) => (b.status === 'pending' || b.status === 'confirmed') && new Date(b.startDate) >= now)
+            .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+            .slice(0, 3);
+          setUpcomingBookings(upcoming);
+        })
+        .catch(() => setUpcomingBookings([]));
+    }, [token]),
+  );
+
+  const formatBookingDateTime = (isoDate: string) => {
+    const date = new Date(isoDate);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} · ${hours}:${minutes}`;
+  };
 
   const navigateToBooking = (service?: Service) => {
     if (service) {
@@ -141,13 +162,13 @@ const HomeScreen = () => {
                   style={styles.bookingCard}
                 >
                   <View style={styles.bookingIcon}>
-                    <Text style={styles.bookingIconText}>{booking.petName.charAt(0)}</Text>
+                    <Text style={styles.bookingIconText}>{(booking.pet?.name ?? '?').charAt(0)}</Text>
                   </View>
                   <View style={styles.bookingInfo}>
-                    <Text style={styles.bookingPetName}>{booking.petName}</Text>
-                    <Text style={styles.bookingService}>{t.home.services[booking.serviceKey].name}</Text>
+                    <Text style={styles.bookingPetName}>{booking.pet?.name}</Text>
+                    <Text style={styles.bookingService}>{booking.service?.name}</Text>
                     <Text style={styles.bookingDateTime}>
-                      {booking.date} · {booking.time}
+                      {formatBookingDateTime(booking.startDate)}
                     </Text>
                   </View>
                   <View style={styles.bookingArrow}>

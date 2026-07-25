@@ -1,0 +1,83 @@
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { Role, BookingStatus } from '@prisma/client';
+
+interface RequestingUser {
+  userId: string;
+  role: string;
+  businessId: string | null;
+}
+
+interface CreateReportInput {
+  text?: string;
+  mediaUrls?: string[];
+}
+
+@Injectable()
+export class ReportsService {
+  constructor(private prisma: PrismaService) {}
+
+  private async loadBookingForWrite(user: RequestingUser, bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    const isBusinessMember = !!user.businessId && booking.businessId === user.businessId;
+    const isAssignedStaff = user.role === Role.staff && booking.assignedStaffId === user.userId;
+    const isManager = (user.role === Role.owner || user.role === Role.admin) && isBusinessMember;
+    if (!isAssignedStaff && !isManager) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    return booking;
+  }
+
+  private async loadBookingForRead(user: RequestingUser, bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    const isCustomer = booking.customerId === user.userId;
+    const isBusinessMember = !!user.businessId && booking.businessId === user.businessId;
+    if (!isCustomer && !isBusinessMember) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    return booking;
+  }
+
+  // US-06.1: only while the booking is actively being carried out. Media
+  // upload/storage isn't implemented yet (see docs/03_System_Architecture.md
+  // §5 — presigned-URL flow is still a TBD provider), so mediaUrls are
+  // assumed to already be hosted somewhere; there's no server-side "file too
+  // large" check to perform without receiving the bytes ourselves.
+  async create(user: RequestingUser, bookingId: string, data: CreateReportInput) {
+    const booking = await this.loadBookingForWrite(user, bookingId);
+    if (booking.status !== BookingStatus.in_progress) {
+      throw new BadRequestException('Daily reports can only be added while the booking is in progress');
+    }
+    if (!data.text?.trim() && (!data.mediaUrls || data.mediaUrls.length === 0)) {
+      throw new BadRequestException('A daily report needs text or at least one media URL');
+    }
+
+    return this.prisma.dailyReport.create({
+      data: {
+        bookingId,
+        text: data.text,
+        mediaUrls: data.mediaUrls ?? [],
+      },
+    });
+  }
+
+  // US-06.2: multiple reports in one day show as separate chronological
+  // entries rather than overwriting each other, so this is just a plain list.
+  async findForBooking(user: RequestingUser, bookingId: string) {
+    await this.loadBookingForRead(user, bookingId);
+    return this.prisma.dailyReport.findMany({
+      where: { bookingId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+}
