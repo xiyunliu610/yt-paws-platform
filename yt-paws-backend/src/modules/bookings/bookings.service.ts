@@ -29,10 +29,15 @@ export class BookingsService {
   // booked, a staff member sees what's assigned to them, and an
   // owner/admin sees everything in their business.
   async findMine(user: RequestingUser) {
+    // Pet/service names are joined in so list screens (e.g. the Home
+    // screen's "Upcoming" widget) don't need a second round-trip per booking.
+    const include = { pet: { select: { name: true } }, service: { select: { name: true } } };
+
     if (user.role === Role.customer) {
       return this.prisma.booking.findMany({
         where: { customerId: user.userId },
         orderBy: { createdAt: 'desc' },
+        include,
       });
     }
 
@@ -40,6 +45,7 @@ export class BookingsService {
       return this.prisma.booking.findMany({
         where: { assignedStaffId: user.userId },
         orderBy: { createdAt: 'desc' },
+        include,
       });
     }
 
@@ -49,6 +55,7 @@ export class BookingsService {
     return this.prisma.booking.findMany({
       where: { businessId: user.businessId },
       orderBy: { createdAt: 'desc' },
+      include,
     });
   }
 

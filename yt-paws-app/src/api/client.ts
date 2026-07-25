@@ -115,6 +115,9 @@ export interface Booking {
   status: string;
   startDate: string;
   endDate: string;
+  // Only present on responses from bookingsApi.mine(), which joins these in.
+  pet?: { name: string };
+  service?: { name: string };
 }
 
 export const bookingsApi = {
@@ -122,4 +125,6 @@ export const bookingsApi = {
     token: string,
     data: { serviceId: string; petId: string; startDate: string; endDate: string },
   ) => request<Booking>('/bookings', { method: 'POST', body: JSON.stringify(data) }, token),
+
+  mine: (token: string) => request<Booking[]>('/bookings/mine', {}, token),
 };
