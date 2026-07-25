@@ -47,6 +47,11 @@ model Business {
   id        String    @id @default(uuid()) @db.Uuid
   name      String
   region    String?
+  // Static image of the business's personal WeChat QR code, shown to
+  // customers during WeChat payment (US-04.2). There's no official merchant
+  // API integration in V1, so this is just a URL the owner sets, not
+  // something the platform generates.
+  wechatQrCodeUrl String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   staff     User[]
@@ -149,6 +154,10 @@ model Payment {
   amount        Float
   status        PaymentStatus @default(pending)
   referenceNote String?
+  // Provider-side identifier used to correlate an async callback back to
+  // this row (e.g. the Stripe PaymentIntent id). Null for wechat_qr, which
+  // has no callback and is reconciled manually instead.
+  providerRef   String?
   verifiedAt    DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
