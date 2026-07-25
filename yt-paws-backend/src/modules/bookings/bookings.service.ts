@@ -133,6 +133,38 @@ export class BookingsService {
     });
   }
 
+  // Forward-only lifecycle steps a booking passes through on its way to
+  // completion. Not itself a named PRD user story, but required plumbing:
+  // nothing else in the API can ever move a booking to in_progress, which
+  // US-06.1 (daily reports) requires as a precondition.
+  private static readonly NEXT_STATUS: Partial<Record<BookingStatus, BookingStatus>> = {
+    [BookingStatus.pending]: BookingStatus.confirmed,
+    [BookingStatus.confirmed]: BookingStatus.in_progress,
+    [BookingStatus.in_progress]: BookingStatus.completed,
+  };
+
+  async updateStatus(requester: RequestingUser, bookingId: string, nextStatus: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+    if (!requester.businessId || booking.businessId !== requester.businessId) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    const expectedNext = BookingsService.NEXT_STATUS[booking.status];
+    if (!expectedNext || expectedNext !== nextStatus) {
+      throw new BadRequestException(
+        `Cannot move a booking from "${booking.status}" to "${nextStatus}"`,
+      );
+    }
+
+    return this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: expectedNext },
+    });
+  }
+
   // PRD US-03.6: owner assigns a booking to a staff member of the same business.
   async assignStaff(requester: RequestingUser, bookingId: string, staffId: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });

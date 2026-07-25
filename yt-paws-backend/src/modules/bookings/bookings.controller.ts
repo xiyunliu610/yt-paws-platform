@@ -38,4 +38,15 @@ export class BookingsController {
   ) {
     return this.bookingsService.assignStaff(req.user, id, body.staffId);
   }
+
+  @Patch(':id/status')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  updateStatus(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: { status: string },
+  ) {
+    return this.bookingsService.updateStatus(req.user, id, body.status);
+  }
 }
