@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.4
-**Last Updated:** 2026-07-02
+**Document Status:** Draft v0.5
+**Last Updated:** 2026-07-26
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---
@@ -225,7 +225,7 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 |---|---|---|
 | 01 | Project Overview | ✅ Completed (this document) |
 | 02 | Product Requirements | ✅ Completed |
-| 03 | System Architecture | ⏳ Not started |
+| 03 | System Architecture | ✅ Completed |
 | 04 | Database Design | ⏳ Not started |
 | 05 | API Design | ⏳ Not started |
 | 06 | AI Agent Design | ⏳ Not started |
@@ -251,3 +251,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-07-02 | v0.2 | Adopted PetHome/Y\&T Paws two-tier naming; confirmed multi-tenant extensibility direction; integrated content from uploaded project_overview.docx; added business challenges, design principles, concrete NFR targets, and the full Version 1–4 roadmap | Xiyun Liu |
 | 2026-07-02 | v0.3 | Added project positioning statement (commercial-grade standard, not an academic demo); added Assumptions section; added the 15-document documentation map; translated to English | Xiyun Liu |
 | 2026-07-22 | v0.4 | Clarified in Section 11 that business onboarding is self-service from Version 1 onward (not admin-provisioned), since the platform is intended to be resold to other pet care businesses later | Xiyun Liu |
+| 2026-07-26 | v0.5 | Corrected the Documentation Map: `03_System_Architecture.md` had reached v0.5 but was still listed as "Not started" | Xiyun Liu |

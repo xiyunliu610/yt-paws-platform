@@ -1,8 +1,8 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.5
+**Document Status:** Draft v0.6
 **Related Document:** `01_Project_Overview.md`
-**Last Updated:** 2026-07-02
+**Last Updated:** 2026-07-26
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 **Scope:** Version 1 (six core modules, of equal priority, sequenced according to current development progress)
 
@@ -30,7 +30,7 @@ Before diving into individual modules, roles need to be defined clearly — beca
 |---|---|---|
 | **Customer** | The platform's end user: books services, manages pet profiles, views daily reports | ✅ Implemented |
 | **Business Owner** (currently Y&T Paws) | Manages bookings, confirms payments, publishes daily reports, views their own business's operational data | ✅ Implemented |
-| **Staff** | As a business grows, the Business Owner creates staff accounts under their business and assigns incoming bookings to them to carry out; staff have no business-level admin permissions (e.g. payment verification, account management) | ⏳ Planned for Version 1 — see US-03.5/US-03.6 |
+| **Staff** | As a business grows, the Business Owner creates staff accounts under their business and assigns incoming bookings to them to carry out; staff have no business-level admin permissions (e.g. payment verification, account management) | ✅ Implemented — see US-03.5/US-03.6 |
 | **System Administrator** | Represents the PetHome platform operator itself (not a business), for cross-business, system-level management, in preparation for future multi-business SaaS (Version 4) | ⏳ Reserved role — not implemented in Version 1 |
 
 **Design Principle:** The `User` table includes a `role` field from Version 1 onward (enum: `customer` / `staff` / `owner` / `admin`), even though Admin has no corresponding functional screens yet — this avoids a future data migration. See `04_Database_Design.md` for detailed field design.
@@ -93,6 +93,8 @@ Corresponding backend module: `pets`
 - Given required fields (name, breed) are empty, When the user submits, Then the system blocks submission and highlights the missing fields
 - Given the user uploads a pet photo, When the upload succeeds, Then the photo displays on the pet's profile card
 
+*Partially implemented: `POST /pets` requires only `name` (not `breed` as the AC above states — the backend hasn't been tightened to match yet). Wired into the app as a minimal name + species form in two places (`ProfileScreen`'s "My Pets" and an inline prompt inside `BookingScreen` when a customer has no pets yet); neither collects age, weight, spay/neuter status, personality or dietary notes, and there's no photo upload.*
+
 ### US-02.2 View/Edit Pet Profile
 > As a logged-in user, I want to view and edit information for pets I've already added, so that I can keep it up to date.
 
@@ -100,12 +102,16 @@ Corresponding backend module: `pets`
 - Given a user has multiple pet profiles, When they open "My Pets", Then the system displays all pet cards belonging to that user
 - Given the user edits a field and saves, When the save succeeds, Then the update takes effect immediately and is used in future bookings
 
+*Partially implemented: `GET /pets` is wired into `ProfileScreen`'s "My Pets" list. `PATCH /pets/:id` exists on the backend but nothing in the app calls it yet — there's no edit UI.*
+
 ### US-02.3 Health Record Association (PetHealthRecord)
 > As a logged-in user, I want to record health-related information for my pet (e.g. vaccinations, medical history), so that care providers can reference it in an emergency.
 
 **Acceptance Criteria**
 - Given the user adds a health record on the pet profile page, When submitted, Then the record is linked to that Pet and displayed in chronological order
 - Given a pet has no health records, When viewing that pet's profile, Then the system shows "No health records yet" rather than an error
+
+*Backend only: `POST/GET /pets/:id/health-records`. No frontend screen exists.*
 
 ---
 
@@ -120,6 +126,8 @@ Corresponding backend modules: `services`, `bookings`
 - Given a user opens the "Booking" page, When the page loads, Then the system displays all published services (boarding / drop-in visits, etc.) with name, price and duration
 - Given a service is currently unavailable (e.g. delisted), When the list loads, Then that service is hidden or marked "currently unavailable"
 
+*Already implemented: `GET /services` (customer view returns only `isActive` services), wired into `BookingScreen`. Services also carry a `pricingUnit` field (`flat` | `per_day`, default `flat`) so a service can either charge once per booking (grooming, house visit) or scale with the number of days booked (boarding) — see `03_System_Architecture.md` §4.1 for the field, and US-04.1 below for how it feeds into the payment amount.*
+
 ### US-03.2 Create a Booking
 > As a logged-in user, I want to select a service, my pet, and a date/time range and submit a booking, so that I can arrange care.
 
@@ -128,6 +136,8 @@ Corresponding backend modules: `services`, `bookings`
 - Given the user has no pet profiles, When they attempt to create a booking, Then the system prompts "Please add a pet first" and guides them to do so
 - Given the selected time slot conflicts with an existing booking (e.g. the business's capacity is full), When submitted, Then the system flags the conflict and blocks creation
 
+*Already implemented: `POST /bookings`, wired into `BookingScreen` (including an inline "add a pet" flow when the customer has no pet profiles yet). Conflict detection is scoped to the same pet's own overlapping bookings only — there's no `capacity` field on `Service`/`Business` yet, so business-wide capacity limits aren't enforced.*
+
 ### US-03.3 View Booking Status
 > As a logged-in user, I want to view my booking history and current status, so that I understand the progress of my service.
 
@@ -135,12 +145,16 @@ Corresponding backend modules: `services`, `bookings`
 - Given a user opens "My Bookings", When the page loads, Then bookings are shown in reverse chronological order with status (pending / confirmed / in progress / completed / cancelled)
 - Given a booking's status changes (e.g. the business confirms it), When the status updates, Then the user sees the latest status in real time or on next app open
 
+*Partially implemented: `GET /bookings/mine` (role-aware — customer/staff/owner each see their own natural slice, joined with pet/service names) powers the "Upcoming" widget on `HomeScreen`. There is no dedicated "My Bookings" history screen yet — `ProfileScreen`'s "My Bookings" menu item currently navigates to `ReportScreen`, which is a spending/stats dashboard, not a booking list. Booking status itself only advances via the business side (`PATCH /bookings/:id/status`, forward-only through pending → confirmed → in_progress → completed); there's no dedicated "business confirms" UI yet either.*
+
 ### US-03.4 Cancel a Booking
 > As a logged-in user, I want to cancel a booking within the allowed time window, so that I can respond to schedule changes.
 
 **Acceptance Criteria**
 - Given a booking's status is "Pending Confirmation" or "Confirmed" within the cancellation policy window, When the user taps cancel, Then the system updates the status to "Cancelled" and releases the time slot
 - Given a booking has passed the non-cancellable time window (exact rule to be confirmed with the business), When the user attempts to cancel, Then the system shows that cancellation is not allowed and why
+
+*Partially implemented: `PATCH /bookings/:id/cancel` (allowed for the booking's own customer, or the business's owner/admin; only while `pending`/`confirmed`) exists but isn't wired into the frontend yet — no cancel button in the app. The non-cancellable time window is still not implemented, consistent with the AC above marking the exact rule as unconfirmed.*
 
 ### US-03.5 Business Owner Creates a Staff Account
 > As a Business Owner, I want to create an account for a staff member under my business, so that I can start assigning them bookings.
@@ -150,6 +164,8 @@ Corresponding backend modules: `services`, `bookings`
 - Given the email is already registered, When the owner submits, Then the system rejects it with "email already registered" (same rule as US-01.1)
 - Given the requester is not a Business Owner (or Admin) for that business, When they call this action, Then the system returns 403
 
+*Already implemented: `POST /auth/staff`, backend only — no frontend screen for the owner to manage staff yet.*
+
 ### US-03.6 Business Owner Assigns a Booking to Staff
 > As a Business Owner, I want to assign an incoming booking to one of my staff, so that the right person carries it out.
 
@@ -158,6 +174,8 @@ Corresponding backend modules: `services`, `bookings`
 - Given the chosen staff member belongs to a different business, When the owner attempts the assignment, Then the system rejects it
 - Given a booking is reassigned to a different staff member, When the change is saved, Then only the newly assigned staff member sees it going forward (the previous assignee loses visibility)
 - Out of scope for Version 1: customers choosing their own staff member (see User Roles section above)
+
+*Already implemented: `PATCH /bookings/:id/assign`, backend only — no frontend screen for the owner to assign bookings yet.*
 
 ---
 
@@ -172,6 +190,8 @@ Corresponding backend module: `payments`
 - Given the user has completed booking details, When they choose Stripe payment, enter card details and submit, Then the system charges via Stripe and marks the Booking as "Paid"
 - Given the Stripe payment fails (e.g. card declined), When the failure result is returned, Then the system shows the failure reason, the Booking remains "Pending Payment", and retry is allowed
 
+*Already implemented, backend only: `POST /payments/stripe/:bookingId` creates a Stripe PaymentIntent plus a `Payment` row (`method: stripe`); `POST /payments/stripe/webhook` verifies the signature and marks it `paid`/`failed` once Stripe confirms. Note this marks the associated `Payment.status`, not `Booking.status` — `Booking` has no "paid" state in its enum, by design (see `03_System_Architecture.md` §6). Untested against a real Stripe account (no test API key configured in dev yet); no frontend payment screen exists.*
+
 ### US-04.2 Chinese User — WeChat QR Payment
 > As a Chinese-speaking user, I want to scan a WeChat QR code to complete payment, so that I can pay using a method I'm familiar with.
 
@@ -182,11 +202,15 @@ Corresponding backend module: `payments`
 
 > Note: The personal WeChat QR code is not an official merchant API and cannot auto-confirm receipt via callback, hence the "manual verification" flow. This is a key difference from the Stripe path and must be clearly documented in `03_System_Architecture.md`.
 
+*Already implemented, backend only: `POST /payments/wechat/:bookingId` returns the business's static QR code image (`Business.wechatQrCodeUrl`, settable by the owner via `PATCH /businesses/me` — there's no upload flow, just a URL field) plus a generated reference note; `PATCH /payments/:id/mark-paid` (customer) moves it to `pending_verification`; `PATCH /payments/:id/verify` (owner/admin only) confirms it as `paid`. "Notify the business to reconcile" is not implemented — Module 5 (Notifications) doesn't exist yet. No frontend payment screen exists.*
+
 ### US-04.3 View Payment History
 > As a logged-in user, I want to view my payment history, so that I can reconcile my bills.
 
 **Acceptance Criteria**
 - Given the user opens "Billing / Payment History", When the page loads, Then it displays the payment method, amount, status and time for each booking
+
+*Already implemented, backend only: `GET /payments/mine`. No frontend billing screen exists.*
 
 ### Payment Strategy and Future Expansion
 
@@ -236,12 +260,16 @@ Corresponding backend module: `reports`
 - Given an uploaded photo/video exceeds the system's allowed file size, When submitted, Then the system shows a "file too large" message and blocks the upload
 - Given there are multiple daily reports in one day (e.g. morning and evening), When viewing the report list, Then multiple entries display in chronological order rather than overwriting each other
 
+*Already implemented, backend only: `POST /reports/:bookingId` (the booking's assigned staff, or the business's owner/admin). Restricted to bookings in `in_progress` status — a new `PATCH /bookings/:id/status` endpoint (forward-only through pending → confirmed → in_progress → completed) was added to make that reachable at all, since nothing else moved a booking out of `pending`/`cancelled`. `mediaUrls` are assumed already hosted somewhere; there's no server-side "file too large" check, since Section 5's presigned-upload flow isn't implemented yet — the second AC above (file-too-large) is not enforced. No frontend screen exists for filing a report.*
+
 ### US-06.2 User Views Pet Daily Reports
 > As a logged-in user, I want to view daily reports for my pet during a care period, so that I can stay updated on my pet's condition.
 
 **Acceptance Criteria**
 - Given the user's pet has an associated in-progress/completed booking, When the user opens that booking's detail page, Then they see all related daily reports (text + media)
 - Given that booking has no daily reports yet, When the user views it, Then the system shows "No daily reports yet" rather than an error or blank page
+
+*Already implemented, backend only: `GET /reports/:bookingId` (the booking's own customer, or any member of the business), returned in chronological order. Note that "No daily reports yet" is simply an empty array `[]` — the friendly empty-state message itself is a frontend concern, not yet built since there's no report-viewing screen.*
 
 ---
 
@@ -268,3 +296,4 @@ Corresponding backend module: `reports`
 | 2026-07-02 | v0.3 | Added User Roles section (Customer/Business Owner/Staff/Admin); added Payment Strategy and Future Expansion subsection; added Notification Center future note to the Notifications module; translated to English | Xiyun Liu |
 | 2026-07-22 | v0.4 | Decided Staff scope for Version 1: Business Owner creates staff accounts and assigns bookings to them (US-03.5, US-03.6); customers choosing their own staff member is explicitly deferred until staff headcount justifies it | Xiyun Liu |
 | 2026-07-22 | v0.5 | Added US-01.4 Business (Owner) Registration: business onboarding is self-service from Version 1 onward (including for Y&T Paws itself), not an admin-provisioned setup step — this is the mechanism that will let the platform be resold to other businesses later without rework | Xiyun Liu |
+| 2026-07-26 | v0.6 | Synced implementation status across all six modules: Services/Bookings (US-03.1–03.6) and Pets (US-02.1–02.3) backends are wired into the app; Payments (US-04.1–04.3) and Daily Reports (US-06.1/06.2) are implemented on the backend only, with no frontend screens yet; documented the new `pricingUnit` field on Service and the `PATCH /bookings/:id/status` lifecycle endpoint | Xiyun Liu |
