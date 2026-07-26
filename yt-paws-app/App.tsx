@@ -10,10 +10,14 @@ import { LanguageProvider } from './src/i18n/LanguageContext';
 // Screens
 import LoginScreen from './src/screens/Auth/LoginScreen';
 import RegisterScreen from './src/screens/Auth/RegisterScreen';
+import RegisterBusinessScreen from './src/screens/Auth/RegisterBusinessScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import ReportScreen from './src/screens/ReportScreen';
+import MyBookingsScreen from './src/screens/MyBookingsScreen';
+import BookingDetailScreen from './src/screens/BookingDetailScreen';
+import PetDetailScreen from './src/screens/PetDetailScreen';
 
 const Stack = createStackNavigator();
 
@@ -68,6 +72,15 @@ const Navigation = () => {
         />
 
         <Stack.Screen
+          name="RegisterBusiness"
+          component={RegisterBusinessScreen}
+          options={{
+            title: 'Register Business',
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
           name="Home"
           component={HomeScreen}
           options={{
@@ -100,6 +113,33 @@ const Navigation = () => {
           component={ReportScreen}
           options={{
             title: 'My Reports',
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="MyBookings"
+          component={MyBookingsScreen}
+          options={{
+            title: 'My Bookings',
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="BookingDetail"
+          component={BookingDetailScreen}
+          options={{
+            title: 'Booking Details',
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="PetDetail"
+          component={PetDetailScreen}
+          options={{
+            title: 'Pet Details',
             headerShown: true,
           }}
         />
