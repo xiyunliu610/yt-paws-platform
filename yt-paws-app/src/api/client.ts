@@ -71,6 +71,18 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+
+  registerBusiness: (
+    businessName: string,
+    email: string,
+    password: string,
+    name: string,
+    phone?: string,
+  ) =>
+    request<AuthResponse>('/auth/register-business', {
+      method: 'POST',
+      body: JSON.stringify({ businessName, email, password, name, phone }),
+    }),
 };
 
 export interface Service {
@@ -97,6 +109,31 @@ export interface Pet {
   name: string;
   species: string | null;
   breed: string | null;
+  age: number | null;
+  weight: number | null;
+  personality: string | null;
+  dietNotes: string | null;
+  isNeutered: boolean | null;
+}
+
+export interface PetUpdateInput {
+  name?: string;
+  species?: string;
+  breed?: string;
+  age?: number;
+  weight?: number;
+  personality?: string;
+  dietNotes?: string;
+  isNeutered?: boolean;
+}
+
+export interface PetHealthRecord {
+  id: string;
+  petId: string;
+  type: string;
+  date: string;
+  nextDate: string | null;
+  notes: string | null;
 }
 
 export const petsApi = {
@@ -104,6 +141,23 @@ export const petsApi = {
 
   create: (token: string, data: { name: string; species?: string }) =>
     request<Pet>('/pets', { method: 'POST', body: JSON.stringify(data) }, token),
+
+  update: (token: string, petId: string, data: PetUpdateInput) =>
+    request<Pet>(`/pets/${petId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+
+  listHealthRecords: (token: string, petId: string) =>
+    request<PetHealthRecord[]>(`/pets/${petId}/health-records`, {}, token),
+
+  addHealthRecord: (
+    token: string,
+    petId: string,
+    data: { type: string; date: string; nextDate?: string; notes?: string },
+  ) =>
+    request<PetHealthRecord>(
+      `/pets/${petId}/health-records`,
+      { method: 'POST', body: JSON.stringify(data) },
+      token,
+    ),
 };
 
 export interface Booking {
@@ -127,4 +181,20 @@ export const bookingsApi = {
   ) => request<Booking>('/bookings', { method: 'POST', body: JSON.stringify(data) }, token),
 
   mine: (token: string) => request<Booking[]>('/bookings/mine', {}, token),
+
+  cancel: (token: string, bookingId: string) =>
+    request<Booking>(`/bookings/${bookingId}/cancel`, { method: 'PATCH' }, token),
+};
+
+export interface DailyReport {
+  id: string;
+  bookingId: string;
+  text: string | null;
+  mediaUrls: string[];
+  createdAt: string;
+}
+
+export const reportsApi = {
+  listForBooking: (token: string, bookingId: string) =>
+    request<DailyReport[]>(`/reports/${bookingId}`, {}, token),
 };

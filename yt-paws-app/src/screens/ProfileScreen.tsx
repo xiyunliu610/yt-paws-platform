@@ -24,6 +24,8 @@ type RootStackParamList = {
   Login: undefined;
   Profile: undefined;
   Report: undefined;
+  MyBookings: undefined;
+  PetDetail: { pet: Pet };
 };
 
 type ProfileNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
@@ -181,7 +183,7 @@ const ProfileScreen = () => {
   };
 
   const handleViewBookings = () => {
-    navigation.navigate('Report');
+    navigation.navigate('MyBookings');
   };
 
   const toggleLanguage = () => {
@@ -250,7 +252,11 @@ const ProfileScreen = () => {
                 )}
 
                 {pets.map((pet) => (
-                  <View key={pet.id} style={styles.petCard}>
+                  <TouchableOpacity
+                    key={pet.id}
+                    style={styles.petCard}
+                    onPress={() => navigation.navigate('PetDetail', { pet })}
+                  >
                     <View style={styles.petIcon}>
                       <Text style={styles.petIconText}>{pet.name.charAt(0)}</Text>
                     </View>
@@ -260,10 +266,10 @@ const ProfileScreen = () => {
                         {[pet.breed, pet.species].filter(Boolean).join(' · ') || '—'}
                       </Text>
                     </View>
-                    <TouchableOpacity style={styles.petArrow}>
+                    <View style={styles.petArrow}>
                       <Text style={styles.arrowText}>›</Text>
-                    </TouchableOpacity>
-                  </View>
+                    </View>
+                  </TouchableOpacity>
                 ))}
 
                 {isAddingPet && (

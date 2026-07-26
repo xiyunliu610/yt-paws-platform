@@ -167,6 +167,15 @@ const LoginScreen = () => {
               <Text style={styles.registerLink}>{t.login.signUp}</Text>
             </TouchableOpacity>
           </View>
+
+          <View style={styles.registerContainer}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('RegisterBusiness' as never)}
+              disabled={isLoading}
+            >
+              <Text style={styles.registerLink}>{t.registerBusiness.title}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

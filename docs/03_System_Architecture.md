@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.5
+**Document Status:** Draft v0.6
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-07-02
+**Last Updated:** 2026-07-26
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -48,6 +48,7 @@ flowchart TB
             Pets["pets module"]
             Services["services module"]
             Bookings["bookings module"]
+            Businesses["businesses module"]
             Payments["payments module"]
             Reports["reports module"]
         end
@@ -119,6 +120,7 @@ The following principles underpin all subsequent design decisions (database, API
 | `pets` | Pet profiles, health records | Module 2 |
 | `services` | Display and management of service offerings (boarding / drop-in, etc.) | Module 3 |
 | `bookings` | Booking creation, status transitions, cancellation logic, owner-to-staff assignment | Module 3 |
+| `businesses` | Business profile fields not set at registration (currently just the WeChat QR code image URL) | Module 4 (supporting) |
 | `payments` | Payment initiation, WeChat manual verification flow, payment records | Module 4 |
 | `reports` | Creation and viewing of pet daily reports | Module 6 |
 
@@ -166,6 +168,7 @@ erDiagram
         uuid id PK
         string name
         string region
+        string wechat_qr_code_url "nullable, owner-set via PATCH /businesses/me"
     }
     USER {
         uuid id PK
@@ -180,6 +183,7 @@ erDiagram
     SERVICE {
         uuid id PK
         uuid business_id FK
+        enum pricing_unit "flat (charge once) | per_day (charge x nights), default flat"
     }
     BOOKING {
         uuid id PK
@@ -195,6 +199,8 @@ erDiagram
         uuid booking_id FK
         enum method "stripe/wechat_qr"
         enum status
+        float amount "derived from Service.price x pricing_unit each time payment is initiated; Booking stores no total"
+        string provider_ref "nullable; e.g. Stripe PaymentIntent id, used to match webhook callbacks back to this row"
     }
     DAILY_REPORT {
         uuid id PK
@@ -208,6 +214,8 @@ erDiagram
 - The `User` table's `business_id` is **nullable**: a regular Customer does not belong to any business (`business_id = null`); only Owner/Staff roles are associated with a specific business
 - The benefit of this design: in Version 1, all query logic naturally filters by `business_id = Y&T Paws's ID`, so the code is nearly as simple as "pretending there's no multi-tenancy"; but when a second business is actually onboarded in the future, no schema changes are needed — only the application-layer logic for "how to isolate permissions across multiple business_id values" needs to be handled
 - `Booking.assigned_staff_id` (nullable, FK to `User`) lets the Owner assign an incoming booking to one of their staff internally; assignment is required to reference a staff/owner user with the same `business_id` as the booking (see PRD US-03.5/US-03.6). Customers picking their own staff member is out of scope for now — see 4.2
+- `Booking.status` only ever advances forward through `PATCH /bookings/:id/status` (owner/admin only): `pending → confirmed → in_progress → completed`, one step at a time; `cancelled` is a separate terminal state reached only via `PATCH /bookings/:id/cancel`. This endpoint isn't tied to a specific PRD user story — it exists because `in_progress` is a precondition for daily reports (US-06.1) and nothing else in the API could ever produce that transition
+- `Booking` itself stores no total/amount. `Payment.amount` is computed at payment-initiation time from `Service.price` and `Service.pricing_unit` (§6 below), so changing a service's price never requires touching historical bookings
 
 ### 4.2 What's Deliberately Out of Scope for Now
 Written down explicitly to avoid scope creep during development:
@@ -257,6 +265,8 @@ sequenceDiagram
 
 Payment services also follow the provider-agnostic principle: the architecture defines the abstract concept of a "payment method," with Stripe and WeChat being the two concrete implementations for the current stage.
 
+**Amount calculation:** `Booking` has no stored total. Whenever a payment is initiated (Stripe or WeChat), the `payments` module computes the amount from the booking's `Service`: if `Service.pricing_unit` is `flat`, the amount is just `Service.price`; if `per_day`, it's `Service.price × ceil((booking.endDate − booking.startDate) / 1 day)` (minimum 1 day). This keeps `Service.price` changes from ever needing to touch past bookings, at the cost of recomputing the amount fresh each time a payment is attempted for the same booking.
+
 ### 6.1 Stripe Payment Flow (New Zealand Users)
 
 ```mermaid
@@ -271,8 +281,10 @@ sequenceDiagram
     API-->>App: Return client_secret
     App->>PSP: Complete payment via official SDK
     PSP-->>API: Webhook callback with payment result
-    API->>API: Update Booking status to "Paid"
+    API->>API: Verify webhook signature, then update Payment status to "paid" (or "failed")
 ```
+
+**Implementation note:** the webhook updates `Payment.status`, not `Booking.status` — `Booking`'s status enum (`pending/confirmed/in_progress/completed/cancelled`) has no "paid" state; whether a booking has been paid is read off its associated `Payment` row(s) instead. The webhook handler matches the callback back to a `Payment` via `Payment.providerRef` (the Stripe PaymentIntent id, stored when the PaymentIntent is created) and requires `NestFactory.create(AppModule, { rawBody: true })` so the raw request body is available for Stripe's signature check before JSON-parsing runs.
 
 ### 6.2 WeChat QR Payment Flow (Chinese Users, Manual Verification)
 
@@ -286,12 +298,14 @@ sequenceDiagram
     API-->>App: Return business's QR code + reference note
     App->>App: User transfers via scan (outside the app)
     App->>API: User taps "I've Paid"
-    API->>API: Booking status → "Pending Manual Verification"
+    API->>API: Payment status → "pending_verification"
     API->>Owner: Notify business to reconcile payment
     Owner->>API: Business marks as "Verified"
-    API->>API: Booking status → "Paid"
+    API->>API: Payment status → "paid"
     API->>App: Notify user of payment confirmation
 ```
+
+**Implementation note:** as with Stripe, every state change here is on `Payment.status`, never `Booking.status`. "Notify the business to reconcile" and "notify user of payment confirmation" are not implemented — there's no Notification module yet (§7). The QR code itself is just `Business.wechat_qr_code_url`, a plain string the owner sets via `PATCH /businesses/me`; there's no image upload endpoint, consistent with §5's presigned-upload flow not being implemented yet.
 
 **Key difference:** The Stripe path is driven automatically by webhook; the WeChat path is driven by the business's manual action. These two paths are two independent strategy implementations within the `payments` module (corresponding to the "pluggable payment method" design principle in `02_Product_Requirements.md`), sharing the same `Payment` state machine but with different triggers for state transitions.
 
@@ -406,6 +420,11 @@ flowchart TB
 | Third-party service description approach | Provider-agnostic | Storage, push, AI, camera, etc. categories only define responsibilities without binding to a specific vendor, reducing future documentation and code changes when switching providers |
 | Business onboarding | Self-service registration (`POST /auth/register-business`) creates the `Business` row and its first `owner` User atomically; no admin-run setup step, not even for Y&T Paws | Keeps onboarding identical for the first tenant and the hundredth, which the Version 4 resale model depends on; building it self-service now is no more expensive than a one-off script and avoids retrofitting later |
 | Staff provisioning | Owner creates staff accounts directly (`POST /auth/staff`) with a system-generated temporary password returned to the owner, rather than an email invite flow | No transactional email infrastructure exists yet; owners already relay information to staff manually (WeChat, phone), so this fits current operating reality without new infrastructure |
+| Service pricing model | `Service.pricing_unit` enum (`flat` \| `per_day`, default `flat`) rather than a fixed per-service formula | Boarding is naturally priced per night, grooming/house-visits per session; a single field lets both coexist without a booking-total field or per-service special-casing in the payments module |
+| Payment amount storage | `Payment.amount` computed fresh from `Service.price`/`pricing_unit` at initiation time; `Booking` stores no total | Avoids a stale/duplicated total that could drift from the service's actual price; the tradeoff is that a service price change could affect a not-yet-paid booking, which is acceptable at V1's scale |
+| Stripe webhook correlation | `Payment.providerRef` stores the Stripe PaymentIntent id; the webhook handler looks up the `Payment` row by that id rather than by `bookingId` | A booking can have multiple payment attempts (retries after a decline); correlating by the specific PaymentIntent id (not just bookingId) avoids updating the wrong attempt |
+| Business profile updates | Minimal `businesses` module with a single `PATCH /businesses/me` (owner/admin only), rather than a general business-settings module | The only post-registration business field needed so far is the WeChat QR code URL; a fuller business-profile module can be built when more fields (e.g. logo, hours) are actually needed |
+| Booking status progression | `PATCH /bookings/:id/status`, forward-only through `pending → confirmed → in_progress → completed`, one step at a time (owner/admin only) | Daily reports (US-06.1) require a booking to be `in_progress`, and no endpoint could produce that transition before this was added; forward-only, single-step validation keeps the state machine simple and prevents skipping steps or reviving a cancelled booking |
 
 ---
 
@@ -418,3 +437,4 @@ flowchart TB
 | 2026-07-02 | v0.3 | Renamed "API Gateway" to "API Entry Point (Gateway Layer)" for accuracy (not an independent component like Kong/Nginx/AWS API Gateway); clarified Media Service is an architectural abstraction not implemented in Version 1; added Metrics step to the logging/monitoring pipeline; translated to English | Xiyun Liu |
 | 2026-07-22 | v0.4 | Added `Booking.assigned_staff_id` to the multi-tenant ERD and design notes for owner-to-staff booking assignment; documented that customer-facing staff selection is deliberately out of scope for now | Xiyun Liu |
 | 2026-07-22 | v0.5 | Documented self-service business registration and owner-provisioned staff accounts as ADR entries; updated `auth` module responsibility to include business/owner registration | Xiyun Liu |
+| 2026-07-26 | v0.6 | Synced with the now-implemented `payments`, `reports`, and `businesses` modules: added `Service.pricing_unit`, `Payment.provider_ref` and `Business.wechat_qr_code_url` to the multi-tenant ERD; documented the `PATCH /bookings/:id/status` lifecycle endpoint; corrected the Stripe/WeChat sequence diagrams, which incorrectly showed `Booking.status` becoming "Paid" — that field lives on `Payment.status` instead, since `Booking`'s status enum has no paid state; added amount-calculation and ADR entries for these decisions | Xiyun Liu |
