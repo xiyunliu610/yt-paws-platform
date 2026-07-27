@@ -21,6 +21,7 @@ export class PetsController {
       personality?: string;
       dietNotes?: string;
       isNeutered?: boolean;
+      photoUrl?: string;
     },
   ) {
     return this.petsService.create(req.user.userId, body);
@@ -50,6 +51,7 @@ export class PetsController {
       personality?: string;
       dietNotes?: string;
       isNeutered?: boolean;
+      photoUrl?: string;
     },
   ) {
     return this.petsService.update(req.user.userId, id, body);

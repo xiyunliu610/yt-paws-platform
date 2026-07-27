@@ -68,11 +68,17 @@ model User {
   name             String?
   phone            String?
   role             Role      @default(customer)
+  // Expo push token, registered client-side after the user grants
+  // notification permission. Null until then, or if they never grant it
+  // (or are running in an environment where remote push isn't available,
+  // e.g. Expo Go on SDK 53+) — in-app notifications work regardless.
+  pushToken        String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   pets             Pet[]
   bookings         Booking[] @relation("CustomerBookings")
   assignedBookings Booking[] @relation("StaffAssignedBookings")
+  notifications    Notification[]
 }
 
 model Pet {
@@ -85,6 +91,10 @@ model Pet {
   personality   String?
   dietNotes     String?
   isNeutered    Boolean?
+  // Same interim approach as DailyReport.mediaUrls (see
+  // docs/03_System_Architecture.md §5.3): a data: URI until real cloud
+  // storage exists, not a hosted URL.
+  photoUrl      String?
   ownerId       String            @db.Uuid
   owner         User              @relation(fields: [ownerId], references: [id])
   healthRecords PetHealthRecord[]
@@ -170,4 +180,18 @@ model DailyReport {
   text      String?
   mediaUrls String[]
   createdAt DateTime @default(now())
+}
+
+/// Version 1's simplified Notification Center (see
+/// docs/03_System_Architecture.md §7): no dedicated REST module beyond this
+/// read/mark-read surface — rows are created as a side effect from within
+/// bookings/payments (US-05.1/US-05.2), not via a public "create" endpoint.
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
 }

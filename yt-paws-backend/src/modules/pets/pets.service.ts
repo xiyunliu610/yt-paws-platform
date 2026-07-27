@@ -15,6 +15,7 @@ interface CreatePetInput {
   personality?: string;
   dietNotes?: string;
   isNeutered?: boolean;
+  photoUrl?: string;
 }
 
 interface UpdatePetInput extends Partial<CreatePetInput> {}

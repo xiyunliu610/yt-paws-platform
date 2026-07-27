@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.6
+**Document Status:** Draft v0.8
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-07-26
+**Last Updated:** 2026-07-27
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -51,14 +51,16 @@ flowchart TB
             Businesses["businesses module"]
             Payments["payments module"]
             Reports["reports module"]
+            Notifications["notifications module<br/>(added 2026-07-27)"]
         end
         subgraph Reserved["Reserved · Future Versions"]
             AIModule["AI Agent module (V1.5)"]
-            NotifModule["Notification Center (V?)"]
             CameraModule["Camera module (V2)"]
         end
         Gateway --> V1
         Gateway -.-> Reserved
+        Bookings -.->|"side effect"| Notifications
+        Payments -.->|"side effect"| Notifications
     end
 
     DB[("PostgreSQL<br/>(Prisma ORM)")]
@@ -77,7 +79,7 @@ flowchart TB
     Payments -- "QR display + manual verification" --> PaymentCN
     Reports -- "Presigned URL upload" --> Storage
     Mobile -. "Direct media upload" .-> Storage
-    Gateway -- "Trigger notification" --> Push
+    Notifications -- "Best-effort push<br/>(unsupported in Expo Go on SDK 53+)" --> Push
     AIModule -.->|"V1.5"| LLM
     CameraModule -.->|"V2"| Camera
 ```
@@ -115,7 +117,7 @@ The following principles underpin all subsequent design decisions (database, API
 
 | Module | Responsibility | Corresponding PRD Module |
 |---|---|---|
-| `auth` | Registration (customer and self-service business/owner registration), login, JWT issuance/validation, role management | Module 1 |
+| `auth` | Registration (customer and self-service business/owner registration), login, JWT issuance/validation, role management, owner-provisioned staff accounts (create + list) | Module 1 |
 | `users` | Basic user information management | Module 1 (supporting) |
 | `pets` | Pet profiles, health records | Module 2 |
 | `services` | Display and management of service offerings (boarding / drop-in, etc.) | Module 3 |
@@ -123,6 +125,7 @@ The following principles underpin all subsequent design decisions (database, API
 | `businesses` | Business profile fields not set at registration (currently just the WeChat QR code image URL) | Module 4 (supporting) |
 | `payments` | Payment initiation, WeChat manual verification flow, payment records | Module 4 |
 | `reports` | Creation and viewing of pet daily reports | Module 6 |
+| `notifications` | In-app notification records, Expo push token registration, best-effort push delivery — called as a side effect from `bookings`/`payments`, not driven by its own business logic | Module 5 |
 
 > **Evolution direction for `reports`:** Currently `reports` only handles daily pet reports, and this name will remain unchanged. However, future private chat (v1.5) and camera screenshots/recordings (v2) will need the same media upload/storage capability. To avoid each module re-implementing media handling logic independently, the architecture will eventually extract a dedicated **Media Service** underneath `reports`, responsible specifically for interacting with cloud object storage. `reports`, the future Chat module, and the future Camera module would all call this unified Media Service rather than connecting to storage directly:
 >
@@ -159,6 +162,7 @@ erDiagram
     USER ||--o{ PET : owns
     USER ||--o{ BOOKING : makes
     USER ||--o{ BOOKING : "is assigned (staff)"
+    USER ||--o{ NOTIFICATION : receives
     PET ||--o{ BOOKING : "is subject of"
     SERVICE ||--o{ BOOKING : "ordered as"
     BOOKING ||--o{ PAYMENT : "paid via"
@@ -175,10 +179,12 @@ erDiagram
         uuid business_id FK "nullable, only set for owner/staff"
         string email
         enum role "customer/staff/owner/admin"
+        string push_token "nullable, Expo push token registered client-side"
     }
     PET {
         uuid id PK
         uuid owner_id FK
+        string photo_url "nullable, interim base64 data URI — see §5.3"
     }
     SERVICE {
         uuid id PK
@@ -206,6 +212,13 @@ erDiagram
         uuid id PK
         uuid booking_id FK
     }
+    NOTIFICATION {
+        uuid id PK
+        uuid user_id FK
+        string title
+        string body
+        datetime read_at "nullable"
+    }
 ```
 
 **Key design notes:**
@@ -216,6 +229,7 @@ erDiagram
 - `Booking.assigned_staff_id` (nullable, FK to `User`) lets the Owner assign an incoming booking to one of their staff internally; assignment is required to reference a staff/owner user with the same `business_id` as the booking (see PRD US-03.5/US-03.6). Customers picking their own staff member is out of scope for now — see 4.2
 - `Booking.status` only ever advances forward through `PATCH /bookings/:id/status` (owner/admin only): `pending → confirmed → in_progress → completed`, one step at a time; `cancelled` is a separate terminal state reached only via `PATCH /bookings/:id/cancel`. This endpoint isn't tied to a specific PRD user story — it exists because `in_progress` is a precondition for daily reports (US-06.1) and nothing else in the API could ever produce that transition
 - `Booking` itself stores no total/amount. `Payment.amount` is computed at payment-initiation time from `Service.price` and `Service.pricing_unit` (§6 below), so changing a service's price never requires touching historical bookings
+- `Notification` (added 2026-07-27) is a plain append-only log, not itself multi-tenant-aware — it's scoped by `user_id`, and a business's owner/staff/admin each just see their own notifications like any other user (see §7)
 
 ### 4.2 What's Deliberately Out of Scope for Now
 Written down explicitly to avoid scope creep during development:
@@ -258,6 +272,15 @@ sequenceDiagram
 ### 5.2 Relationship with Other Modules
 - Currently only the `reports` (pet daily reports) module uses media storage
 - Future v1.5 private chat and v2 camera screenshots/recordings will reuse the same cloud storage infrastructure (see Section 3.2, Media Service evolution direction) rather than each implementing it independently
+
+### 5.3 Interim Stopgap: Base64-Embedded Photos (Frontend Only, 2026-07-27)
+
+`ReportComposeScreen` (the business-side daily report authoring screen) needed to ship before a storage provider was chosen, so it does **not** implement the presigned-URL flow above. Instead, photos are captured with the picker's `base64: true` option and submitted directly as `data:image/jpeg;base64,...` strings in `DailyReport.mediaUrls` — no upload step, no cloud storage involved. This is a deliberate, scoped-down interim measure, not a change to the target architecture in 5.1:
+
+- Capped at 3 photos per report, JPEG quality 0.5, to keep the inline payload size reasonable
+- No video support (base64-embedding video would be impractical)
+- `DailyReport.mediaUrls` (`String[]`) accepts this without a schema change, since it has always been an untyped array of strings
+- **Must be replaced**, not extended, once Section 5.1's presigned-upload flow is implemented — at that point `mediaUrls` should hold real object-storage URLs again, consistent with how the backend (`reports.service.ts`) already assumes them to be "already hosted somewhere"
 
 ---
 
@@ -305,7 +328,9 @@ sequenceDiagram
     API->>App: Notify user of payment confirmation
 ```
 
-**Implementation note:** as with Stripe, every state change here is on `Payment.status`, never `Booking.status`. "Notify the business to reconcile" and "notify user of payment confirmation" are not implemented — there's no Notification module yet (§7). The QR code itself is just `Business.wechat_qr_code_url`, a plain string the owner sets via `PATCH /businesses/me`; there's no image upload endpoint, consistent with §5's presigned-upload flow not being implemented yet.
+**Implementation note:** as with Stripe, every state change here is on `Payment.status`, never `Booking.status`. "Notify the business to reconcile" and "notify user of payment confirmation" are implemented as of 2026-07-27 via the `notifications` module — see §7. The QR code itself is just `Business.wechat_qr_code_url`, a plain string the owner sets via `PATCH /businesses/me`; there's no image upload endpoint, consistent with §5's presigned-upload flow not being implemented yet.
+
+**Idempotency (added 2026-07-27):** `initiateWechat` now checks for an existing `pending`/`pending_verification` `wechat_qr` payment on the booking before creating a new one, returning that instead. This was needed once the frontend `PaymentScreen` started calling it every time the screen mounts (e.g. re-opening the booking after backgrounding the app mid-transfer) — without it, each visit would have created a new `Payment` row for the same booking.
 
 **Key difference:** The Stripe path is driven automatically by webhook; the WeChat path is driven by the business's manual action. These two paths are two independent strategy implementations within the `payments` module (corresponding to the "pluggable payment method" design principle in `02_Product_Requirements.md`), sharing the same `Payment` state machine but with different triggers for state transitions.
 
@@ -313,15 +338,18 @@ sequenceDiagram
 
 ## 7. Notification Architecture (Version 1 Simplified)
 
-Version 1 does not build a dedicated Notification module. The simplest implementation is used: the `bookings`/`payments` modules directly call a push notification provider (candidates: Expo Push, Firebase Cloud Messaging) when status changes occur, while also writing an in-app message record.
+**Updated 2026-07-27 — implemented, not just designed.** The original plan below (no dedicated module, `bookings`/`payments` call a push provider directly) turned out to need one small addition once actually built: an in-app notification needs somewhere to live and a read endpoint, which is a real (if minimal) `notifications` module — `NotificationsService.notify(userId, title, body)` plus `notifyBusinessManagers(businessId, title, body)`, injected into `bookings`/`payments` and called as a side effect of their own state transitions. It still has **no business logic of its own** and no public "create a notification" endpoint — everything in it is either read-only (`GET /notifications/mine`, `PATCH /notifications/:id/read`) or device-registration (`PATCH /notifications/register-device` / `.../unregister-device`) — so the "simplified, not a real module" spirit of the original design holds even though the box moved from "Reserved" to "Version 1" in the §1 diagram.
 
 ```mermaid
 flowchart LR
-    A["Booking/Payment<br/>Status Change"] --> B{"Has user enabled<br/>push permission?"}
-    B -- Yes --> C["Call push notification<br/>provider to send device push"]
-    B -- No --> D["Write in-app message only"]
-    C --> D
+    A["Booking/Payment<br/>Status Change"] --> N["NotificationsService.notify()"]
+    N --> R["Write Notification row<br/>(always)"]
+    N --> T{"User has a<br/>registered push token?"}
+    T -- Yes --> P["Best-effort POST to<br/>Expo push gateway"]
+    T -- No --> R
 ```
+
+**Push delivery is real but currently unverifiable in the dev environment in use.** Client-side, `expo-notifications` requests permission and registers an Expo push token (`src/notifications/pushToken.ts`); server-side, `expo-push.util.ts` POSTs to Expo's push gateway with a 5s timeout, swallowing all errors — a stale token or unreachable gateway must never break a booking/payment flow. However, **as of Expo SDK 53+, Expo Go no longer supports remote push delivery on either platform** — only a standalone or EAS dev-client build does (the same category of tradeoff as the Stripe frontend, US-04.1, which is why it's deferred rather than resolved). Every step in the registration flow is wrapped to fail silently in that case (no projectId configured, no physical device, permission denied, or simply running in Expo Go), so the app never depends on push actually arriving. The in-app half (`Notification` row + `NotificationsScreen`) has no such caveat — it works the same regardless of push.
 
 The full design for evolving into a Notification Center (unifying Push/Email/SMS/WeChat notifications, covering all sources — bookings, payments, chat, AI, camera, promotions) is in `09_Notification_Design.md`.
 
@@ -425,6 +453,14 @@ flowchart TB
 | Stripe webhook correlation | `Payment.providerRef` stores the Stripe PaymentIntent id; the webhook handler looks up the `Payment` row by that id rather than by `bookingId` | A booking can have multiple payment attempts (retries after a decline); correlating by the specific PaymentIntent id (not just bookingId) avoids updating the wrong attempt |
 | Business profile updates | Minimal `businesses` module with a single `PATCH /businesses/me` (owner/admin only), rather than a general business-settings module | The only post-registration business field needed so far is the WeChat QR code URL; a fuller business-profile module can be built when more fields (e.g. logo, hours) are actually needed |
 | Booking status progression | `PATCH /bookings/:id/status`, forward-only through `pending → confirmed → in_progress → completed`, one step at a time (owner/admin only) | Daily reports (US-06.1) require a booking to be `in_progress`, and no endpoint could produce that transition before this was added; forward-only, single-step validation keeps the state machine simple and prevents skipping steps or reviving a cancelled booking |
+| Staff directory endpoint | `GET /auth/staff` (owner/admin only) added to the `auth` module rather than creating a `users` module | The only two frontend consumers (the booking-assignment picker and `StaffManagementScreen`) both need "everyone assignable in my business," which is exactly `auth.service.createStaff`'s counterpart; a separate `users` module would be premature for a single read endpoint |
+| WeChat payment idempotency | `initiateWechat` reuses an existing pending/pending-verification payment for the booking instead of always creating a new `Payment` row | The frontend payment screen calls this endpoint every time it mounts (not just once), since there was no other way to recover the QR/reference note after navigating away mid-flow; making the endpoint idempotent was cheaper than adding client-side caching of payment intents |
+| Daily report photos (interim) | Photos captured client-side as base64 and stored inline in `DailyReport.mediaUrls` (`data:image/jpeg;base64,...`), not uploaded to cloud storage | `ReportComposeScreen` needed to ship before a storage provider was chosen (§5 is still TBD); capped at 3 photos and JPEG quality 0.5 to bound payload size. Explicitly interim — see §5.3 — and must be replaced once presigned uploads exist, not extended |
+| Pet photo (interim) | Same base64-data-URI approach as daily report photos, applied to `Pet.photoUrl` | Consistency: two independent "just ship the photo, storage isn't chosen yet" problems solved the same way, so there's only one pattern to later replace, not two |
+| Notifications module scope | A real `notifications` module exists (§7) with a read/mark-read/device-registration surface, but no public "create" endpoint — only `bookings`/`payments` can create rows, by calling `NotificationsService` directly as an injected dependency | Keeps "no dedicated Notification Center in V1" true in spirit (per the original architecture) while still giving in-app notifications somewhere to live; a public create endpoint would let any authenticated user spam notifications at other users, which nothing in V1 needs |
+| Push delivery: best-effort, fail-silent | `expo-push.util.ts` wraps the Expo push gateway call in a try/catch with a 5s timeout; `pushToken.ts` wraps every registration step (permission, device check, token fetch) the same way | Expo Go dropped remote push support entirely as of SDK 53 (both platforms) — registration will routinely fail in the current dev environment, and that failure must never surface as a booking/payment error. Matches the Stripe frontend precedent of deferring a "leave Expo Go" decision rather than forcing it |
+| Owner payment verification | `GET /payments/business` (new) returns every payment for the business rather than only `pending_verification` ones | The owner also wants to see settled history for context, not just an action queue; the frontend (`PaymentVerificationScreen`) sorts pending-verification entries first instead of the backend filtering them out |
+| Business/staff home screen | `HomeRouter` (frontend-only, no new route) picks `BusinessHomeScreen` vs. the customer `HomeScreen` by `user.role`, both mounted under the same `"Home"` stack entry | No PRD user story covers this — it was a UX gap (owner/staff saw a customer-oriented booking screen after login) rather than a functional one; solving it at the route-selection level avoids adding a second navigation stack |
 
 ---
 
@@ -438,3 +474,5 @@ flowchart TB
 | 2026-07-22 | v0.4 | Added `Booking.assigned_staff_id` to the multi-tenant ERD and design notes for owner-to-staff booking assignment; documented that customer-facing staff selection is deliberately out of scope for now | Xiyun Liu |
 | 2026-07-22 | v0.5 | Documented self-service business registration and owner-provisioned staff accounts as ADR entries; updated `auth` module responsibility to include business/owner registration | Xiyun Liu |
 | 2026-07-26 | v0.6 | Synced with the now-implemented `payments`, `reports`, and `businesses` modules: added `Service.pricing_unit`, `Payment.provider_ref` and `Business.wechat_qr_code_url` to the multi-tenant ERD; documented the `PATCH /bookings/:id/status` lifecycle endpoint; corrected the Stripe/WeChat sequence diagrams, which incorrectly showed `Booking.status` becoming "Paid" — that field lives on `Payment.status` instead, since `Booking`'s status enum has no paid state; added amount-calculation and ADR entries for these decisions | Xiyun Liu |
+| 2026-07-27 | v0.7 | Added `GET /auth/staff` to the `auth` module's responsibilities (backs the frontend's staff directory/assignment picker); documented `initiateWechat`'s new idempotency behavior (§6.2); added §5.3 describing the interim base64-embedded-photo stopgap `ReportComposeScreen` uses in place of the still-unbuilt presigned-upload flow, and its planned removal once §5.1 is implemented; added four ADR entries for these decisions | Xiyun Liu |
+| 2026-07-27 | v0.8 | Rewrote §7 (Notification Architecture) from a design placeholder into a description of the now-implemented `notifications` module — moved it from "Reserved" to "Version 1" in the §1 diagram, added it to the §3.2 module table, and documented that remote push delivery, while implemented, is unverifiable in Expo Go on SDK 53+ (same category of tradeoff as the Stripe frontend deferral); added `Notification` entity, `User.push_token` and `Pet.photo_url` to the §4.1 ERD; added five ADR entries covering the notifications module's deliberately narrow scope, fail-silent push delivery, the pet-photo reuse of the daily-report base64 stopgap, the owner payment-verification endpoint, and the role-based home-screen router (a UX gap closure with no PRD user story behind it) | Xiyun Liu |

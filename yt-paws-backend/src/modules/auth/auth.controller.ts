@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -43,5 +43,12 @@ export class AuthController {
     @Body() body: { email: string; name: string; phone?: string },
   ) {
     return this.authService.createStaff(req.user.businessId, body.email, body.name, body.phone);
+  }
+
+  @Get('staff')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  listStaff(@Req() req: AuthenticatedRequest) {
+    return this.authService.listStaff(req.user.businessId);
   }
 }

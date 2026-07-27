@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Role, BookingStatus } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 interface RequestingUser {
   userId: string;
@@ -23,7 +24,20 @@ interface CreateBookingInput {
 
 @Injectable()
 export class BookingsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
+
+  // US-05.1: booking status labels the customer actually recognizes, not
+  // the raw enum values.
+  private static readonly STATUS_LABEL: Record<BookingStatus, string> = {
+    pending: 'Pending Confirmation',
+    confirmed: 'Confirmed',
+    in_progress: 'In Progress',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+  };
 
   // Each role sees a different natural slice: a customer sees what they
   // booked, a staff member sees what's assigned to them, and an
@@ -127,10 +141,21 @@ export class BookingsService {
       throw new BadRequestException(`Booking cannot be cancelled once it is ${booking.status}`);
     }
 
-    return this.prisma.booking.update({
+    const updated = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: BookingStatus.cancelled },
     });
+
+    // US-05.1: notify the customer regardless of who triggered the
+    // cancellation (themselves or the business) — either way, it's news to
+    // them about their booking.
+    await this.notifications.notify(
+      booking.customerId,
+      'Booking Cancelled',
+      `Your booking has been cancelled.`,
+    );
+
+    return updated;
   }
 
   // Forward-only lifecycle steps a booking passes through on its way to
@@ -159,10 +184,19 @@ export class BookingsService {
       );
     }
 
-    return this.prisma.booking.update({
+    const updated = await this.prisma.booking.update({
       where: { id: bookingId },
       data: { status: expectedNext },
     });
+
+    // US-05.1
+    await this.notifications.notify(
+      booking.customerId,
+      'Booking Update',
+      `Your booking is now ${BookingsService.STATUS_LABEL[expectedNext]}.`,
+    );
+
+    return updated;
   }
 
   // PRD US-03.6: owner assigns a booking to a staff member of the same business.

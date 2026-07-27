@@ -1,0 +1,256 @@
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../i18n/LanguageContext';
+import { ApiError, paymentsApi, Payment } from '../api/client';
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#C9A227',
+  pending_verification: '#C9A227',
+  paid: '#2C4A3E',
+  failed: '#FF5252',
+  refunded: '#999999',
+};
+
+const PaymentVerificationScreen = () => {
+  const { token } = useAuth();
+  const { t } = useLanguage();
+
+  const [payments, setPayments] = useState<Payment[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    if (!token) return;
+    paymentsApi
+      .business(token)
+      .then((list) => {
+        // Payments needing action first, then everything else by recency.
+        const sorted = [...list].sort((a, b) => {
+          if (a.status === 'pending_verification' && b.status !== 'pending_verification') return -1;
+          if (b.status === 'pending_verification' && a.status !== 'pending_verification') return 1;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+        setPayments(sorted);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
+  }, [token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return t.paymentHistory.statusPending;
+      case 'pending_verification':
+        return t.paymentHistory.statusPendingVerification;
+      case 'paid':
+        return t.paymentHistory.statusPaid;
+      case 'failed':
+        return t.paymentHistory.statusFailed;
+      case 'refunded':
+        return t.paymentHistory.statusRefunded;
+      default:
+        return status;
+    }
+  };
+
+  const formatDate = (isoDate: string) => {
+    const date = new Date(isoDate);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleVerify = (payment: Payment) => {
+    Alert.alert(
+      t.paymentVerification.confirmTitle,
+      t.paymentVerification.confirmMessage,
+      [
+        { text: t.staffManagement.cancel, style: 'cancel' },
+        {
+          text: t.paymentVerification.verifyButton,
+          onPress: async () => {
+            if (!token) return;
+            setVerifyingId(payment.id);
+            try {
+              await paymentsApi.verify(token, payment.id);
+              load();
+            } catch (error) {
+              const message =
+                error instanceof ApiError ? error.message : t.paymentVerification.verifyFailedMessage;
+              Alert.alert(t.paymentVerification.verifyFailedTitle, message);
+            } finally {
+              setVerifyingId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.content}>
+          {payments === null ? (
+            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+          ) : failed ? (
+            <Text style={styles.helperText}>{t.paymentVerification.loadFailed}</Text>
+          ) : payments.length === 0 ? (
+            <Text style={styles.helperText}>{t.paymentVerification.empty}</Text>
+          ) : (
+            payments.map((payment) => (
+              <View key={payment.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.customerName}>
+                    {payment.booking?.customer?.name ?? payment.booking?.customer?.email}
+                  </Text>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: STATUS_COLORS[payment.status] ?? '#999' },
+                    ]}
+                  >
+                    <Text style={styles.statusText}>{statusLabel(payment.status)}</Text>
+                  </View>
+                </View>
+                <Text style={styles.meta}>
+                  {payment.booking?.service?.name}
+                  {payment.booking ? ` · ${formatDate(payment.booking.startDate)}` : ''}
+                </Text>
+                <View style={styles.amountRow}>
+                  <Text style={styles.amount}>NZD {payment.amount.toFixed(2)}</Text>
+                  {!!payment.referenceNote && (
+                    <Text style={styles.reference}>{payment.referenceNote}</Text>
+                  )}
+                </View>
+
+                {payment.status === 'pending_verification' && (
+                  <TouchableOpacity
+                    style={[styles.verifyButton, verifyingId === payment.id && styles.verifyButtonDisabled]}
+                    onPress={() => handleVerify(payment)}
+                    disabled={verifyingId !== null}
+                  >
+                    <Text style={styles.verifyButtonText}>
+                      {verifyingId === payment.id
+                        ? t.paymentVerification.verifying
+                        : t.paymentVerification.verifyButton}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F5EDD8',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    padding: 24,
+  },
+  spinner: {
+    marginTop: 40,
+  },
+  helperText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 40,
+  },
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  customerName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#2C4A3E',
+  },
+  statusBadge: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'white',
+  },
+  meta: {
+    fontSize: 13,
+    color: '#999',
+    marginBottom: 8,
+  },
+  amountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  amount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  reference: {
+    fontSize: 13,
+    color: '#666',
+    fontFamily: 'Courier',
+  },
+  verifyButton: {
+    backgroundColor: '#2C4A3E',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  verifyButtonDisabled: {
+    opacity: 0.6,
+  },
+  verifyButtonText: {
+    color: '#F5EDD8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});
+
+export default PaymentVerificationScreen;
