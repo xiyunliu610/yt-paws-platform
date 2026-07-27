@@ -9,11 +9,13 @@ import {
   Switch,
   Alert,
   Platform,
+  Image,
   ActivityIndicator,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, petsApi, Pet, PetHealthRecord } from '../api/client';
@@ -31,6 +33,7 @@ const PetDetailScreen = () => {
   const { pet } = route.params;
 
   const [name, setName] = useState(pet.name);
+  const [photoUrl, setPhotoUrl] = useState(pet.photoUrl ?? '');
   const [species, setSpecies] = useState(pet.species ?? '');
   const [breed, setBreed] = useState(pet.breed ?? '');
   const [age, setAge] = useState(pet.age?.toString() ?? '');
@@ -64,6 +67,33 @@ const PetDetailScreen = () => {
     return `${year}-${month}-${day}`;
   };
 
+  // Same interim base64-data-URI approach as daily report photos (see
+  // docs/03_System_Architecture.md §5.3) — no cloud storage exists yet.
+  const pickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(t.petDetail.permissionRequiredTitle, t.petDetail.libraryPermissionMessage);
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]?.base64) {
+        setPhotoUrl(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      }
+    } catch (error) {
+      console.error('Choosing a pet photo failed:', error);
+      Alert.alert(t.petDetail.pickImageErrorTitle, t.petDetail.pickImageErrorMessage);
+    }
+  };
+
   const handleSave = async () => {
     if (!token) return;
     if (!name.trim()) {
@@ -75,6 +105,7 @@ const PetDetailScreen = () => {
     try {
       await petsApi.update(token, pet.id, {
         name: name.trim(),
+        photoUrl: photoUrl || undefined,
         species: species.trim() || undefined,
         breed: breed.trim() || undefined,
         age: age.trim() ? parseInt(age, 10) : undefined,
@@ -124,6 +155,21 @@ const PetDetailScreen = () => {
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
+          <View style={styles.photoSection}>
+            <TouchableOpacity onPress={pickPhoto} disabled={isSaving}>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.photo} />
+              ) : (
+                <View style={styles.photoPlaceholder}>
+                  <Text style={styles.photoPlaceholderText}>{name.charAt(0).toUpperCase()}</Text>
+                </View>
+              )}
+              <View style={styles.photoEditBadge}>
+                <Text style={styles.photoEditBadgeText}>{t.petDetail.changePhoto}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.section}>
             <Text style={styles.label}>{t.petDetail.nameLabel}</Text>
             <TextInput style={styles.input} value={name} onChangeText={setName} editable={!isSaving} />
@@ -309,6 +355,43 @@ const styles = StyleSheet.create({
   content: {
     padding: 24,
     paddingBottom: 40,
+  },
+  photoSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  photo: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  photoPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#2C4A3E',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoPlaceholderText: {
+    fontSize: 40,
+    fontWeight: 'bold',
+    color: '#F5EDD8',
+  },
+  photoEditBadge: {
+    alignSelf: 'center',
+    marginTop: 8,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  photoEditBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2C4A3E',
   },
   section: {
     marginBottom: 20,

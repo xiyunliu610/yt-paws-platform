@@ -54,4 +54,11 @@ export class PaymentsController {
   findMine(@Req() req: AuthenticatedRequest) {
     return this.paymentsService.findMine(req.user);
   }
+
+  @Get('business')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  findForBusiness(@Req() req: AuthenticatedRequest) {
+    return this.paymentsService.findForBusiness(req.user);
+  }
 }

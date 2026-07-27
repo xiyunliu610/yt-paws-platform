@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,38 +9,89 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { ApiError, bookingsApi, reportsApi, Booking, DailyReport } from '../api/client';
+import {
+  ApiError,
+  bookingsApi,
+  reportsApi,
+  paymentsApi,
+  staffApi,
+  Booking,
+  DailyReport,
+  Payment,
+  StaffMember,
+} from '../api/client';
 
 type RootStackParamList = {
   BookingDetail: { booking: Booking };
+  Payment: { booking: Booking };
+  ReportCompose: { bookingId: string };
 };
 
 type BookingDetailRouteProp = RouteProp<RootStackParamList, 'BookingDetail'>;
+type Navigation = StackNavigationProp<RootStackParamList>;
 
 const CANCELLABLE_STATUSES = ['pending', 'confirmed'];
+const NEXT_STATUS: Record<string, 'confirmed' | 'in_progress' | 'completed'> = {
+  pending: 'confirmed',
+  confirmed: 'in_progress',
+  in_progress: 'completed',
+};
 
 const BookingDetailScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<Navigation>();
   const route = useRoute<BookingDetailRouteProp>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { t } = useLanguage();
 
   const [booking, setBooking] = useState(route.params.booking);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
   const [reports, setReports] = useState<DailyReport[] | null>(null);
   const [reportsFailed, setReportsFailed] = useState(false);
+  const [payment, setPayment] = useState<Payment | null | undefined>(undefined);
+  const [staffList, setStaffList] = useState<StaffMember[] | null>(null);
+  const [assigningStaffId, setAssigningStaffId] = useState<string | null>(null);
+
+  const isManager = user?.role === 'owner' || user?.role === 'admin';
+  const isAssignedStaff = user?.role === 'staff' && booking.assignedStaffId === user.id;
+
+  // Refetch reports whenever the screen regains focus, so returning from
+  // ReportComposeScreen shows the just-published entry without a manual pull.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      reportsApi
+        .listForBooking(token, booking.id)
+        .then((list) => {
+          setReports(list);
+          setReportsFailed(false);
+        })
+        .catch(() => setReportsFailed(true));
+    }, [token, booking.id]),
+  );
 
   useEffect(() => {
-    if (!token) return;
-    reportsApi
-      .listForBooking(token, booking.id)
-      .then(setReports)
-      .catch(() => setReportsFailed(true));
-  }, [token, booking.id]);
+    if (!token || user?.role !== 'customer') return;
+    paymentsApi
+      .mine(token)
+      .then((payments) => {
+        const forThisBooking = payments
+          .filter((p) => p.bookingId === booking.id)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setPayment(forThisBooking[0] ?? null);
+      })
+      .catch(() => setPayment(null));
+  }, [token, user?.role, booking.id]);
+
+  useEffect(() => {
+    if (!token || !isManager) return;
+    staffApi.list(token).then(setStaffList).catch(() => {});
+  }, [token, isManager]);
 
   const formatDate = (isoDate: string) => {
     const date = new Date(isoDate);
@@ -66,6 +117,20 @@ const BookingDetailScreen = () => {
         return t.myBookings.statusCancelled;
       default:
         return status;
+    }
+  };
+
+  const paymentStatusLabel = () => {
+    if (payment === null || payment === undefined) return t.myBookings.payNowButton;
+    switch (payment.status) {
+      case 'paid':
+        return t.myBookings.paymentStatusPaid;
+      case 'pending_verification':
+        return t.myBookings.paymentStatusPendingVerification;
+      case 'failed':
+        return t.myBookings.payNowButton;
+      default:
+        return t.myBookings.paymentStatusPending;
     }
   };
 
@@ -98,6 +163,43 @@ const BookingDetailScreen = () => {
     );
   };
 
+  const handleAdvanceStatus = async () => {
+    if (!token) return;
+    const nextStatus = NEXT_STATUS[booking.status];
+    if (!nextStatus) return;
+
+    setIsAdvancing(true);
+    try {
+      const updated = await bookingsApi.updateStatus(token, booking.id, nextStatus);
+      setBooking({ ...booking, status: updated.status });
+    } catch (error) {
+      const message =
+        error instanceof ApiError ? error.message : t.myBookings.advanceFailedMessage;
+      Alert.alert(t.myBookings.advanceFailedTitle, message);
+    } finally {
+      setIsAdvancing(false);
+    }
+  };
+
+  const handleAssignStaff = async (staffId: string) => {
+    if (!token) return;
+    setAssigningStaffId(staffId);
+    try {
+      const updated = await bookingsApi.assign(token, booking.id, staffId);
+      setBooking({ ...booking, assignedStaffId: updated.assignedStaffId });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.myBookings.assignFailedMessage;
+      Alert.alert(t.myBookings.assignFailedTitle, message);
+    } finally {
+      setAssigningStaffId(null);
+    }
+  };
+
+  const canCancel = CANCELLABLE_STATUSES.includes(booking.status) && (user?.role === 'customer' || isManager);
+  const canAdvance = isManager && !!NEXT_STATUS[booking.status];
+  const canAddReport = booking.status === 'in_progress' && (isAssignedStaff || isManager);
+  const assignedStaffMember = staffList?.find((s) => s.id === booking.assignedStaffId);
+
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -123,11 +225,94 @@ const BookingDetailScreen = () => {
               <Text style={styles.label}>{t.myBookings.statusLabel}</Text>
               <Text style={styles.value}>{statusLabel(booking.status)}</Text>
             </View>
+
+            {user?.role === 'customer' && (
+              <TouchableOpacity
+                style={styles.row}
+                onPress={() => navigation.navigate('Payment', { booking })}
+                disabled={payment?.status === 'paid'}
+              >
+                <Text style={styles.label}>{t.myBookings.paymentStatusLabel}</Text>
+                <Text
+                  style={[
+                    styles.value,
+                    payment?.status === 'paid' ? styles.paidValue : styles.linkValue,
+                  ]}
+                >
+                  {paymentStatusLabel()}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {isManager && (
+              <View style={styles.row}>
+                <Text style={styles.label}>{t.myBookings.assignedStaffLabel}</Text>
+                <Text style={styles.value}>
+                  {assignedStaffMember?.name ?? assignedStaffMember?.email ?? t.myBookings.unassigned}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {CANCELLABLE_STATUSES.includes(booking.status) && (
+          {isManager && staffList && staffList.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t.myBookings.assignStaffTitle}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {staffList.map((member) => (
+                  <TouchableOpacity
+                    key={member.id}
+                    style={[
+                      styles.staffChip,
+                      booking.assignedStaffId === member.id && styles.staffChipSelected,
+                    ]}
+                    onPress={() => handleAssignStaff(member.id)}
+                    disabled={assigningStaffId !== null}
+                  >
+                    {assigningStaffId === member.id ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={booking.assignedStaffId === member.id ? '#F5EDD8' : '#2C4A3E'}
+                      />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.staffChipText,
+                          booking.assignedStaffId === member.id && styles.staffChipTextSelected,
+                        ]}
+                      >
+                        {member.name ?? member.email}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {canAdvance && (
             <TouchableOpacity
-              style={[styles.cancelButton, isCancelling && styles.cancelButtonDisabled]}
+              style={[styles.primaryButton, isAdvancing && styles.buttonDisabled]}
+              onPress={handleAdvanceStatus}
+              disabled={isAdvancing}
+            >
+              <Text style={styles.primaryButtonText}>
+                {isAdvancing ? t.booking.submitting : t.myBookings.advanceStatusLabels[NEXT_STATUS[booking.status]]}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {canAddReport && (
+            <TouchableOpacity
+              style={[styles.primaryButton, styles.reportButton]}
+              onPress={() => navigation.navigate('ReportCompose', { bookingId: booking.id })}
+            >
+              <Text style={styles.primaryButtonText}>{t.myBookings.addReportButton}</Text>
+            </TouchableOpacity>
+          )}
+
+          {canCancel && (
+            <TouchableOpacity
+              style={[styles.cancelButton, isCancelling && styles.buttonDisabled]}
               onPress={handleCancel}
               disabled={isCancelling}
             >
@@ -198,20 +383,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
-  cancelButton: {
-    backgroundColor: '#FF5252',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 24,
+  linkValue: {
+    color: '#2C4A3E',
+    textDecorationLine: 'underline',
   },
-  cancelButtonDisabled: {
-    opacity: 0.6,
-  },
-  cancelButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+  paidValue: {
+    color: '#2C4A3E',
   },
   section: {
     marginBottom: 24,
@@ -221,6 +398,59 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#2C4A3E',
     marginBottom: 12,
+  },
+  staffChip: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 10,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  staffChipSelected: {
+    backgroundColor: '#2C4A3E',
+    borderColor: '#2C4A3E',
+  },
+  staffChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2C4A3E',
+  },
+  staffChipTextSelected: {
+    color: '#F5EDD8',
+  },
+  primaryButton: {
+    backgroundColor: '#2C4A3E',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  reportButton: {
+    backgroundColor: '#4A6B5E',
+  },
+  primaryButtonText: {
+    color: '#F5EDD8',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  cancelButton: {
+    backgroundColor: '#FF5252',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  cancelButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   helperText: {
     fontSize: 14,

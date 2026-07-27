@@ -114,6 +114,9 @@ export interface Pet {
   personality: string | null;
   dietNotes: string | null;
   isNeutered: boolean | null;
+  // Same interim base64-data-URI approach as DailyReport.mediaUrls — see
+  // docs/03_System_Architecture.md §5.3.
+  photoUrl: string | null;
 }
 
 export interface PetUpdateInput {
@@ -125,6 +128,7 @@ export interface PetUpdateInput {
   personality?: string;
   dietNotes?: string;
   isNeutered?: boolean;
+  photoUrl?: string;
 }
 
 export interface PetHealthRecord {
@@ -139,7 +143,7 @@ export interface PetHealthRecord {
 export const petsApi = {
   list: (token: string) => request<Pet[]>('/pets', {}, token),
 
-  create: (token: string, data: { name: string; species?: string }) =>
+  create: (token: string, data: { name: string; species?: string; photoUrl?: string }) =>
     request<Pet>('/pets', { method: 'POST', body: JSON.stringify(data) }, token),
 
   update: (token: string, petId: string, data: PetUpdateInput) =>
@@ -164,6 +168,7 @@ export interface Booking {
   id: string;
   businessId: string;
   customerId: string;
+  assignedStaffId: string | null;
   petId: string;
   serviceId: string;
   status: string;
@@ -184,6 +189,22 @@ export const bookingsApi = {
 
   cancel: (token: string, bookingId: string) =>
     request<Booking>(`/bookings/${bookingId}/cancel`, { method: 'PATCH' }, token),
+
+  // Owner/admin only. Forward-only: pending -> confirmed -> in_progress -> completed.
+  updateStatus: (token: string, bookingId: string, status: string) =>
+    request<Booking>(
+      `/bookings/${bookingId}/status`,
+      { method: 'PATCH', body: JSON.stringify({ status }) },
+      token,
+    ),
+
+  // Owner/admin only. staffId must belong to the same business as the booking.
+  assign: (token: string, bookingId: string, staffId: string) =>
+    request<Booking>(
+      `/bookings/${bookingId}/assign`,
+      { method: 'PATCH', body: JSON.stringify({ staffId }) },
+      token,
+    ),
 };
 
 export interface DailyReport {
@@ -197,4 +218,103 @@ export interface DailyReport {
 export const reportsApi = {
   listForBooking: (token: string, bookingId: string) =>
     request<DailyReport[]>(`/reports/${bookingId}`, {}, token),
+
+  // Only allowed while the booking is in_progress, by the assigned staff
+  // member or the business's owner/admin (see reports.service.ts).
+  create: (token: string, bookingId: string, data: { text?: string; mediaUrls?: string[] }) =>
+    request<DailyReport>(
+      `/reports/${bookingId}`,
+      { method: 'POST', body: JSON.stringify(data) },
+      token,
+    ),
+};
+
+export interface Payment {
+  id: string;
+  bookingId: string;
+  method: 'stripe' | 'wechat_qr';
+  amount: number;
+  status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded';
+  referenceNote: string | null;
+  createdAt: string;
+  // Only present on responses from paymentsApi.mine()/business(), which
+  // join these in; business() additionally joins the customer's name/email.
+  booking?: {
+    id: string;
+    startDate: string;
+    service?: { name: string };
+    customer?: { name: string | null; email: string };
+  };
+}
+
+export interface WechatPaymentIntent {
+  paymentId: string;
+  amount: number;
+  referenceNote: string | null;
+  qrCodeUrl: string | null;
+  status: 'pending' | 'pending_verification';
+}
+
+export const paymentsApi = {
+  // Idempotent: reuses an existing pending/pending_verification wechat_qr
+  // payment for this booking instead of creating a duplicate.
+  initiateWechat: (token: string, bookingId: string) =>
+    request<WechatPaymentIntent>(`/payments/wechat/${bookingId}`, { method: 'POST' }, token),
+
+  markPaid: (token: string, paymentId: string) =>
+    request<Payment>(`/payments/${paymentId}/mark-paid`, { method: 'PATCH' }, token),
+
+  mine: (token: string) => request<Payment[]>('/payments/mine', {}, token),
+
+  // Owner/admin only.
+  business: (token: string) => request<Payment[]>('/payments/business', {}, token),
+
+  // Owner/admin only. Confirms a pending_verification WeChat transfer as paid.
+  verify: (token: string, paymentId: string) =>
+    request<Payment>(`/payments/${paymentId}/verify`, { method: 'PATCH' }, token),
+};
+
+export interface StaffMember {
+  id: string;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  role: string;
+}
+
+export const staffApi = {
+  list: (token: string) => request<StaffMember[]>('/auth/staff', {}, token),
+
+  create: (token: string, data: { email: string; name: string; phone?: string }) =>
+    request<{ user: StaffMember; temporaryPassword: string }>(
+      '/auth/staff',
+      { method: 'POST', body: JSON.stringify(data) },
+      token,
+    ),
+};
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export const notificationsApi = {
+  mine: (token: string) => request<AppNotification[]>('/notifications/mine', {}, token),
+
+  markRead: (token: string, id: string) =>
+    request<AppNotification>(`/notifications/${id}/read`, { method: 'PATCH' }, token),
+
+  registerDevice: (token: string, pushToken: string) =>
+    request<{ registered: boolean }>(
+      '/notifications/register-device',
+      { method: 'PATCH', body: JSON.stringify({ pushToken }) },
+      token,
+    ),
+
+  unregisterDevice: (token: string) =>
+    request<{ registered: boolean }>('/notifications/unregister-device', { method: 'PATCH' }, token),
 };

@@ -11,7 +11,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { bookingsApi, Booking } from '../api/client';
+import { bookingsApi, notificationsApi, Booking } from '../api/client';
 
 type ServiceKey = 'boarding' | 'dayCare' | 'grooming' | 'houseVisit';
 
@@ -27,6 +27,7 @@ type RootStackParamList = {
   Booking: { service?: Service } | undefined;
   Profile: undefined;
   Report: undefined;
+  Notifications: undefined;
 };
 
 type HomeNavigationProp = StackNavigationProp<RootStackParamList>;
@@ -57,6 +58,7 @@ const HomeScreen = () => {
   );
 
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Refetch on focus so a booking made from BookingScreen shows up here as
   // soon as the user comes back to Home, without needing an app restart.
@@ -74,6 +76,11 @@ const HomeScreen = () => {
           setUpcomingBookings(upcoming);
         })
         .catch(() => setUpcomingBookings([]));
+
+      notificationsApi
+        .mine(token)
+        .then((list) => setUnreadCount(list.filter((n) => !n.readAt).length))
+        .catch(() => setUnreadCount(0));
     }, [token]),
   );
 
@@ -118,14 +125,27 @@ const HomeScreen = () => {
               <Text style={styles.greeting}>{t.home.greeting}</Text>
               <Text style={styles.userName}>{userName}</Text>
             </View>
-            <TouchableOpacity
-              style={styles.avatarButton}
-              onPress={navigateToProfile}
-            >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
-              </View>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.bellButton}
+                onPress={() => navigation.navigate('Notifications')}
+              >
+                <Text style={styles.bellIcon}>🔔</Text>
+                {unreadCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.avatarButton}
+                onPress={navigateToProfile}
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -304,6 +324,39 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#F5EDD8',
     marginTop: 4,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  bellButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(245, 237, 216, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bellIcon: {
+    fontSize: 20,
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FF5252',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   avatarButton: {
     padding: 4,

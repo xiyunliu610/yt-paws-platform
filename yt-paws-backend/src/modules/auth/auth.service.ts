@@ -153,4 +153,26 @@ export class AuthService {
       temporaryPassword,
     };
   }
+
+  // Backs the owner's "Manage Staff" screen and the booking-assignment
+  // picker: everyone (staff + owner) who could be an assignStaff target,
+  // per bookings.service.assignStaff's isAssignable check.
+  async listStaff(ownerBusinessId: string | null) {
+    if (!ownerBusinessId) {
+      throw new BadRequestException('Your account is not associated with a business');
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: { businessId: ownerBusinessId, role: { in: [Role.staff, Role.owner] } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      role: user.role,
+    }));
+  }
 }

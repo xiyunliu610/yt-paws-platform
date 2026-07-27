@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, petsApi, Pet } from '../api/client';
+import { registerForPushNotificationsAsync, unregisterPushNotifications } from '../notifications/pushToken';
 
 type PetTypeKey = 'dog' | 'cat' | 'other';
 
@@ -25,6 +26,9 @@ type RootStackParamList = {
   Profile: undefined;
   Report: undefined;
   MyBookings: undefined;
+  PaymentHistory: undefined;
+  PaymentVerification: undefined;
+  StaffManagement: undefined;
   PetDetail: { pet: Pet };
 };
 
@@ -47,7 +51,7 @@ const ProfileScreen = () => {
   const [newPetName, setNewPetName] = useState('');
   const [newPetType, setNewPetType] = useState<PetTypeKey | ''>('');
   const [isSavingPet, setIsSavingPet] = useState(false);
-  const [notifications, setNotifications] = useState(true);
+  const [notifications, setNotifications] = useState(false);
   const [emailUpdates, setEmailUpdates] = useState(true);
 
   // Refetch on focus (not just mount) so a pet added from the Booking
@@ -186,6 +190,36 @@ const ProfileScreen = () => {
     navigation.navigate('MyBookings');
   };
 
+  const handleViewPaymentHistory = () => {
+    navigation.navigate('PaymentHistory');
+  };
+
+  const handleManageStaff = () => {
+    navigation.navigate('StaffManagement');
+  };
+
+  const handleVerifyPayments = () => {
+    navigation.navigate('PaymentVerification');
+  };
+
+  const isManager = user?.role === 'owner' || user?.role === 'admin';
+
+  const handleToggleNotifications = async (value: boolean) => {
+    setNotifications(value);
+    if (!token) return;
+    if (value) {
+      const granted = await registerForPushNotificationsAsync(token);
+      if (!granted) {
+        // Permission denied, no device token, or (as in Expo Go on SDK 53+)
+        // remote push simply isn't available in this runtime — the toggle
+        // reflects intent either way, in-app notifications work regardless.
+        setNotifications(false);
+      }
+    } else {
+      await unregisterPushNotifications(token);
+    }
+  };
+
   const toggleLanguage = () => {
     setLanguage(language === 'en' ? 'zh' : 'en');
   };
@@ -257,9 +291,13 @@ const ProfileScreen = () => {
                     style={styles.petCard}
                     onPress={() => navigation.navigate('PetDetail', { pet })}
                   >
-                    <View style={styles.petIcon}>
-                      <Text style={styles.petIconText}>{pet.name.charAt(0)}</Text>
-                    </View>
+                    {pet.photoUrl ? (
+                      <Image source={{ uri: pet.photoUrl }} style={styles.petPhoto} />
+                    ) : (
+                      <View style={styles.petIcon}>
+                        <Text style={styles.petIconText}>{pet.name.charAt(0)}</Text>
+                      </View>
+                    )}
                     <View style={styles.petInfo}>
                       <Text style={styles.petName}>{pet.name}</Text>
                       <Text style={styles.petDetails}>
@@ -328,6 +366,34 @@ const ProfileScreen = () => {
 
             <TouchableOpacity
               style={styles.menuItem}
+              onPress={handleViewPaymentHistory}
+            >
+              <Text style={styles.menuText}>{t.profile.paymentHistory}</Text>
+              <Text style={styles.menuArrow}>›</Text>
+            </TouchableOpacity>
+
+            {isManager && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handleManageStaff}
+              >
+                <Text style={styles.menuText}>{t.profile.manageStaff}</Text>
+                <Text style={styles.menuArrow}>›</Text>
+              </TouchableOpacity>
+            )}
+
+            {isManager && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handleVerifyPayments}
+              >
+                <Text style={styles.menuText}>{t.profile.verifyPayments}</Text>
+                <Text style={styles.menuArrow}>›</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={() => Alert.alert(t.profile.favoritesTitle, t.profile.comingSoon)}
             >
               <Text style={styles.menuText}>{t.profile.myFavorites}</Text>
@@ -353,7 +419,7 @@ const ProfileScreen = () => {
               <Text style={styles.menuText}>{t.profile.pushNotifications}</Text>
               <Switch
                 value={notifications}
-                onValueChange={setNotifications}
+                onValueChange={handleToggleNotifications}
                 trackColor={{ false: '#E0E0E0', true: '#2C4A3E' }}
                 thumbColor={'#F5EDD8'}
               />
@@ -632,6 +698,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5EDD8',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
+  },
+  petPhoto: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     marginRight: 12,
   },
   petIconText: {
