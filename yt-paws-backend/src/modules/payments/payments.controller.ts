@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Get, Param, Req, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Param, Body, Req, Headers, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -26,8 +26,12 @@ export class PaymentsController {
 
   @Post('stripe/:bookingId')
   @UseGuards(JwtAuthGuard)
-  initiateStripe(@Req() req: AuthenticatedRequest, @Param('bookingId') bookingId: string) {
-    return this.paymentsService.initiateStripe(req.user, bookingId);
+  initiateStripe(
+    @Req() req: AuthenticatedRequest,
+    @Param('bookingId') bookingId: string,
+    @Body() body: { returnUrl: string },
+  ) {
+    return this.paymentsService.initiateStripe(req.user, bookingId, body.returnUrl);
   }
 
   @Post('wechat/:bookingId')
@@ -60,5 +64,13 @@ export class PaymentsController {
   @Roles('owner', 'admin')
   findForBusiness(@Req() req: AuthenticatedRequest) {
     return this.paymentsService.findForBusiness(req.user);
+  }
+
+  // Declared after 'mine'/'business' so those literal segments aren't
+  // captured as :id by this route.
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.paymentsService.findOne(req.user, id);
   }
 }

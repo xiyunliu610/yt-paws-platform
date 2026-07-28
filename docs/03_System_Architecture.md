@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.8
+**Document Status:** Draft v0.9
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-07-27
+**Last Updated:** 2026-07-28
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -292,22 +292,28 @@ Payment services also follow the provider-agnostic principle: the architecture d
 
 ### 6.1 Stripe Payment Flow (New Zealand Users)
 
+**Updated 2026-07-28 — Checkout Session, not a raw PaymentIntent.** The original design below (client SDK completes a PaymentIntent) would have required either the native `@stripe/stripe-react-native` SDK (forcing a dev-client build, leaving Expo Go) or a WebView-hosted Checkout page. The decision landed on the latter: `initiateStripe` creates a Stripe-hosted **Checkout Session** instead, and the client opens it in an in-app browser via `expo-web-browser`'s `openAuthSessionAsync` — no native module, works inside Expo Go. A Checkout Session still creates a PaymentIntent under the hood, but the app never touches it directly.
+
 ```mermaid
 sequenceDiagram
     participant App as Mobile App
     participant API as NestJS (payments module)
     participant PSP as Payment Service Provider (Current: Stripe)
 
-    App->>API: Initiate payment request (bookingId)
-    API->>PSP: Create PaymentIntent
-    PSP-->>API: Return client_secret
-    API-->>App: Return client_secret
-    App->>PSP: Complete payment via official SDK
-    PSP-->>API: Webhook callback with payment result
+    App->>API: Initiate payment request (bookingId, returnUrl)
+    API->>PSP: Create Checkout Session (amount, success_url/cancel_url built from returnUrl)
+    PSP-->>API: Return session id + checkoutUrl
+    API-->>App: Return checkoutUrl
+    App->>PSP: Open checkoutUrl in-app browser (expo-web-browser), user pays
+    PSP-->>App: Redirect back to returnUrl (UX signal only, not proof of payment)
+    App->>API: Poll GET /payments/:id for the confirmed status
+    PSP-->>API: Webhook: checkout.session.completed (or .expired)
     API->>API: Verify webhook signature, then update Payment status to "paid" (or "failed")
 ```
 
-**Implementation note:** the webhook updates `Payment.status`, not `Booking.status` — `Booking`'s status enum (`pending/confirmed/in_progress/completed/cancelled`) has no "paid" state; whether a booking has been paid is read off its associated `Payment` row(s) instead. The webhook handler matches the callback back to a `Payment` via `Payment.providerRef` (the Stripe PaymentIntent id, stored when the PaymentIntent is created) and requires `NestFactory.create(AppModule, { rawBody: true })` so the raw request body is available for Stripe's signature check before JSON-parsing runs.
+**Implementation note:** the webhook updates `Payment.status`, not `Booking.status` — `Booking`'s status enum (`pending/confirmed/in_progress/completed/cancelled`) has no "paid" state; whether a booking has been paid is read off its associated `Payment` row(s) instead. The webhook handler matches the callback back to a `Payment` via `Payment.providerRef` (now the Stripe Checkout Session id, stored when the session is created — previously the PaymentIntent id) and requires `NestFactory.create(AppModule, { rawBody: true })` so the raw request body is available for Stripe's signature check before JSON-parsing runs. `checkout.session.completed` fires on a successful payment; `checkout.session.expired` (default 24h) is the closest Checkout equivalent to a PaymentIntent "failed" event — there's no per-attempt failure webhook, since a declined card just keeps the customer on Stripe's hosted page to retry.
+
+**Client is never the source of truth.** `WebBrowser.openAuthSessionAsync`'s return value (`success`/`cancel`/`dismiss`) only tells the app the browser closed, not that Stripe actually confirmed the charge — a user could dismiss the browser after paying, or the webhook could simply be slower than the redirect. `PaymentScreen` polls `GET /payments/:id` a few times after a `success` result and shows a "processing" state if the webhook hasn't landed yet, rather than assuming success from the redirect alone.
 
 ### 6.2 WeChat QR Payment Flow (Chinese Users, Manual Verification)
 
@@ -461,6 +467,9 @@ flowchart TB
 | Push delivery: best-effort, fail-silent | `expo-push.util.ts` wraps the Expo push gateway call in a try/catch with a 5s timeout; `pushToken.ts` wraps every registration step (permission, device check, token fetch) the same way | Expo Go dropped remote push support entirely as of SDK 53 (both platforms) — registration will routinely fail in the current dev environment, and that failure must never surface as a booking/payment error. Matches the Stripe frontend precedent of deferring a "leave Expo Go" decision rather than forcing it |
 | Owner payment verification | `GET /payments/business` (new) returns every payment for the business rather than only `pending_verification` ones | The owner also wants to see settled history for context, not just an action queue; the frontend (`PaymentVerificationScreen`) sorts pending-verification entries first instead of the backend filtering them out |
 | Business/staff home screen | `HomeRouter` (frontend-only, no new route) picks `BusinessHomeScreen` vs. the customer `HomeScreen` by `user.role`, both mounted under the same `"Home"` stack entry | No PRD user story covers this — it was a UX gap (owner/staff saw a customer-oriented booking screen after login) rather than a functional one; solving it at the route-selection level avoids adding a second navigation stack |
+| Stripe integration approach | Checkout Session opened via `expo-web-browser`, not the native `@stripe/stripe-react-native` SDK | The native SDK requires a dev-client build, permanently leaving Expo Go for the whole app, not just the payment screen; Checkout Sessions need only a backend endpoint change and a browser popup, at the cost of a less-native-feeling payment page (acceptable at V1's scale) |
+| Stripe webhook correlation (revised) | `Payment.providerRef` now stores the Checkout Session id, not a PaymentIntent id; webhook matches on `checkout.session.completed`/`.expired` | Follows directly from the Checkout Session decision above — the app never creates or sees a PaymentIntent id anymore, only a Session id |
+| Post-redirect confirmation | Frontend polls `GET /payments/:id` after the in-app browser closes, rather than trusting `WebBrowser.openAuthSessionAsync`'s `success` result | The browser closing (even via Stripe's own success redirect) is a client-side UX event, not proof the webhook fired; the same "server webhook is the only source of truth" principle already governing `Booking`/`Payment` status elsewhere in this document |
 
 ---
 
@@ -476,3 +485,4 @@ flowchart TB
 | 2026-07-26 | v0.6 | Synced with the now-implemented `payments`, `reports`, and `businesses` modules: added `Service.pricing_unit`, `Payment.provider_ref` and `Business.wechat_qr_code_url` to the multi-tenant ERD; documented the `PATCH /bookings/:id/status` lifecycle endpoint; corrected the Stripe/WeChat sequence diagrams, which incorrectly showed `Booking.status` becoming "Paid" — that field lives on `Payment.status` instead, since `Booking`'s status enum has no paid state; added amount-calculation and ADR entries for these decisions | Xiyun Liu |
 | 2026-07-27 | v0.7 | Added `GET /auth/staff` to the `auth` module's responsibilities (backs the frontend's staff directory/assignment picker); documented `initiateWechat`'s new idempotency behavior (§6.2); added §5.3 describing the interim base64-embedded-photo stopgap `ReportComposeScreen` uses in place of the still-unbuilt presigned-upload flow, and its planned removal once §5.1 is implemented; added four ADR entries for these decisions | Xiyun Liu |
 | 2026-07-27 | v0.8 | Rewrote §7 (Notification Architecture) from a design placeholder into a description of the now-implemented `notifications` module — moved it from "Reserved" to "Version 1" in the §1 diagram, added it to the §3.2 module table, and documented that remote push delivery, while implemented, is unverifiable in Expo Go on SDK 53+ (same category of tradeoff as the Stripe frontend deferral); added `Notification` entity, `User.push_token` and `Pet.photo_url` to the §4.1 ERD; added five ADR entries covering the notifications module's deliberately narrow scope, fail-silent push delivery, the pet-photo reuse of the daily-report base64 stopgap, the owner payment-verification endpoint, and the role-based home-screen router (a UX gap closure with no PRD user story behind it) | Xiyun Liu |
+| 2026-07-28 | v0.9 | Resolved the Stripe frontend deferral from v0.7 in favor of Checkout Sessions opened via `expo-web-browser`, not the native SDK — rewrote §6.1's sequence diagram and implementation notes accordingly: `Payment.provider_ref` now stores a Checkout Session id (not a PaymentIntent id), the webhook keys off `checkout.session.completed`/`.expired`, and the client polls `GET /payments/:id` after the in-app browser closes rather than trusting the redirect. Added three ADR entries for these decisions | Xiyun Liu |
