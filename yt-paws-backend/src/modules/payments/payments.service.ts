@@ -61,29 +61,55 @@ export class PaymentsService {
     return booking;
   }
 
-  // US-04.1: creates a Stripe PaymentIntent plus a matching Payment record.
+  // US-04.1: creates a Stripe Checkout Session (a Stripe-hosted payment
+  // page) plus a matching Payment record, rather than a raw PaymentIntent —
+  // chosen specifically so the app never needs a native Stripe SDK / card
+  // form: the frontend just opens `checkoutUrl` in an in-app browser
+  // (expo-web-browser's openAuthSessionAsync), which works inside Expo Go.
   // handleStripeWebhook is what actually marks the Payment paid once Stripe
-  // confirms the charge.
-  async initiateStripe(user: RequestingUser, bookingId: string) {
+  // confirms the charge; the frontend's post-redirect state is a UX signal
+  // only, never a source of truth.
+  //
+  // Idempotent like initiateWechat: reuses an existing pending stripe
+  // Payment row rather than creating a new one on every retry, but each
+  // retry still needs a *new* Checkout Session (Stripe Sessions expire and
+  // can't be reopened), so providerRef is updated to the fresh session id.
+  async initiateStripe(user: RequestingUser, bookingId: string, returnUrl: string) {
     const booking = await this.loadPayableBooking(user, bookingId);
-    const amount = this.computeAmount(booking, booking.service);
 
-    const intent = await this.stripe.paymentIntents.create({
-      amount: Math.round(amount * 100),
-      currency: 'nzd',
+    const existing = await this.prisma.payment.findFirst({
+      where: { bookingId, method: PaymentMethod.stripe, status: PaymentStatus.pending },
+      orderBy: { createdAt: 'desc' },
+    });
+    const amount = existing?.amount ?? this.computeAmount(booking, booking.service);
+
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: 'nzd',
+            product_data: { name: booking.service.name },
+            unit_amount: Math.round(amount * 100),
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: `${returnUrl}?status=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${returnUrl}?status=cancel`,
       metadata: { bookingId },
     });
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        bookingId,
-        method: PaymentMethod.stripe,
-        amount,
-        providerRef: intent.id,
-      },
-    });
+    const payment = existing
+      ? await this.prisma.payment.update({
+          where: { id: existing.id },
+          data: { providerRef: session.id },
+        })
+      : await this.prisma.payment.create({
+          data: { bookingId, method: PaymentMethod.stripe, amount, providerRef: session.id },
+        });
 
-    return { paymentId: payment.id, amount, clientSecret: intent.client_secret };
+    return { paymentId: payment.id, amount, checkoutUrl: session.url };
   }
 
   async handleStripeWebhook(rawBody: Buffer, signature: string) {
@@ -95,14 +121,20 @@ export class PaymentsService {
       throw new BadRequestException('Invalid Stripe webhook signature');
     }
 
-    if (event.type === 'payment_intent.succeeded' || event.type === 'payment_intent.payment_failed') {
-      const intent = event.data.object as Stripe.PaymentIntent;
+    // Checkout Sessions (not raw PaymentIntents) are what initiateStripe
+    // creates now — see the comment there. `checkout.session.completed`
+    // fires once the hosted page collects a successful payment;
+    // `checkout.session.expired` fires if the customer abandons it (24h
+    // default) without ever completing, which is the closest Checkout
+    // equivalent to a PaymentIntent "failed" event.
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.expired') {
+      const session = event.data.object as Stripe.Checkout.Session;
       const payment = await this.prisma.payment.findFirst({
-        where: { providerRef: intent.id },
+        where: { providerRef: session.id },
         include: { booking: true },
       });
       if (payment) {
-        const succeeded = event.type === 'payment_intent.succeeded';
+        const succeeded = event.type === 'checkout.session.completed';
         await this.prisma.payment.update({
           where: { id: payment.id },
           data: succeeded
@@ -268,6 +300,22 @@ export class PaymentsService {
         },
       },
     });
+  }
+
+  // Lets the frontend poll a single payment's status after returning from
+  // the Stripe Checkout browser session — the redirect itself is not proof
+  // of payment (only the webhook is), so the app re-checks this instead of
+  // trusting the `?status=success` query param.
+  async findOne(user: RequestingUser, paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) {
+      throw new NotFoundException('Payment not found');
+    }
+    const booking = await this.prisma.booking.findUnique({ where: { id: payment.bookingId } });
+    if (booking?.customerId !== user.userId) {
+      throw new ForbiddenException('You do not have access to this payment');
+    }
+    return payment;
   }
 
   // US-04.3

@@ -255,6 +255,12 @@ export interface WechatPaymentIntent {
   status: 'pending' | 'pending_verification';
 }
 
+export interface StripeCheckoutIntent {
+  paymentId: string;
+  amount: number;
+  checkoutUrl: string;
+}
+
 export const paymentsApi = {
   // Idempotent: reuses an existing pending/pending_verification wechat_qr
   // payment for this booking instead of creating a duplicate.
@@ -272,6 +278,21 @@ export const paymentsApi = {
   // Owner/admin only. Confirms a pending_verification WeChat transfer as paid.
   verify: (token: string, paymentId: string) =>
     request<Payment>(`/payments/${paymentId}/verify`, { method: 'PATCH' }, token),
+
+  // Creates a Stripe Checkout Session; returnUrl is where the hosted page
+  // redirects back to (see src/screens/PaymentScreen.tsx, which builds it
+  // via Linking.createURL and opens checkoutUrl with openAuthSessionAsync).
+  initiateStripe: (token: string, bookingId: string, returnUrl: string) =>
+    request<StripeCheckoutIntent>(
+      `/payments/stripe/${bookingId}`,
+      { method: 'POST', body: JSON.stringify({ returnUrl }) },
+      token,
+    ),
+
+  // Polls a single payment's current status — used after returning from
+  // the Checkout browser session, since the redirect itself isn't proof of
+  // payment (only the webhook, server-side, is).
+  getOne: (token: string, paymentId: string) => request<Payment>(`/payments/${paymentId}`, {}, token),
 };
 
 export interface StaffMember {
