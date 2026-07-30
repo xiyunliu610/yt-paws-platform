@@ -31,9 +31,9 @@ Before diving into individual modules, roles need to be defined clearly — beca
 | **Customer** | The platform's end user: books services, manages pet profiles, views daily reports | ✅ Implemented |
 | **Business Owner** (currently Y&T Paws) | Manages bookings, confirms payments, publishes daily reports, views their own business's operational data | ✅ Implemented |
 | **Staff** | As a business grows, the Business Owner creates staff accounts under their business and assigns incoming bookings to them to carry out; staff have no business-level admin permissions (e.g. payment verification, account management) | ✅ Implemented — see US-03.5/US-03.6 |
-| **System Administrator** | Represents the PetHome platform operator itself (not a business), for cross-business, system-level management, in preparation for future multi-business SaaS (Version 4) | ⏳ Reserved role — not implemented in Version 1 |
+| **System Administrator** | Represents the PetHome platform operator itself (not a business), for cross-business, system-level management, in preparation for future multi-business SaaS (Version 4) | ⚠️ Not implemented as described — see note below |
 
-**Design Principle:** The `User` table includes a `role` field from Version 1 onward (enum: `customer` / `staff` / `owner` / `admin`), even though Admin has no corresponding functional screens yet — this avoids a future data migration. See `04_Database_Design.md` for detailed field design.
+**Design Principle:** The `User` table includes a `role` field from Version 1 onward (enum: `customer` / `staff` / `owner` / `admin`) — this avoids a future data migration. **Current behavior differs from the row above:** every endpoint guarded `@Roles('owner', 'admin')` (bookings, payments, services, businesses, staff management) treats `admin` as a second owner-equivalent role scoped to the same `businessId`, since these guards also require `user.businessId === resource.businessId`. There is no cross-business "platform admin" code path — a real `System Administrator` role, most likely without a `businessId` at all, is still Version 4 work, not something already reserved and dormant. See `04_Database_Design.md` for detailed field design.
 
 **Staff assignment scope (decided 2026-07-22):** Version 1 supports the Business Owner assigning a booking to one of their staff internally (`Booking.assignedStaffId`). Customers choosing a specific staff member themselves is explicitly deferred — it needs staff profile pages, availability, and possibly ratings, none of which are justified while Y&T Paws has only a handful of staff. Revisit once the owner-assignment flow is validated in real use and staff headcount grows; it should layer on top of the existing design (customer selection would just pre-fill `assignedStaffId` subject to the owner's confirmation) rather than requiring rework.
 
@@ -70,16 +70,16 @@ Corresponding backend module: `auth`
 - Given a user opens the app for the first time, When no language has been set, Then the system suggests a default based on device language, and the user can switch manually
 - Given the user switches language, When the change takes effect, Then all interface text and date formats update immediately, and the setting is persisted for next launch
 
-### US-01.4 Business (Owner) Registration
-> As a pet care business owner (a "sitter"), I want to register my own business on the platform myself, so that I get my own isolated tenant without the platform operator setting anything up for me.
+### US-01.4 Business (Owner) Registration — bootstrap-only as of 2026-07-30
+> Originally: "As a pet care business owner (a 'sitter'), I want to register my own business on the platform myself..." — see `01_Project_Overview.md` §11 for why this changed. V1 serves Y&T Paws exclusively; `POST /auth/register-business` now exists only to have created that one `Business` row, not as a repeatable onboarding flow.
 
 **Acceptance Criteria**
-- Given a business owner submits a business name plus their own email/password/name, When they submit, Then the system creates a new `Business` row and a `User` with role `owner` and `businessId` pointing to that business, and returns a JWT token like normal registration
+- Given no `Business` row exists yet, When someone submits a business name plus their own email/password/name, Then the system creates that `Business` row and a `User` with role `owner` and `businessId` pointing to it, and returns a JWT token like normal registration
+- Given a `Business` row already exists (true in every real environment after the first run), When anyone submits this form, Then the system rejects it with 403 — there is no path to a second tenant in Version 1
 - Given the email is already registered, When they submit, Then the system rejects it with "email already exists" (same rule as US-01.1)
-- This is the *only* way a `Business` row and an `owner` user come into existence in Version 1 — there is no separate admin-run setup step, including for Y&T Paws itself. This keeps onboarding identical whether it's the first business or the hundredth, which matters because the platform is intended to be resold to other pet care businesses later (see `01_Project_Overview.md` §5, §11)
-- Out of scope for Version 1: business verification/approval workflow, billing/subscription for the business itself
+- Out of scope for Version 1: business verification/approval workflow, billing/subscription for the business itself, and (now) any UI for this at all — a customer-facing "Register Business" entry point would only ever be able to fail, so it was removed from the app rather than left as a dead end
 
-*Already implemented: `POST /auth/register-business`, wired into the app as `RegisterBusinessScreen`, reachable from the login screen.*
+*Already implemented: `POST /auth/register-business`, now bootstrap-only (`AuthService.registerBusiness` checks `Business` row count). The `RegisterBusinessScreen` and its "Register Business" link on the login screen were removed from the app (2026-07-30) along with the now-dead `authApi.registerBusiness` client call — none of the three had a reachable path to success once a `Business` already exists.*
 
 ---
 
@@ -296,7 +296,7 @@ Corresponding backend module: `reports`
 | Media Storage | Daily report photos/videos need a storage solution (local/cloud, to be determined in the Architecture document) |
 | Data Privacy | Pet information and payment information require appropriate access control (users can only see their own data) |
 | WeChat Payment Verification SLA | Needs agreement with the business on a reasonable average verification turnaround (e.g. within 24 hours) |
-| Multi-Tenant Data Isolation | Core tables (Booking, Pet, Service, Payment, etc.) reserve a `business_id` field; in Version 1 all data belongs to Y&T Paws by default, but query logic should filter by `business_id` rather than hard-coding the assumption of "only one business" |
+| Multi-Tenant Data Isolation | Core business-owned tables (Booking, Service, Payment via Booking, etc.) reserve a `business_id` field; in Version 1 all data belongs to Y&T Paws by default, but query logic should filter by `business_id` rather than hard-coding the assumption of "only one business." Pet is intentionally excluded — it belongs to its owning customer, not a business (see `01_Project_Overview.md` §11) |
 
 ---
 

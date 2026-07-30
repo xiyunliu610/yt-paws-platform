@@ -72,17 +72,6 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     }),
 
-  registerBusiness: (
-    businessName: string,
-    email: string,
-    password: string,
-    name: string,
-    phone?: string,
-  ) =>
-    request<AuthResponse>('/auth/register-business', {
-      method: 'POST',
-      body: JSON.stringify({ businessName, email, password, name, phone }),
-    }),
 };
 
 export interface Service {

@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -90,9 +91,13 @@ export class AuthService {
     return this.toAuthResponse(user, this.signToken(user));
   }
 
-  // PRD US-01.4: a business owner registers their own business and owner
-  // account in one step. This is the only way a Business row and an owner
-  // user come into existence — no admin-provisioned setup, even for Y&T Paws.
+  // PRD US-01.4 (bootstrap-only as of 2026-07-30): creates the platform's one
+  // Business row and its owner account atomically. V1 serves Y&T Paws
+  // exclusively — see docs/01_Project_Overview.md §11 — so this can only
+  // ever run once; the previous "any number of businesses can self-register"
+  // behavior was reserved-for-later-multi-tenancy scope creep that V1 never
+  // actually needed and nothing in the app depended on beyond the initial
+  // Y&T Paws signup, which has already happened in every real environment.
   async registerBusiness(
     businessName: string,
     email: string,
@@ -102,6 +107,9 @@ export class AuthService {
   ) {
     if (!businessName?.trim()) {
       throw new BadRequestException('Business name is required');
+    }
+    if ((await this.prisma.business.count()) > 0) {
+      throw new ForbiddenException('This platform already has a registered business');
     }
     this.validatePasswordStrength(password);
     await this.assertEmailAvailable(email);

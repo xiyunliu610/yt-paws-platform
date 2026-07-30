@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
+import { UpdateBusinessDto } from './dto/business.dto';
 
 @Controller('businesses')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -12,7 +13,7 @@ export class BusinessesController {
 
   @Patch('me')
   @Roles('owner', 'admin')
-  updateMine(@Req() req: AuthenticatedRequest, @Body() body: { wechatQrCodeUrl?: string }) {
+  updateMine(@Req() req: AuthenticatedRequest, @Body() body: UpdateBusinessDto) {
     return this.businessesService.updateMine(req.user, body);
   }
 }

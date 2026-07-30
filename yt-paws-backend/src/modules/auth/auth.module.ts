@@ -14,7 +14,13 @@ import { JwtAuthGuard } from './jwt-auth.guard';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: '7d' },
+        // Was 7d: role/businessId/disabled-state are baked into the token
+        // and never re-checked against the User row (see JwtStrategy), so a
+        // longer TTL means a fired/disabled/role-changed user keeps access
+        // for that long. Shortened as a stopgap until there's a real
+        // session/revocation mechanism; still no refresh flow, so the app
+        // just has to send the user back to login after this expires.
+        signOptions: { expiresIn: '24h' },
       }),
       inject: [ConfigService],
     }),

@@ -6,7 +6,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Role, BookingStatus } from '@prisma/client';
+import { Prisma, Role, BookingStatus } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
 interface RequestingUser {
@@ -96,28 +96,53 @@ export class BookingsService {
     // Conflict scope: a pet can't be in two places at once. Business-capacity
     // limits beyond that aren't modeled yet (no capacity field on
     // Service/Business), so this only checks the pet's own overlapping bookings.
-    const conflict = await this.prisma.booking.findFirst({
-      where: {
-        petId: data.petId,
-        status: { in: [BookingStatus.pending, BookingStatus.confirmed, BookingStatus.in_progress] },
-        startDate: { lt: end },
-        endDate: { gt: start },
-      },
-    });
-    if (conflict) {
-      throw new ConflictException('This pet already has a booking during that time');
-    }
+    //
+    // The check-then-create is run inside a Serializable transaction, with
+    // one retry on a serialization failure, so two concurrent requests for
+    // the same pet/time-range can't both pass the conflict check before
+    // either has created its row.
+    const attempt = async () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const conflict = await tx.booking.findFirst({
+            where: {
+              petId: data.petId,
+              status: { in: [BookingStatus.pending, BookingStatus.confirmed, BookingStatus.in_progress] },
+              startDate: { lt: end },
+              endDate: { gt: start },
+            },
+          });
+          if (conflict) {
+            throw new ConflictException('This pet already has a booking during that time');
+          }
 
-    return this.prisma.booking.create({
-      data: {
-        businessId: service.businessId,
-        customerId: user.userId,
-        petId: data.petId,
-        serviceId: data.serviceId,
-        startDate: start,
-        endDate: end,
-      },
-    });
+          // Snapshot the service's current price/pricingUnit onto the
+          // booking so a later price change doesn't alter what this booking
+          // owes (see Booking.unitPrice in schema.prisma).
+          return tx.booking.create({
+            data: {
+              businessId: service.businessId,
+              customerId: user.userId,
+              petId: data.petId,
+              serviceId: data.serviceId,
+              unitPrice: service.price,
+              pricingUnit: service.pricingUnit,
+              startDate: start,
+              endDate: end,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+
+    try {
+      return await attempt();
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') {
+        return attempt();
+      }
+      throw err;
+    }
   }
 
   // US-03.4: the customer who made the booking, or the business managing it,

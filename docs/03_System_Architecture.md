@@ -117,8 +117,7 @@ The following principles underpin all subsequent design decisions (database, API
 
 | Module | Responsibility | Corresponding PRD Module |
 |---|---|---|
-| `auth` | Registration (customer and self-service business/owner registration), login, JWT issuance/validation, role management, owner-provisioned staff accounts (create + list) | Module 1 |
-| `users` | Basic user information management | Module 1 (supporting) |
+| `auth` | Registration (customer, plus the one-time business/owner bootstrap — see §13's ADR), login, JWT issuance/validation, role management, owner-provisioned staff accounts (create + list) — there is no separate `users` module; basic user info is owned by `auth` | Module 1 |
 | `pets` | Pet profiles, health records | Module 2 |
 | `services` | Display and management of service offerings (boarding / drop-in, etc.) | Module 3 |
 | `bookings` | Booking creation, status transitions, cancellation logic, owner-to-staff assignment | Module 3 |
@@ -138,8 +137,6 @@ The following principles underpin all subsequent design decisions (database, API
 > ```
 >
 > **Media Service is an architectural abstraction. It does not exist as an independent module in Version 1.** Version 1 does not need to actually extract this service yet — understanding this evolution direction is sufficient for now; the specific extraction timing will be determined in later documents.
-
-> Push notifications do not get a dedicated backend module in Version 1 — they are triggered as a side effect within the `bookings`/`payments` modules. A dedicated `notifications` module will only be extracted once it evolves into a Notification Center (see `09_Notification_Design.md`).
 
 ### 3.3 Database (PostgreSQL + Prisma)
 - A single PostgreSQL instance shared by all modules (typical for a modular monolith)
@@ -167,6 +164,7 @@ erDiagram
     SERVICE ||--o{ BOOKING : "ordered as"
     BOOKING ||--o{ PAYMENT : "paid via"
     BOOKING ||--o{ DAILY_REPORT : "generates"
+    PAYMENT ||--o{ STRIPE_CHECKOUT_ATTEMPT : "attempted via"
 
     BUSINESS {
         uuid id PK
@@ -180,6 +178,7 @@ erDiagram
         string email
         enum role "customer/staff/owner/admin"
         string push_token "nullable, Expo push token registered client-side"
+        boolean is_active "default true; JwtStrategy re-checks this on every request, see §8"
     }
     PET {
         uuid id PK
@@ -199,14 +198,21 @@ erDiagram
         uuid pet_id FK
         uuid service_id FK
         enum status
+        decimal unit_price "snapshot of Service.price at creation time — see below"
+        enum pricing_unit "snapshot of Service.pricing_unit at creation time"
     }
     PAYMENT {
         uuid id PK
         uuid booking_id FK
         enum method "stripe/wechat_qr"
         enum status
-        float amount "derived from Service.price x pricing_unit each time payment is initiated; Booking stores no total"
-        string provider_ref "nullable; e.g. Stripe PaymentIntent id, used to match webhook callbacks back to this row"
+        decimal amount "derived from Booking.unit_price x pricing_unit, computed once when the Payment is created — not re-derived from Service on each call"
+    }
+    STRIPE_CHECKOUT_ATTEMPT {
+        uuid id PK
+        uuid payment_id FK
+        string session_id UK "Stripe Checkout Session id; webhook events resolve back to a Payment through this, not a field on Payment itself"
+        enum status "pending/succeeded/expired"
     }
     DAILY_REPORT {
         uuid id PK
@@ -228,7 +234,8 @@ erDiagram
 - The benefit of this design: in Version 1, all query logic naturally filters by `business_id = Y&T Paws's ID`, so the code is nearly as simple as "pretending there's no multi-tenancy"; but when a second business is actually onboarded in the future, no schema changes are needed — only the application-layer logic for "how to isolate permissions across multiple business_id values" needs to be handled
 - `Booking.assigned_staff_id` (nullable, FK to `User`) lets the Owner assign an incoming booking to one of their staff internally; assignment is required to reference a staff/owner user with the same `business_id` as the booking (see PRD US-03.5/US-03.6). Customers picking their own staff member is out of scope for now — see 4.2
 - `Booking.status` only ever advances forward through `PATCH /bookings/:id/status` (owner/admin only): `pending → confirmed → in_progress → completed`, one step at a time; `cancelled` is a separate terminal state reached only via `PATCH /bookings/:id/cancel`. This endpoint isn't tied to a specific PRD user story — it exists because `in_progress` is a precondition for daily reports (US-06.1) and nothing else in the API could ever produce that transition
-- `Booking` itself stores no total/amount. `Payment.amount` is computed at payment-initiation time from `Service.price` and `Service.pricing_unit` (§6 below), so changing a service's price never requires touching historical bookings
+- `Booking.unit_price`/`pricing_unit` are a snapshot of the `Service`'s values at the moment the booking is created (not a live reference). `Payment.amount` is derived from that snapshot when the Payment row is first created, not from `Service`'s current price — so an owner editing a service's price only affects bookings placed after the edit; it can no longer change what an already-placed (even unpaid) booking owes. All three money fields (`Service.price`, `Booking.unit_price`, `Payment.amount`) are `Decimal(10,2)`, not float, to avoid floating-point rounding on currency
+- A `Payment` can have many `StripeCheckoutAttempt` rows, one per Stripe Checkout Session ever created for it. A retry (the customer re-opens the payment screen) gets its own new session rather than overwriting a "current session" field on the Payment — Stripe Sessions can't be reopened once created, and the old session stays payable until it expires, so its eventual webhook event must still be resolvable back to the Payment. `handleStripeWebhook` looks up by `StripeCheckoutAttempt.session_id`, not by anything on `Payment` (§6.3)
 - `Notification` (added 2026-07-27) is a plain append-only log, not itself multi-tenant-aware — it's scoped by `user_id`, and a business's owner/staff/admin each just see their own notifications like any other user (see §7)
 
 ### 4.2 What's Deliberately Out of Scope for Now
@@ -237,8 +244,9 @@ Written down explicitly to avoid scope creep during development:
 - ❌ No cross-business aggregated reporting
 - ❌ No complex permission matrix based on `business_id` (Version 1 permission logic remains a simple binary: "Customers can only see their own data; Owners can see all of Y&T Paws's data")
 - ❌ No customer-facing staff selection (customers don't see or choose `assigned_staff_id`; only the Owner sets it) — deferred until staff headcount justifies the extra UI (profiles, availability, etc.)
-- ✅ Only: core tables carry a `business_id` field, and queries consistently apply this filter
+- ✅ Only: core tables carry a `business_id` field, and owner/staff-facing queries consistently apply this filter
 - ✅ Owner-to-staff booking assignment via `assigned_staff_id`
+- ⚠️ Exception: `GET /services` for a customer applies no `business_id` filter at all — it relies on `AuthService.registerBusiness` enforcing that only one `Business` row can ever exist (§13's ADR), not on a query-level filter. This is correct only as long as that stays true; see the comment on `ServicesService.findAll`
 
 ---
 
@@ -288,7 +296,7 @@ sequenceDiagram
 
 Payment services also follow the provider-agnostic principle: the architecture defines the abstract concept of a "payment method," with Stripe and WeChat being the two concrete implementations for the current stage.
 
-**Amount calculation:** `Booking` has no stored total. Whenever a payment is initiated (Stripe or WeChat), the `payments` module computes the amount from the booking's `Service`: if `Service.pricing_unit` is `flat`, the amount is just `Service.price`; if `per_day`, it's `Service.price × ceil((booking.endDate − booking.startDate) / 1 day)` (minimum 1 day). This keeps `Service.price` changes from ever needing to touch past bookings, at the cost of recomputing the amount fresh each time a payment is attempted for the same booking.
+**Amount calculation (updated 2026-07-29 — snapshotted at booking time, not recomputed per payment attempt).** `Booking.unit_price`/`pricing_unit` are copied from the `Service` once, when the booking is created (§4.1). The first time a payment is initiated for a booking (Stripe or WeChat), `payments` computes the amount from that snapshot — not from `Service`'s current row — and stores it on the `Payment`: if `pricing_unit` is `flat`, the amount is just `unit_price`; if `per_day`, it's `unit_price × ceil((booking.endDate − booking.startDate) / 1 day)` (minimum 1 day). Every later payment attempt for the same booking (a retried Stripe Checkout Session, a re-opened WeChat screen) reuses that already-computed `Payment.amount` rather than recomputing it — see `PaymentsService.getOrCreateActivePayment`. This is the fix for a real gap in the original design: computing off the live `Service.price` on every attempt meant an owner editing a price could change what an already-placed, still-unpaid booking owed.
 
 ### 6.1 Stripe Payment Flow (New Zealand Users)
 
@@ -311,7 +319,11 @@ sequenceDiagram
     API->>API: Verify webhook signature, then update Payment status to "paid" (or "failed")
 ```
 
-**Implementation note:** the webhook updates `Payment.status`, not `Booking.status` — `Booking`'s status enum (`pending/confirmed/in_progress/completed/cancelled`) has no "paid" state; whether a booking has been paid is read off its associated `Payment` row(s) instead. The webhook handler matches the callback back to a `Payment` via `Payment.providerRef` (now the Stripe Checkout Session id, stored when the session is created — previously the PaymentIntent id) and requires `NestFactory.create(AppModule, { rawBody: true })` so the raw request body is available for Stripe's signature check before JSON-parsing runs. `checkout.session.completed` fires on a successful payment; `checkout.session.expired` (default 24h) is the closest Checkout equivalent to a PaymentIntent "failed" event — there's no per-attempt failure webhook, since a declined card just keeps the customer on Stripe's hosted page to retry.
+**Implementation note:** the webhook updates `Payment.status`, not `Booking.status` — `Booking`'s status enum (`pending/confirmed/in_progress/completed/cancelled`) has no "paid" state; whether a booking has been paid is read off its associated `Payment` row(s) instead. `NestFactory.create(AppModule, { rawBody: true })` is required so the raw request body is available for Stripe's signature check before JSON-parsing runs. `checkout.session.completed` fires on a successful payment; `checkout.session.expired` (default 24h) is the closest Checkout equivalent to a PaymentIntent "failed" event — there's no per-attempt failure webhook, since a declined card just keeps the customer on Stripe's hosted page to retry.
+
+**Session ↔ Payment resolution (updated 2026-07-29 — via `StripeCheckoutAttempt`, not `Payment.providerRef`).** The original design stored a single `providerRef` on `Payment` and overwrote it with the newest Checkout Session id on every retry. That broke the case it was meant to handle: a retry's Session is genuinely new (Stripe Sessions can't be reopened), but the *old* Session doesn't stop being payable until it expires — so if the customer completed payment on an old, still-open tab, its `checkout.session.completed` webhook would carry a Session id no `Payment` row referenced anymore, and the payment would never be marked `paid`. `initiateStripe` now creates one `StripeCheckoutAttempt` row per Checkout Session (all children of the same `Payment`, reused per `getOrCreateActivePayment`), and the webhook resolves `session.id → StripeCheckoutAttempt.session_id → Payment` — every session created stays resolvable, however many retries there have been.
+
+**Webhook idempotency (updated 2026-07-29 — atomic conditional updates, not a read-then-write check).** Stripe retries delivery until it gets a 2xx, so the same event can arrive concurrently or out of order. The handler no longer reads `Payment.status` and branches on it before writing (two concurrent deliveries could both read `pending` before either write lands, and both notify); it uses `updateMany({ where: { ..., status: 'pending' }, ... })` on both the `StripeCheckoutAttempt` and the `Payment`, and only proceeds to the next step (and, ultimately, the customer notification) when the returned `count` confirms *this* call performed the transition.
 
 **Client is never the source of truth.** `WebBrowser.openAuthSessionAsync`'s return value (`success`/`cancel`/`dismiss`) only tells the app the browser closed, not that Stripe actually confirmed the charge — a user could dismiss the browser after paying, or the webhook could simply be slower than the redirect. `PaymentScreen` polls `GET /payments/:id` a few times after a `success` result and shows a "processing" state if the webhook hasn't landed yet, rather than assuming success from the redirect alone.
 
@@ -336,7 +348,7 @@ sequenceDiagram
 
 **Implementation note:** as with Stripe, every state change here is on `Payment.status`, never `Booking.status`. "Notify the business to reconcile" and "notify user of payment confirmation" are implemented as of 2026-07-27 via the `notifications` module — see §7. The QR code itself is just `Business.wechat_qr_code_url`, a plain string the owner sets via `PATCH /businesses/me`; there's no image upload endpoint, consistent with §5's presigned-upload flow not being implemented yet.
 
-**Idempotency (added 2026-07-27):** `initiateWechat` now checks for an existing `pending`/`pending_verification` `wechat_qr` payment on the booking before creating a new one, returning that instead. This was needed once the frontend `PaymentScreen` started calling it every time the screen mounts (e.g. re-opening the booking after backgrounding the app mid-transfer) — without it, each visit would have created a new `Payment` row for the same booking.
+**Idempotency (added 2026-07-27, made concurrency-safe 2026-07-29):** `initiateWechat` checks for an existing `pending`/`pending_verification` `wechat_qr` payment on the booking before creating a new one, returning that instead. This was needed once the frontend `PaymentScreen` started calling it every time the screen mounts (e.g. re-opening the booking after backgrounding the app mid-transfer) — without it, each visit would have created a new `Payment` row for the same booking. The check-then-create is inherently racy under concurrent requests (two calls can both see "none exists" before either writes), so it's backstopped by a partial unique index on `Payment` — `payment_wechat_active_unique`, one active `wechat_qr` payment per booking — that the database itself enforces; the loser of the race gets a unique-constraint error, which `getOrCreateActivePayment` catches and resolves by re-reading the winner's row instead of erroring. The same construction (partial unique index + create-then-catch) backstops the Stripe side (`payment_stripe_pending_unique`), and `markWechatPaid`/`verifyWechatPayment` use the same atomic conditional-update pattern as the Stripe webhook (§6.1) to guard against a double-tap performing the same transition twice.
 
 **Key difference:** The Stripe path is driven automatically by webhook; the WeChat path is driven by the business's manual action. These two paths are two independent strategy implementations within the `payments` module (corresponding to the "pluggable payment method" design principle in `02_Product_Requirements.md`), sharing the same `Payment` state machine but with different triggers for state transitions.
 
@@ -372,6 +384,8 @@ Detailed plans are in `11_Security.md`; the Version 1 baseline is listed here:
 | Password Storage | Encrypted storage (e.g. bcrypt), never plaintext |
 | Access Control | Access control based on the `role` field (Customers can only access their own data; Owners can access their business's data) |
 | Secret Management | Third-party secrets (payment providers, cloud storage, LLM services) live only in backend environment variables and are never sent to the client |
+
+**Session freshness (updated 2026-07-29).** The JWT carries `role`/`businessId` as claims, and — with no refresh-token flow yet — is valid for 24h (shortened from an initial 7d) with no version/revocation mechanism. Rather than trust those claims for the token's whole lifetime, `JwtStrategy.validate` looks the user up fresh from the database on every request and returns the live `role`/`businessId`/`isActive` instead: a role change, business reassignment, or (once something sets `User.isActive = false` — no endpoint does yet) an account deactivation takes effect on the very next request rather than waiting up to 24h. This is a stopgap, not the end state: a real solution still needs `tokenVersion`-style invalidation and a refresh-token flow so access tokens can be short-lived without forcing a daily re-login, plus revocation on logout/password-change. Tracked as follow-up work, not required before Version 1 ships internally.
 
 ---
 
@@ -452,11 +466,11 @@ flowchart TB
 | Media upload approach | Client uploads directly to cloud storage (presigned URL) | Avoids backend bearing large-file traffic load; better upload experience |
 | WeChat payment integration approach | Personal QR code + manual verification, rather than the official merchant API | The official merchant API has a high application threshold; manual verification is a pragmatic transitional approach for now, with an extension point reserved for switching to the official API in the future |
 | Third-party service description approach | Provider-agnostic | Storage, push, AI, camera, etc. categories only define responsibilities without binding to a specific vendor, reducing future documentation and code changes when switching providers |
-| Business onboarding | Self-service registration (`POST /auth/register-business`) creates the `Business` row and its first `owner` User atomically; no admin-run setup step, not even for Y&T Paws | Keeps onboarding identical for the first tenant and the hundredth, which the Version 4 resale model depends on; building it self-service now is no more expensive than a one-off script and avoids retrofitting later |
+| Business onboarding (revised 2026-07-30) | `POST /auth/register-business` creates the `Business` row and its first `owner` User atomically, but only once — `AuthService.registerBusiness` rejects the call if a `Business` already exists | The original "self-service for any number of businesses, starting now" design meant `services.findAll` (no `businessId` filter for customers) mixed every registered business's listings — real marketplace behavior V1 explicitly isn't supposed to have. Bootstrapping the one V1 tenant doesn't need that; a real multi-business flow (discovery, selection, isolation) is Version 4 work, done properly then |
 | Staff provisioning | Owner creates staff accounts directly (`POST /auth/staff`) with a system-generated temporary password returned to the owner, rather than an email invite flow | No transactional email infrastructure exists yet; owners already relay information to staff manually (WeChat, phone), so this fits current operating reality without new infrastructure |
 | Service pricing model | `Service.pricing_unit` enum (`flat` \| `per_day`, default `flat`) rather than a fixed per-service formula | Boarding is naturally priced per night, grooming/house-visits per session; a single field lets both coexist without a booking-total field or per-service special-casing in the payments module |
-| Payment amount storage | `Payment.amount` computed fresh from `Service.price`/`pricing_unit` at initiation time; `Booking` stores no total | Avoids a stale/duplicated total that could drift from the service's actual price; the tradeoff is that a service price change could affect a not-yet-paid booking, which is acceptable at V1's scale |
-| Stripe webhook correlation | `Payment.providerRef` stores the Stripe PaymentIntent id; the webhook handler looks up the `Payment` row by that id rather than by `bookingId` | A booking can have multiple payment attempts (retries after a decline); correlating by the specific PaymentIntent id (not just bookingId) avoids updating the wrong attempt |
+| Payment amount storage (revised 2026-07-29) | `Booking.unit_price`/`pricing_unit` snapshot `Service`'s values at creation time; `Payment.amount` is computed from that snapshot once, at first payment initiation, and reused by every later attempt | The original "compute fresh from `Service.price` every time" design meant a price change could change what an already-placed, unpaid booking owed — a real billing-dispute risk, not an acceptable V1 tradeoff. Snapshotting at booking time (not payment time) fixes this while keeping `Booking` itself total-free |
+| Stripe webhook correlation (revised 2026-07-29) | A `StripeCheckoutAttempt` row per Checkout Session (FK to `Payment`, unique `session_id`); the webhook looks up by `session_id`, not by anything stored on `Payment` | The original "one `providerRef` on `Payment`, overwritten on retry" design broke exactly the retry case it was meant to handle: the old session stays payable until it expires, so overwriting the reference made its eventual webhook unresolvable. Attempts are additive, not overwritten, so every session ever created for a `Payment` stays resolvable |
 | Business profile updates | Minimal `businesses` module with a single `PATCH /businesses/me` (owner/admin only), rather than a general business-settings module | The only post-registration business field needed so far is the WeChat QR code URL; a fuller business-profile module can be built when more fields (e.g. logo, hours) are actually needed |
 | Booking status progression | `PATCH /bookings/:id/status`, forward-only through `pending → confirmed → in_progress → completed`, one step at a time (owner/admin only) | Daily reports (US-06.1) require a booking to be `in_progress`, and no endpoint could produce that transition before this was added; forward-only, single-step validation keeps the state machine simple and prevents skipping steps or reviving a cancelled booking |
 | Staff directory endpoint | `GET /auth/staff` (owner/admin only) added to the `auth` module rather than creating a `users` module | The only two frontend consumers (the booking-assignment picker and `StaffManagementScreen`) both need "everyone assignable in my business," which is exactly `auth.service.createStaff`'s counterpart; a separate `users` module would be premature for a single read endpoint |

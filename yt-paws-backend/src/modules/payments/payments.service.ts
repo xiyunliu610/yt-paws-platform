@@ -2,8 +2,14 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PaymentMethod, PaymentStatus, Service, Booking } from '@prisma/client';
+import { Prisma, PaymentMethod, PaymentStatus, CheckoutAttemptStatus, Booking } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+
+// Postgres unique_violation, thrown by Prisma as P2002 — expected when two
+// concurrent requests both pass the "no active payment yet" check and race
+// to create one; the partial unique indexes on Payment (see schema.prisma)
+// let only one of them win.
+const UNIQUE_CONSTRAINT_VIOLATION = 'P2002';
 
 interface RequestingUser {
   userId: string;
@@ -26,17 +32,20 @@ export class PaymentsService {
     this.stripe = new Stripe(this.configService.get<string>('STRIPE_SECRET_KEY') || 'sk_test_unconfigured');
   }
 
-  // Booking has no stored total; it's derived from the service's price and
-  // pricing model each time a payment is initiated (Service.pricingUnit).
-  private computeAmount(booking: Booking, service: Service): number {
-    if (service.pricingUnit === 'per_day') {
+  // Booking has no stored total; it's derived from the price/pricingUnit
+  // snapshotted onto the booking at creation time (Booking.unitPrice), not
+  // the service's current price — so an owner editing a price later can't
+  // change what an already-placed booking owes.
+  private computeAmount(booking: Booking): number {
+    const unitPrice = Number(booking.unitPrice);
+    if (booking.pricingUnit === 'per_day') {
       const days = Math.max(
         1,
         Math.ceil((booking.endDate.getTime() - booking.startDate.getTime()) / (24 * 60 * 60 * 1000)),
       );
-      return service.price * days;
+      return unitPrice * days;
     }
-    return service.price;
+    return unitPrice;
   }
 
   private async loadPayableBooking(user: RequestingUser, bookingId: string) {
@@ -61,27 +70,72 @@ export class PaymentsService {
     return booking;
   }
 
+  // Shared by initiateStripe/initiateWechat: return the one "active" Payment
+  // for this booking+method (see the partial unique indexes documented on
+  // the Payment model), creating it if none exists. Two concurrent callers
+  // can both pass the `findFirst` with nothing found — the loser's `create`
+  // then hits the unique index and is caught here, re-reading the winner's
+  // row instead of erroring or creating a duplicate.
+  private async getOrCreateActivePayment(params: {
+    bookingId: string;
+    method: PaymentMethod;
+    activeStatuses: PaymentStatus[];
+    amount: number;
+    referenceNote?: string;
+  }) {
+    const { bookingId, method, activeStatuses, amount, referenceNote } = params;
+    const existing = await this.prisma.payment.findFirst({
+      where: { bookingId, method, status: { in: activeStatuses } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await this.prisma.payment.create({ data: { bookingId, method, amount, referenceNote } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION) {
+        const winner = await this.prisma.payment.findFirst({
+          where: { bookingId, method, status: { in: activeStatuses } },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (winner) {
+          return winner;
+        }
+      }
+      throw err;
+    }
+  }
+
   // US-04.1: creates a Stripe Checkout Session (a Stripe-hosted payment
-  // page) plus a matching Payment record, rather than a raw PaymentIntent —
-  // chosen specifically so the app never needs a native Stripe SDK / card
-  // form: the frontend just opens `checkoutUrl` in an in-app browser
-  // (expo-web-browser's openAuthSessionAsync), which works inside Expo Go.
-  // handleStripeWebhook is what actually marks the Payment paid once Stripe
-  // confirms the charge; the frontend's post-redirect state is a UX signal
-  // only, never a source of truth.
+  // page) plus a matching StripeCheckoutAttempt, rather than a raw
+  // PaymentIntent — chosen specifically so the app never needs a native
+  // Stripe SDK / card form: the frontend just opens `checkoutUrl` in an
+  // in-app browser (expo-web-browser's openAuthSessionAsync), which works
+  // inside Expo Go. handleStripeWebhook is what actually marks the Payment
+  // paid once Stripe confirms the charge; the frontend's post-redirect state
+  // is a UX signal only, never a source of truth.
   //
-  // Idempotent like initiateWechat: reuses an existing pending stripe
-  // Payment row rather than creating a new one on every retry, but each
-  // retry still needs a *new* Checkout Session (Stripe Sessions expire and
-  // can't be reopened), so providerRef is updated to the fresh session id.
+  // Idempotent on the underlying Payment (reuses the existing pending stripe
+  // Payment row rather than creating a new one on every retry, via
+  // getOrCreateActivePayment), but each retry still needs its own Checkout
+  // Session — Stripe Sessions expire and can't be reopened — so each retry
+  // gets its own StripeCheckoutAttempt under that same Payment, rather than
+  // overwriting a single "current session" field on it. That matters
+  // because the old session stays payable until it expires: if it were
+  // overwritten, a customer completing payment on an old tab would produce
+  // a webhook event this service could no longer resolve back to a Payment.
   async initiateStripe(user: RequestingUser, bookingId: string, returnUrl: string) {
     const booking = await this.loadPayableBooking(user, bookingId);
 
-    const existing = await this.prisma.payment.findFirst({
-      where: { bookingId, method: PaymentMethod.stripe, status: PaymentStatus.pending },
-      orderBy: { createdAt: 'desc' },
+    const payment = await this.getOrCreateActivePayment({
+      bookingId,
+      method: PaymentMethod.stripe,
+      activeStatuses: [PaymentStatus.pending],
+      amount: this.computeAmount(booking),
     });
-    const amount = existing?.amount ?? this.computeAmount(booking, booking.service);
+    const amount = Number(payment.amount);
 
     const session = await this.stripe.checkout.sessions.create({
       mode: 'payment',
@@ -100,14 +154,9 @@ export class PaymentsService {
       metadata: { bookingId },
     });
 
-    const payment = existing
-      ? await this.prisma.payment.update({
-          where: { id: existing.id },
-          data: { providerRef: session.id },
-        })
-      : await this.prisma.payment.create({
-          data: { bookingId, method: PaymentMethod.stripe, amount, providerRef: session.id },
-        });
+    await this.prisma.stripeCheckoutAttempt.create({
+      data: { paymentId: payment.id, sessionId: session.id },
+    });
 
     return { paymentId: payment.id, amount, checkoutUrl: session.url };
   }
@@ -129,27 +178,63 @@ export class PaymentsService {
     // equivalent to a PaymentIntent "failed" event.
     if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.expired') {
       const session = event.data.object as Stripe.Checkout.Session;
-      const payment = await this.prisma.payment.findFirst({
-        where: { providerRef: session.id },
-        include: { booking: true },
+      const succeeded = event.type === 'checkout.session.completed';
+
+      // Stripe retries webhook delivery until it gets a 2xx, so the same
+      // event can arrive more than once. This `updateMany` is the atomic
+      // guard: only the delivery that actually flips the attempt out of
+      // `pending` proceeds past it, so two concurrent/duplicate deliveries
+      // of the same event can't both act (and notify) on it.
+      const claimed = await this.prisma.stripeCheckoutAttempt.updateMany({
+        where: { sessionId: session.id, status: CheckoutAttemptStatus.pending },
+        data: { status: succeeded ? CheckoutAttemptStatus.succeeded : CheckoutAttemptStatus.expired },
       });
-      if (payment) {
-        const succeeded = event.type === 'checkout.session.completed';
-        await this.prisma.payment.update({
-          where: { id: payment.id },
-          data: succeeded
-            ? { status: PaymentStatus.paid, verifiedAt: new Date() }
-            : { status: PaymentStatus.failed },
+
+      if (claimed.count === 1) {
+        const attempt = await this.prisma.stripeCheckoutAttempt.findUnique({
+          where: { sessionId: session.id },
+          include: { payment: { include: { booking: true } } },
         });
 
-        // US-05.2
-        await this.notifications.notify(
-          payment.booking.customerId,
-          succeeded ? 'Payment Successful' : 'Payment Failed',
-          succeeded
-            ? `Your payment of NZD ${payment.amount.toFixed(2)} was successful.`
-            : `Your payment of NZD ${payment.amount.toFixed(2)} could not be processed. Please try again.`,
-        );
+        if (attempt) {
+          const amount = Number(attempt.payment.amount);
+
+          if (succeeded) {
+            // Same atomic-guard pattern for the parent Payment: only the
+            // request that actually moves it pending -> paid notifies.
+            const advanced = await this.prisma.payment.updateMany({
+              where: { id: attempt.paymentId, status: PaymentStatus.pending },
+              data: { status: PaymentStatus.paid, verifiedAt: new Date() },
+            });
+            if (advanced.count === 1) {
+              await this.notifications.notify(
+                attempt.payment.booking.customerId,
+                'Payment Successful',
+                `Your payment of NZD ${amount.toFixed(2)} was successful.`,
+              );
+            }
+          } else {
+            // An expired session only fails the Payment if no other attempt
+            // on it is still open — a retried initiateStripe call may have
+            // handed the customer a fresh, still-payable Checkout link.
+            const stillOpen = await this.prisma.stripeCheckoutAttempt.count({
+              where: { paymentId: attempt.paymentId, status: CheckoutAttemptStatus.pending },
+            });
+            if (stillOpen === 0) {
+              const advanced = await this.prisma.payment.updateMany({
+                where: { id: attempt.paymentId, status: PaymentStatus.pending },
+                data: { status: PaymentStatus.failed },
+              });
+              if (advanced.count === 1) {
+                await this.notifications.notify(
+                  attempt.payment.booking.customerId,
+                  'Payment Failed',
+                  `Your payment of NZD ${amount.toFixed(2)} could not be processed. Please try again.`,
+                );
+              }
+            }
+          }
+        }
       }
     }
 
@@ -168,40 +253,18 @@ export class PaymentsService {
     const booking = await this.loadPayableBooking(user, bookingId);
     const business = await this.prisma.business.findUnique({ where: { id: booking.businessId } });
 
-    const existing = await this.prisma.payment.findFirst({
-      where: {
-        bookingId,
-        method: PaymentMethod.wechat_qr,
-        status: { in: [PaymentStatus.pending, PaymentStatus.pending_verification] },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (existing) {
-      return {
-        paymentId: existing.id,
-        amount: existing.amount,
-        referenceNote: existing.referenceNote,
-        qrCodeUrl: business?.wechatQrCodeUrl ?? null,
-        status: existing.status,
-      };
-    }
-
-    const amount = this.computeAmount(booking, booking.service);
-    const referenceNote = `PAWS-${bookingId.slice(0, 8).toUpperCase()}`;
-
-    const payment = await this.prisma.payment.create({
-      data: {
-        bookingId,
-        method: PaymentMethod.wechat_qr,
-        amount,
-        referenceNote,
-      },
+    const payment = await this.getOrCreateActivePayment({
+      bookingId,
+      method: PaymentMethod.wechat_qr,
+      activeStatuses: [PaymentStatus.pending, PaymentStatus.pending_verification],
+      amount: this.computeAmount(booking),
+      referenceNote: `PAWS-${bookingId.slice(0, 8).toUpperCase()}`,
     });
 
     return {
       paymentId: payment.id,
-      amount,
-      referenceNote,
+      amount: Number(payment.amount),
+      referenceNote: payment.referenceNote,
       qrCodeUrl: business?.wechatQrCodeUrl ?? null,
       status: payment.status,
     };
@@ -223,10 +286,15 @@ export class PaymentsService {
       throw new BadRequestException('This payment is not awaiting a WeChat transfer confirmation');
     }
 
-    const updated = await this.prisma.payment.update({
-      where: { id: paymentId },
+    // Atomic guard against a double-tap of "I've Paid" both passing the
+    // status check above before either write lands.
+    const advanced = await this.prisma.payment.updateMany({
+      where: { id: paymentId, status: PaymentStatus.pending },
       data: { status: PaymentStatus.pending_verification },
     });
+    if (advanced.count === 0) {
+      throw new BadRequestException('This payment is not awaiting a WeChat transfer confirmation');
+    }
 
     // US-05.2: confirms to the customer their "I've paid" tap registered,
     // and — the "notify the business to reconcile" step the architecture
@@ -240,10 +308,11 @@ export class PaymentsService {
     await this.notifications.notifyBusinessManagers(
       payment.booking.businessId,
       'WeChat Payment Awaiting Verification',
-      `A customer marked a NZD ${payment.amount.toFixed(2)} WeChat transfer (ref ${payment.referenceNote}) as paid. Please verify it in Payment Verification.`,
+      `A customer marked a NZD ${Number(payment.amount).toFixed(2)} WeChat transfer (ref ${payment.referenceNote}) as paid. Please verify it in Payment Verification.`,
     );
 
-    return updated;
+    const { booking: _booking, ...paymentFields } = payment;
+    return { ...paymentFields, status: PaymentStatus.pending_verification };
   }
 
   // US-04.2: the business owner reconciles the manual transfer and confirms
@@ -264,19 +333,24 @@ export class PaymentsService {
       throw new BadRequestException('This payment is not awaiting verification');
     }
 
-    const updated = await this.prisma.payment.update({
-      where: { id: paymentId },
-      data: { status: PaymentStatus.paid, verifiedAt: new Date() },
+    const verifiedAt = new Date();
+    const advanced = await this.prisma.payment.updateMany({
+      where: { id: paymentId, status: PaymentStatus.pending_verification },
+      data: { status: PaymentStatus.paid, verifiedAt },
     });
+    if (advanced.count === 0) {
+      throw new BadRequestException('This payment is not awaiting verification');
+    }
 
     // US-05.2
     await this.notifications.notify(
       payment.booking.customerId,
       'Payment Confirmed',
-      `Your WeChat payment of NZD ${payment.amount.toFixed(2)} has been confirmed. Thank you!`,
+      `Your WeChat payment of NZD ${Number(payment.amount).toFixed(2)} has been confirmed. Thank you!`,
     );
 
-    return updated;
+    const { booking: _booking, ...paymentFields } = payment;
+    return { ...paymentFields, status: PaymentStatus.paid, verifiedAt };
   }
 
   // Backs the owner-side Payment Verification screen: every payment for the
