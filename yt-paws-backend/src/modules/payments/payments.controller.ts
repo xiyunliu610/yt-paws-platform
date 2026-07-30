@@ -1,10 +1,11 @@
-import { Controller, Post, Patch, Get, Param, Body, Req, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Param, ParseUUIDPipe, Body, Req, Headers, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
+import { InitiateStripeDto } from './dto/payment.dto';
 
 @Controller('payments')
 export class PaymentsController {
@@ -28,28 +29,28 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   initiateStripe(
     @Req() req: AuthenticatedRequest,
-    @Param('bookingId') bookingId: string,
-    @Body() body: { returnUrl: string },
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Body() body: InitiateStripeDto,
   ) {
     return this.paymentsService.initiateStripe(req.user, bookingId, body.returnUrl);
   }
 
   @Post('wechat/:bookingId')
   @UseGuards(JwtAuthGuard)
-  initiateWechat(@Req() req: AuthenticatedRequest, @Param('bookingId') bookingId: string) {
+  initiateWechat(@Req() req: AuthenticatedRequest, @Param('bookingId', ParseUUIDPipe) bookingId: string) {
     return this.paymentsService.initiateWechat(req.user, bookingId);
   }
 
   @Patch(':id/mark-paid')
   @UseGuards(JwtAuthGuard)
-  markWechatPaid(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  markWechatPaid(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.paymentsService.markWechatPaid(req.user, id);
   }
 
   @Patch(':id/verify')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner', 'admin')
-  verifyWechatPayment(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  verifyWechatPayment(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.paymentsService.verifyWechatPayment(req.user, id);
   }
 
@@ -70,7 +71,7 @@ export class PaymentsController {
   // captured as :id by this route.
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  findOne(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.paymentsService.findOne(req.user, id);
   }
 }

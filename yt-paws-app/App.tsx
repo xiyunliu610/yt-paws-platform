@@ -11,7 +11,6 @@ import { registerForPushNotificationsAsync } from './src/notifications/pushToken
 // Screens
 import LoginScreen from './src/screens/Auth/LoginScreen';
 import RegisterScreen from './src/screens/Auth/RegisterScreen';
-import RegisterBusinessScreen from './src/screens/Auth/RegisterBusinessScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
@@ -92,15 +91,6 @@ const Navigation = () => {
           component={RegisterScreen}
           options={{
             title: 'Create Account',
-            headerShown: true,
-          }}
-        />
-
-        <Stack.Screen
-          name="RegisterBusiness"
-          component={RegisterBusinessScreen}
-          options={{
-            title: 'Register Business',
             headerShown: true,
           }}
         />

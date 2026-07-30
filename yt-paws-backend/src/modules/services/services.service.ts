@@ -27,6 +27,14 @@ export class ServicesService {
   // US-03.1: customers only browse published (active) services; an
   // owner/staff managing their own business's listing needs to see
   // delisted ones too, so they can re-publish them.
+  //
+  // No businessId filter here: a customer sees every active service on the
+  // platform, which is only correct because AuthService.registerBusiness
+  // now enforces that exactly one Business row can ever exist (V1 serves
+  // Y&T Paws exclusively, decided 2026-07-30). If that constraint is ever
+  // relaxed, this needs to filter by businessId (and the app needs a way
+  // for the customer to pick/discover a business) before it does — it
+  // would otherwise silently start mixing services from every business.
   async findAll(user: RequestingUser) {
     if (user.role === Role.customer) {
       return this.prisma.service.findMany({

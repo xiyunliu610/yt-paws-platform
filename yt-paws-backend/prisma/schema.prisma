@@ -39,45 +39,59 @@ enum PaymentStatus {
   refunded
 }
 
+enum CheckoutAttemptStatus {
+  pending
+  succeeded
+  expired
+}
+
 /// A pet care business onboarded to the platform. Version 1 has exactly one
-/// row (Y&T Paws); business_id is carried on core tables from Version 1
-/// onward so future businesses can be added without a schema migration.
+/// row (Y&T Paws) and AuthService.registerBusiness enforces that — it's a
+/// bootstrap step, not an ongoing self-service signup surface (decided
+/// 2026-07-30, see docs/01_Project_Overview.md §11). business_id is still
+/// carried on core tables from Version 1 onward so a real multi-business
+/// V4 won't need a schema migration, even though nothing before V4 can
+/// actually create a second row here.
 /// See docs/01_Project_Overview.md §11 and docs/03_System_Architecture.md §4.
 model Business {
-  id        String    @id @default(uuid()) @db.Uuid
-  name      String
-  region    String?
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String
+  region          String?
   // Static image of the business's personal WeChat QR code, shown to
   // customers during WeChat payment (US-04.2). There's no official merchant
   // API integration in V1, so this is just a URL the owner sets, not
   // something the platform generates.
   wechatQrCodeUrl String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  staff     User[]
-  services  Service[]
-  bookings  Booking[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  staff           User[]
+  services        Service[]
+  bookings        Booking[]
 }
 
 model User {
-  id               String    @id @default(uuid()) @db.Uuid
-  businessId       String?   @db.Uuid
-  business         Business? @relation(fields: [businessId], references: [id])
-  email            String    @unique
+  id               String         @id @default(uuid()) @db.Uuid
+  businessId       String?        @db.Uuid
+  business         Business?      @relation(fields: [businessId], references: [id])
+  email            String         @unique
   password         String
   name             String?
   phone            String?
-  role             Role      @default(customer)
+  role             Role           @default(customer)
   // Expo push token, registered client-side after the user grants
   // notification permission. Null until then, or if they never grant it
   // (or are running in an environment where remote push isn't available,
   // e.g. Expo Go on SDK 53+) — in-app notifications work regardless.
   pushToken        String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  // Not yet settable via any endpoint — added so JwtStrategy can reject a
+  // disabled account immediately (it looks the user up fresh on every
+  // request rather than trusting the JWT's claims; see jwt.strategy.ts).
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   pets             Pet[]
-  bookings         Booking[] @relation("CustomerBookings")
-  assignedBookings Booking[] @relation("StaffAssignedBookings")
+  bookings         Booking[]      @relation("CustomerBookings")
+  assignedBookings Booking[]      @relation("StaffAssignedBookings")
   notifications    Notification[]
 }
 
@@ -115,22 +129,23 @@ model PetHealthRecord {
 }
 
 model Service {
-  id              String    @id @default(uuid()) @db.Uuid
-  businessId      String    @db.Uuid
-  business        Business  @relation(fields: [businessId], references: [id])
+  id              String      @id @default(uuid()) @db.Uuid
+  businessId      String      @db.Uuid
+  business        Business    @relation(fields: [businessId], references: [id])
   name            String
   description     String?
-  price           Float
+  price           Decimal     @db.Decimal(10, 2)
   // Whether `price` is charged once per booking (e.g. grooming) or per
-  // calendar day of the booking's date range (e.g. boarding). Booking itself
-  // has no stored total; this only drives the estimate shown to the customer
-  // until the payments module computes a real charge.
+  // calendar day of the booking's date range (e.g. boarding). Booking
+  // snapshots both of these onto itself at creation time (see
+  // Booking.unitPrice) so a later price change here doesn't alter what an
+  // existing booking owes.
   pricingUnit     PricingUnit @default(flat)
   durationMinutes Int?
-  isActive        Boolean   @default(true)
+  isActive        Boolean     @default(true)
   bookings        Booking[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 }
 
 model Booking {
@@ -147,6 +162,12 @@ model Booking {
   pet             Pet           @relation(fields: [petId], references: [id])
   serviceId       String        @db.Uuid
   service         Service       @relation(fields: [serviceId], references: [id])
+  // Snapshot of Service.price/pricingUnit at the moment this booking was
+  // created. PaymentsService charges off of these, not the live Service row,
+  // so an owner editing a price later can't change what an existing
+  // (unpaid) booking owes.
+  unitPrice       Decimal       @db.Decimal(10, 2)
+  pricingUnit     PricingUnit
   status          BookingStatus @default(pending)
   startDate       DateTime
   endDate         DateTime
@@ -156,21 +177,43 @@ model Booking {
   updatedAt       DateTime      @updatedAt
 }
 
+// At most one "active" Payment per booking per method — enforced by two
+// partial unique indexes Prisma's schema DSL can't express (no WHERE clause
+// support), added by hand in the
+// 20260729130000_payment_dedup_and_stripe_attempts migration instead:
+//   payment_stripe_pending_unique   ON ("bookingId") WHERE method='stripe' AND status='pending'
+//   payment_wechat_active_unique    ON ("bookingId") WHERE method='wechat_qr' AND status IN ('pending','pending_verification')
+// A `prisma migrate dev` run against this schema has no matching construct
+// for them, so it will propose dropping them — always review with
+// --create-only rather than letting it apply automatically.
 model Payment {
-  id            String        @id @default(uuid()) @db.Uuid
-  bookingId     String        @db.Uuid
-  booking       Booking       @relation(fields: [bookingId], references: [id])
-  method        PaymentMethod
-  amount        Float
-  status        PaymentStatus @default(pending)
-  referenceNote String?
-  // Provider-side identifier used to correlate an async callback back to
-  // this row (e.g. the Stripe PaymentIntent id). Null for wechat_qr, which
-  // has no callback and is reconciled manually instead.
-  providerRef   String?
-  verifiedAt    DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id               String                  @id @default(uuid()) @db.Uuid
+  bookingId        String                  @db.Uuid
+  booking          Booking                 @relation(fields: [bookingId], references: [id])
+  method           PaymentMethod
+  amount           Decimal                 @db.Decimal(10, 2)
+  status           PaymentStatus           @default(pending)
+  referenceNote    String?
+  // One row per Stripe Checkout Session ever created for this Payment (see
+  // StripeCheckoutAttempt) — a retry creates a new session rather than
+  // reusing/overwriting the old one, since an old session stays payable
+  // until it expires and its webhook event must still resolve back to this
+  // Payment.
+  checkoutAttempts StripeCheckoutAttempt[]
+  verifiedAt       DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+}
+
+model StripeCheckoutAttempt {
+  id        String                @id @default(uuid()) @db.Uuid
+  paymentId String                @db.Uuid
+  payment   Payment               @relation(fields: [paymentId], references: [id])
+  // Stripe Checkout Session id (cs_...) — what the webhook payload
+  // identifies itself by, so this is the join key back to a Payment.
+  sessionId String                @unique
+  status    CheckoutAttemptStatus @default(pending)
+  createdAt DateTime              @default(now())
 }
 
 model DailyReport {
