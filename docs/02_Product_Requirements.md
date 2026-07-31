@@ -88,14 +88,25 @@ Corresponding backend module: `auth`
 Corresponding backend module: `pets`
 
 ### US-02.1 Add Pet Profile
-> As a logged-in user, I want to add my pet's information, so that care providers understand my pet's basic situation.
+> As a logged-in user, I want to add my pet with minimal friction and fill in the rest of its profile later, so that registering a pet doesn't feel like a long form before I can even book something.
+
+**Decided 2026-07-31 (was: require name + breed together at creation — see the superseded AC below).** Progressive profile-building is the accepted V1 behavior, not a shortcut to later correct: creation only requires a name; species, breed, age, weight, spay/neuter status, personality, dietary notes, and a photo are all optional at creation time and can be added afterwards via the pet's detail screen (US-02.2). A booking can be created against a pet with only a name on file — V1 has no per-service "this pet profile isn't complete enough" gate, and none is planned; if a business needs specific information before a stay (e.g. dietary notes for boarding), that's handled the same way it is today, outside the app (a conversation with the customer), not a submission blocker.
 
 **Acceptance Criteria**
+- Given the user taps "Add Pet" in their account, When they enter a name and submit, Then the system creates a Pet record linked to the current user
+- Given the name field is empty, When the user submits, Then the system blocks submission and highlights the missing field
+- Given the user uploads a pet photo (at creation or later via US-02.2), When the upload succeeds, Then the photo displays on the pet's profile card
+
+*Already implemented: `POST /pets` requires only `name`. Creation is wired into the app as a minimal name + species form in two places (`ProfileScreen`'s "My Pets" and an inline prompt inside `BookingScreen` when a customer has no pets yet). The remaining fields (age, weight, spay/neuter status, personality, dietary notes, and — as of 2026-07-27 — a photo) are filled in afterwards via `PetDetailScreen` (see US-02.2). The photo AC is satisfied via the same interim base64-data-URI approach as daily report photos (`Pet.photoUrl`; see `03_System_Architecture.md` §5.3), not a real upload to cloud storage.*
+
+<details>
+<summary>Superseded AC (pre-2026-07-31): require name + breed at creation</summary>
+
 - Given the user taps "Add Pet" in their account, When they fill in name, breed, age, weight, spay/neuter status, personality description and dietary notes and submit, Then the system creates a Pet record linked to the current user
 - Given required fields (name, breed) are empty, When the user submits, Then the system blocks submission and highlights the missing fields
-- Given the user uploads a pet photo, When the upload succeeds, Then the photo displays on the pet's profile card
 
-*Partially implemented: `POST /pets` requires only `name` (not `breed` as the AC above states — the backend hasn't been tightened to match yet). Creation is wired into the app as a minimal name + species form in two places (`ProfileScreen`'s "My Pets" and an inline prompt inside `BookingScreen` when a customer has no pets yet). The remaining fields (age, weight, spay/neuter status, personality, dietary notes, and — as of 2026-07-27 — a photo) can be filled in afterwards via `PetDetailScreen` (see US-02.2). The photo AC is satisfied via the same interim base64-data-URI approach as daily report photos (`Pet.photoUrl`; see `03_System_Architecture.md` §5.3), not a real upload to cloud storage.*
+This was never actually built this way — `POST /pets` only ever required `name` — and the decision above is that the simpler behavior is correct, not a gap to close.
+</details>
 
 ### US-02.2 View/Edit Pet Profile
 > As a logged-in user, I want to view and edit information for pets I've already added, so that I can keep it up to date.
@@ -179,6 +190,17 @@ Corresponding backend modules: `services`, `bookings`
 
 *Already implemented: `PATCH /bookings/:id/assign`, wired into `BookingDetailScreen` as a row of tappable staff chips (owner/admin only), backed by the same `GET /auth/staff` list used by `StaffManagementScreen`. Reassignment (tapping a different staff member) is supported, matching the AC that only the newly assigned staff member sees it afterward.*
 
+### US-03.7 Business Owner Manages Services (added 2026-07-31)
+> As a Business Owner, I want to create, edit, price, and publish/unpublish my own services, so that I can run day-to-day service configuration myself instead of asking someone to edit the database directly.
+
+**Acceptance Criteria**
+- Given the owner opens "Manage Services", When the page loads, Then it lists every service on their business, including delisted ones (not just what customers currently see)
+- Given the owner adds a new service with a name and a non-negative price, When they save, Then the service is created and immediately visible in the list
+- Given the owner edits a service's name, description, price, pricing unit, or duration, When they save, Then the changes apply immediately — including to bookings placed *after* the edit; already-placed bookings keep their price snapshot (see `03_System_Architecture.md` §4.1) unaffected
+- Given the owner toggles a service active/inactive, When the toggle changes, Then customers immediately stop (or start) seeing it in their service list
+
+*Already implemented: this closes a gap where `POST /services` and `PATCH /services/:id` (owner/admin only) existed on the backend from V1's start but had no UI — an owner could not configure their own services without calling the API directly. `ServiceManagementScreen` (reachable from `ProfileScreen`'s "Manage Services" quick action, owner/admin only) lists every service via the same `GET /services` customers use (which returns the full list, active or not, for owner/staff roles — see `03_System_Architecture.md` §4.2), with an add form and a tap-to-expand edit form per service, plus a switch for the active/inactive toggle.*
+
 ---
 
 ## Module 4: Payments
@@ -204,7 +226,7 @@ Corresponding backend module: `payments`
 
 > Note: The personal WeChat QR code is not an official merchant API and cannot auto-confirm receipt via callback, hence the "manual verification" flow. This is a key difference from the Stripe path and must be clearly documented in `03_System_Architecture.md`.
 
-*Already implemented: `POST /payments/wechat/:bookingId` returns the business's static QR code image (`Business.wechatQrCodeUrl`, settable by the owner via `PATCH /businesses/me` — there's no upload flow, just a URL field) plus a generated reference note; `PATCH /payments/:id/mark-paid` (customer) moves it to `pending_verification`; `PATCH /payments/:id/verify` (owner/admin only) confirms it as `paid`. `initiateWechat` was made idempotent on 2026-07-27 (reuses an existing pending/pending_verification payment for the same booking instead of creating a duplicate row every time the payment screen is reopened). Wired into the app: `BookingDetailScreen` shows a tappable payment-status row for the customer (routes to `PaymentScreen`), which displays the QR code, amount and reference note, and drives the "I've Paid" action. As of 2026-07-27, the owner's side is also wired up: a new `GET /payments/business` lists every payment for the business (customer name, amount, reference, status), surfaced in `PaymentVerificationScreen` (reachable from `ProfileScreen`'s "Verify Payments" quick action, owner/admin only), with pending-verification entries sorted first and a one-tap "Verify" action calling `PATCH /payments/:id/verify`. "Notify the business to reconcile" (previously unimplemented) is now covered by Module 5 — see US-05.2.*
+*Already implemented: `POST /payments/wechat/:bookingId` returns the business's static QR code image (`Business.wechatQrCodeUrl`, settable by the owner via `PATCH /businesses/me` — see US-04.5, added 2026-07-31, for the image-picker UI this now has) plus a generated reference note; `PATCH /payments/:id/mark-paid` (customer) moves it to `pending_verification`; `PATCH /payments/:id/verify` (owner/admin only) confirms it as `paid`. `initiateWechat` was made idempotent on 2026-07-27 (reuses an existing pending/pending_verification payment for the same booking instead of creating a duplicate row every time the payment screen is reopened). Wired into the app: `BookingDetailScreen` shows a tappable payment-status row for the customer (routes to `PaymentScreen`), which displays the QR code, amount and reference note, and drives the "I've Paid" action. As of 2026-07-27, the owner's side is also wired up: a new `GET /payments/business` lists every payment for the business (customer name, amount, reference, status), surfaced in `PaymentVerificationScreen` (reachable from `ProfileScreen`'s "Verify Payments" quick action, owner/admin only), with pending-verification entries sorted first and a one-tap "Verify" action calling `PATCH /payments/:id/verify`. "Notify the business to reconcile" (previously unimplemented) is now covered by Module 5 — see US-05.2.*
 
 ### US-04.3 View Payment History
 > As a logged-in user, I want to view my payment history, so that I can reconcile my bills.
@@ -213,6 +235,27 @@ Corresponding backend module: `payments`
 - Given the user opens "Billing / Payment History", When the page loads, Then it displays the payment method, amount, status and time for each booking
 
 *Already implemented: `GET /payments/mine` (now also joining the booking's service name, for a readable list) is wired into a new `PaymentHistoryScreen` (reachable from `ProfileScreen`'s "Payment History" quick action), listing method, amount, status and date per payment.*
+
+### US-04.4 Business Owner Refunds a Payment (added 2026-07-31)
+> As a Business Owner, I want to refund a customer's payment when a booking doesn't go ahead, so that I'm not stuck reconciling a charge outside the app with no record of it.
+
+**Acceptance Criteria**
+- Given a `paid` payment, When the owner refunds it with a reason, Then the payment moves to "Refunded", the reason is recorded, and the customer is notified
+- Given the payment was via Stripe, When the refund is confirmed, Then the underlying Stripe charge is actually refunded through the Stripe API, not just marked refunded locally
+- Given the payment was via WeChat, When the owner refunds it, Then the system records the refund (the owner has already returned the money manually outside the app — same trust model as WeChat payment verification)
+- Given a payment is not currently `paid` (already refunded, still pending, etc.), When a refund is attempted, Then the system rejects it
+- Out of scope for Version 1: partial-amount refunds (full refund only), and any automatic link between refunding a payment and cancelling its booking — those are two separate owner actions
+
+*Already implemented: `PATCH /payments/:id/refund` (owner/admin only, `reason` required) — see `03_System_Architecture.md` §6.3 for the claim-before-calling-Stripe ordering and the rollback behavior if the Stripe API call fails. Wired into `PaymentVerificationScreen` as a "Refund" button on `paid` payments, expanding into an inline reason field plus confirm/cancel.*
+
+### US-04.5 Business Owner Manages Business Settings (added 2026-07-31)
+> As a Business Owner, I want to set my business's name, contact/location info, and WeChat payment QR code myself, so that initial setup and later changes don't require someone to edit the database directly.
+
+**Acceptance Criteria**
+- Given the owner opens "Business Settings", When the page loads, Then it shows the business's current name, region/contact info, and WeChat QR code (if set)
+- Given the owner edits the name, region, or uploads a new QR code image, When they save, Then the changes take effect immediately — including for `US-04.2`'s WeChat payment flow, which reads the QR code from the same field
+
+*Already implemented: `GET /businesses/me` (added 2026-07-31 — previously only `PATCH` existed, with no way to read current values back) plus the existing `PATCH /businesses/me`, now also accepting `name`/`region` (previously only `wechatQrCodeUrl`). `BusinessSettingsScreen` (reachable from `ProfileScreen`'s "Business Settings" quick action, owner/admin only) uses the same base64-data-URI photo picker pattern as `PetDetailScreen`/`ReportComposeScreen` for the QR code image (see `03_System_Architecture.md` §5.3 — still no real object storage).*
 
 ### Payment Strategy and Future Expansion
 
@@ -315,3 +358,4 @@ Corresponding backend module: `reports`
 | 2026-07-28 | v0.9 | Closed the last remaining V1 gap: Stripe card payment frontend (US-04.1). Resolved the "native SDK vs. WebView Checkout" decision flagged since v0.7 in favor of Stripe Checkout Sessions opened via `expo-web-browser` — no native Stripe SDK, no dev-client build, works inside Expo Go. `initiateStripe`'s backend contract changed from returning a PaymentIntent `clientSecret` to a Checkout Session `checkoutUrl`; the webhook now keys off `checkout.session.completed`/`.expired` instead of `payment_intent.succeeded`/`.payment_failed`. Added `GET /payments/:id` for post-redirect polling. `PaymentScreen` gained a Card/WeChat method selector | Xiyun Liu |
 | 2026-07-29 | v0.10 | Corrected the Multi-Tenant Data Isolation NFR row: Pet is deliberately excluded from the `business_id`-carrying tables (see `01_Project_Overview.md` §11), not an oversight; clarified the `admin` role note under Section 2 — current code treats `admin` as a second `owner`-equivalent scoped to the same `businessId` via the `@Roles('owner','admin')` guards, not the cross-business platform-operator role originally described, which remains unbuilt | Xiyun Liu |
 | 2026-07-30 | v0.11 | Rewrote US-01.4: business registration is bootstrap-only, not ongoing self-service — `POST /auth/register-business` now rejects once a `Business` row exists. Removed the `RegisterBusinessScreen`/login-screen entry point/API client call as a result, since a customer-facing "Register Business" action could now only ever fail | Xiyun Liu |
+| 2026-07-31 | v0.12 | Added US-03.7 (owner service management — `ServiceManagementScreen`, previously API-only), US-04.4 (owner-initiated full refunds via `PATCH /payments/:id/refund`), and US-04.5 (business settings — name/region/WeChat QR, `BusinessSettingsScreen`, `GET /businesses/me` added since there was previously no way to read current values back). Rewrote US-02.1 (Pet creation): progressive profile-building (name only required at creation) is now the *accepted* V1 behavior rather than a gap against a stricter AC that was never actually built | Xiyun Liu |

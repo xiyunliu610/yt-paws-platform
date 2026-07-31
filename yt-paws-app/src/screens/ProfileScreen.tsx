@@ -29,6 +29,8 @@ type RootStackParamList = {
   PaymentHistory: undefined;
   PaymentVerification: undefined;
   StaffManagement: undefined;
+  ServiceManagement: undefined;
+  BusinessSettings: undefined;
   PetDetail: { pet: Pet };
 };
 
@@ -200,6 +202,14 @@ const ProfileScreen = () => {
 
   const handleVerifyPayments = () => {
     navigation.navigate('PaymentVerification');
+  };
+
+  const handleManageServices = () => {
+    navigation.navigate('ServiceManagement');
+  };
+
+  const handleBusinessSettings = () => {
+    navigation.navigate('BusinessSettings');
   };
 
   const isManager = user?.role === 'owner' || user?.role === 'admin';
@@ -388,6 +398,26 @@ const ProfileScreen = () => {
                 onPress={handleVerifyPayments}
               >
                 <Text style={styles.menuText}>{t.profile.verifyPayments}</Text>
+                <Text style={styles.menuArrow}>›</Text>
+              </TouchableOpacity>
+            )}
+
+            {isManager && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handleManageServices}
+              >
+                <Text style={styles.menuText}>{t.profile.manageServices}</Text>
+                <Text style={styles.menuArrow}>›</Text>
+              </TouchableOpacity>
+            )}
+
+            {isManager && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handleBusinessSettings}
+              >
+                <Text style={styles.menuText}>{t.profile.businessSettings}</Text>
                 <Text style={styles.menuArrow}>›</Text>
               </TouchableOpacity>
             )}

@@ -110,8 +110,30 @@ export interface Service {
   isActive: boolean;
 }
 
+export interface ServiceInput {
+  name: string;
+  description?: string;
+  price: number;
+  pricingUnit?: 'flat' | 'per_day';
+  durationMinutes?: number;
+}
+
+export interface ServiceUpdateInput extends Partial<ServiceInput> {
+  isActive?: boolean;
+}
+
 export const servicesApi = {
+  // For a customer, only active services; for owner/staff, every service on
+  // their business (including delisted ones, so they can re-publish them).
   list: (token: string) => request<Service[]>('/services', {}, token),
+
+  // Owner/admin only.
+  create: (token: string, data: ServiceInput) =>
+    request<Service>('/services', { method: 'POST', body: JSON.stringify(data) }, token),
+
+  // Owner/admin only.
+  update: (token: string, serviceId: string, data: ServiceUpdateInput) =>
+    request<Service>(`/services/${serviceId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
 };
 
 export interface Pet {
@@ -245,8 +267,9 @@ export interface Payment {
   bookingId: string;
   method: 'stripe' | 'wechat_qr';
   amount: number;
-  status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded';
+  status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded' | 'cancelled';
   referenceNote: string | null;
+  refundReason?: string | null;
   createdAt: string;
   // Only present on responses from paymentsApi.mine()/business(), which
   // join these in; business() additionally joins the customer's name/email.
@@ -290,6 +313,15 @@ export const paymentsApi = {
   verify: (token: string, paymentId: string) =>
     request<Payment>(`/payments/${paymentId}/verify`, { method: 'PATCH' }, token),
 
+  // Owner/admin only. Full refund only — no partial amounts in V1. `reason`
+  // is required (surfaced to the customer and kept for audit).
+  refund: (token: string, paymentId: string, reason: string) =>
+    request<Payment>(
+      `/payments/${paymentId}/refund`,
+      { method: 'PATCH', body: JSON.stringify({ reason }) },
+      token,
+    ),
+
   // Creates a Stripe Checkout Session; returnUrl is where the hosted page
   // redirects back to (see src/screens/PaymentScreen.tsx, which builds it
   // via Linking.createURL and opens checkoutUrl with openAuthSessionAsync).
@@ -313,6 +345,28 @@ export interface StaffMember {
   phone: string | null;
   role: string;
 }
+
+export interface Business {
+  id: string;
+  name: string;
+  region: string | null;
+  wechatQrCodeUrl: string | null;
+}
+
+export interface BusinessUpdateInput {
+  name?: string;
+  region?: string;
+  wechatQrCodeUrl?: string;
+}
+
+export const businessesApi = {
+  // Owner/admin only.
+  getMine: (token: string) => request<Business>('/businesses/me', {}, token),
+
+  // Owner/admin only.
+  updateMine: (token: string, data: BusinessUpdateInput) =>
+    request<Business>('/businesses/me', { method: 'PATCH', body: JSON.stringify(data) }, token),
+};
 
 export const staffApi = {
   list: (token: string) => request<StaffMember[]>('/auth/staff', {}, token),

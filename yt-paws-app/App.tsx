@@ -25,6 +25,8 @@ import StaffManagementScreen from './src/screens/StaffManagementScreen';
 import BusinessHomeScreen from './src/screens/BusinessHomeScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import PaymentVerificationScreen from './src/screens/PaymentVerificationScreen';
+import ServiceManagementScreen from './src/screens/ServiceManagementScreen';
+import BusinessSettingsScreen from './src/screens/BusinessSettingsScreen';
 
 const Stack = createStackNavigator();
 
@@ -209,6 +211,24 @@ const Navigation = () => {
           component={PaymentVerificationScreen}
           options={{
             title: 'Payment Verification',
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="ServiceManagement"
+          component={ServiceManagementScreen}
+          options={{
+            title: 'Manage Services',
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="BusinessSettings"
+          component={BusinessSettingsScreen}
+          options={{
+            title: 'Business Settings',
             headerShown: true,
           }}
         />

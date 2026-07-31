@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
-import { InitiateStripeDto } from './dto/payment.dto';
+import { InitiateStripeDto, RefundPaymentDto } from './dto/payment.dto';
 
 @Controller('payments')
 export class PaymentsController {
@@ -52,6 +52,17 @@ export class PaymentsController {
   @Roles('owner', 'admin')
   verifyWechatPayment(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.paymentsService.verifyWechatPayment(req.user, id);
+  }
+
+  @Patch(':id/refund')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  refundPayment(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RefundPaymentDto,
+  ) {
+    return this.paymentsService.refundPayment(req.user, id, body.reason);
   }
 
   @Get('mine')

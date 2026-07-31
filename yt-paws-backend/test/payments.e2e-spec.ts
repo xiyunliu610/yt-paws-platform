@@ -381,4 +381,160 @@ describe('Payments correctness (e2e)', () => {
       expect(refundNotifications).toBe(1);
     });
   });
+
+  describe('refund flow', () => {
+    async function payViaWechatAndVerify(bookingId: string) {
+      const wechat = await request(app.getHttpServer())
+        .post(`/payments/wechat/${bookingId}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/payments/${wechat.body.paymentId}/mark-paid`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/payments/${wechat.body.paymentId}/verify`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(200);
+      return wechat.body.paymentId as string;
+    }
+
+    it('requires a reason', async () => {
+      const booking = await createBooking();
+      const paymentId = await payViaWechatAndVerify(booking.id);
+
+      await request(app.getHttpServer())
+        .patch(`/payments/${paymentId}/refund`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({})
+        .expect(400);
+    });
+
+    it('rejects a customer trying to refund their own payment', async () => {
+      const booking = await createBooking();
+      const paymentId = await payViaWechatAndVerify(booking.id);
+
+      await request(app.getHttpServer())
+        .patch(`/payments/${paymentId}/refund`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ reason: 'not my call' })
+        .expect(403);
+    });
+
+    it('refunds a paid WeChat payment and notifies the customer', async () => {
+      const booking = await createBooking();
+      const paymentId = await payViaWechatAndVerify(booking.id);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/payments/${paymentId}/refund`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ reason: 'Customer requested cancellation' })
+        .expect(200);
+
+      expect(res.body.status).toBe('refunded');
+      expect(res.body.refundReason).toBe('Customer requested cancellation');
+      expect(res.body.refundedById).toBe(ownerId);
+
+      const refundNotifications = await prisma.notification.count({
+        where: { userId: customerId, title: 'Payment Refunded' },
+      });
+      expect(refundNotifications).toBe(1);
+    });
+
+    it('rejects refunding a payment that is not paid', async () => {
+      const booking = await createBooking();
+      const wechat = await request(app.getHttpServer())
+        .post(`/payments/wechat/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/payments/${wechat.body.paymentId}/refund`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ reason: 'too early' })
+        .expect(400);
+    });
+
+    it('rejects a second refund attempt on an already-refunded payment', async () => {
+      const booking = await createBooking();
+      const paymentId = await payViaWechatAndVerify(booking.id);
+
+      await request(app.getHttpServer())
+        .patch(`/payments/${paymentId}/refund`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ reason: 'first refund' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/payments/${paymentId}/refund`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ reason: 'second refund' })
+        .expect(400);
+    });
+
+    it('rolls back to `paid` if the Stripe refund API call fails', async () => {
+      const booking = await createBooking();
+      const payment = await prisma.payment.create({
+        data: { bookingId: booking.id, method: 'stripe', amount: 60, status: 'paid', verifiedAt: new Date() },
+      });
+      await prisma.stripeCheckoutAttempt.create({
+        data: {
+          paymentId: payment.id,
+          sessionId: `cs_test_refund_${payment.id}`,
+          status: 'succeeded',
+          paymentIntentId: 'pi_test_fake_intent',
+        },
+      });
+
+      // No real Stripe key in this test environment, so the refund API
+      // call itself fails — this exercises the rollback path, not a
+      // successful refund (that would need real Stripe credentials).
+      await request(app.getHttpServer())
+        .patch(`/payments/${payment.id}/refund`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ reason: 'rollback check' })
+        .expect(400);
+
+      const stillPaid = await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
+      expect(stillPaid.status).toBe('paid');
+      expect(stillPaid.refundedAt).toBeNull();
+    });
+  });
+
+  describe('business settings', () => {
+    it('loads and updates the current business', async () => {
+      const before = await request(app.getHttpServer())
+        .get('/businesses/me')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(200);
+      expect(before.body.id).toBe(businessId);
+
+      const updated = await request(app.getHttpServer())
+        .patch('/businesses/me')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ name: 'E2E Test Biz (renamed)', region: 'Auckland' })
+        .expect(200);
+      expect(updated.body.name).toBe('E2E Test Biz (renamed)');
+      expect(updated.body.region).toBe('Auckland');
+
+      // Restore, since other tests/afterAll assume the fixture's original shape.
+      await request(app.getHttpServer())
+        .patch('/businesses/me')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ name: 'E2E Test Biz (fixture)', region: '' })
+        .expect(200);
+    });
+
+    it('rejects a customer reading or updating business settings', async () => {
+      await request(app.getHttpServer())
+        .get('/businesses/me')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .patch('/businesses/me')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ name: 'hijacked' })
+        .expect(403);
+    });
+  });
 });

@@ -99,6 +99,7 @@ model User {
   bookings         Booking[]      @relation("CustomerBookings")
   assignedBookings Booking[]      @relation("StaffAssignedBookings")
   notifications    Notification[]
+  refundsIssued    Payment[]      @relation("PaymentRefundedBy")
 }
 
 model Pet {
@@ -218,19 +219,31 @@ model Payment {
   // Payment.
   checkoutAttempts StripeCheckoutAttempt[]
   verifiedAt       DateTime?
+  // Refunds: V1 only supports refunding a Payment in full (see
+  // PaymentsService.refundPayment) — a distinct Refund model would only
+  // earn its keep once partial/multiple refunds per Payment are needed.
+  refundedAt       DateTime?
+  refundReason     String?
+  refundedById     String?                 @db.Uuid
+  refundedBy       User?                   @relation("PaymentRefundedBy", fields: [refundedById], references: [id])
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
 
 model StripeCheckoutAttempt {
-  id        String                @id @default(uuid()) @db.Uuid
-  paymentId String                @db.Uuid
-  payment   Payment               @relation(fields: [paymentId], references: [id])
+  id              String                @id @default(uuid()) @db.Uuid
+  paymentId       String                @db.Uuid
+  payment         Payment               @relation(fields: [paymentId], references: [id])
   // Stripe Checkout Session id (cs_...) — what the webhook payload
   // identifies itself by, so this is the join key back to a Payment.
-  sessionId String                @unique
-  status    CheckoutAttemptStatus @default(pending)
-  createdAt DateTime              @default(now())
+  sessionId       String                @unique
+  status          CheckoutAttemptStatus @default(pending)
+  // Captured from the webhook once the session completes — refunding a
+  // Checkout Session payment means refunding its underlying PaymentIntent
+  // (stripe.refunds.create({ payment_intent })), and the Session id alone
+  // isn't that.
+  paymentIntentId String?
+  createdAt       DateTime              @default(now())
 }
 
 model DailyReport {

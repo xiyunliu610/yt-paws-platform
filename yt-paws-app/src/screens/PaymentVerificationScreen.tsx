@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   Alert,
   ActivityIndicator,
 } from 'react-native';
@@ -19,6 +20,7 @@ const STATUS_COLORS: Record<string, string> = {
   paid: '#2C4A3E',
   failed: '#FF5252',
   refunded: '#999999',
+  cancelled: '#999999',
 };
 
 const PaymentVerificationScreen = () => {
@@ -28,6 +30,9 @@ const PaymentVerificationScreen = () => {
   const [payments, setPayments] = useState<Payment[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [refundFormId, setRefundFormId] = useState<string | null>(null);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundingId, setRefundingId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -64,6 +69,8 @@ const PaymentVerificationScreen = () => {
         return t.paymentHistory.statusFailed;
       case 'refunded':
         return t.paymentHistory.statusRefunded;
+      case 'cancelled':
+        return t.paymentHistory.statusCancelled;
       default:
         return status;
     }
@@ -102,6 +109,33 @@ const PaymentVerificationScreen = () => {
         },
       ],
     );
+  };
+
+  const openRefundForm = (payment: Payment) => {
+    setRefundFormId(payment.id);
+    setRefundReason('');
+  };
+
+  const handleRefund = (payment: Payment) => {
+    if (!token) return;
+    if (!refundReason.trim()) {
+      Alert.alert(t.paymentVerification.refundFailedTitle, t.paymentVerification.enterRefundReason);
+      return;
+    }
+
+    setRefundingId(payment.id);
+    paymentsApi
+      .refund(token, payment.id, refundReason.trim())
+      .then(() => {
+        setRefundFormId(null);
+        setRefundReason('');
+        load();
+      })
+      .catch((error) => {
+        const message = error instanceof ApiError ? error.message : t.paymentVerification.refundFailedMessage;
+        Alert.alert(t.paymentVerification.refundFailedTitle, message);
+      })
+      .finally(() => setRefundingId(null));
   };
 
   return (
@@ -153,6 +187,47 @@ const PaymentVerificationScreen = () => {
                         : t.paymentVerification.verifyButton}
                     </Text>
                   </TouchableOpacity>
+                )}
+
+                {payment.status === 'paid' && refundFormId !== payment.id && (
+                  <TouchableOpacity style={styles.refundButton} onPress={() => openRefundForm(payment)}>
+                    <Text style={styles.refundButtonText}>{t.paymentVerification.refundButton}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {refundFormId === payment.id && (
+                  <View style={styles.refundForm}>
+                    <TextInput
+                      style={styles.refundInput}
+                      placeholder={t.paymentVerification.refundReasonPlaceholder}
+                      value={refundReason}
+                      onChangeText={setRefundReason}
+                      editable={refundingId !== payment.id}
+                      multiline
+                    />
+                    <View style={styles.refundFormButtons}>
+                      <TouchableOpacity
+                        style={styles.refundCancelButton}
+                        onPress={() => setRefundFormId(null)}
+                        disabled={refundingId === payment.id}
+                      >
+                        <Text style={styles.refundCancelButtonText}>
+                          {t.paymentVerification.refundCancelButton}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.refundButton, refundingId === payment.id && styles.verifyButtonDisabled]}
+                        onPress={() => handleRefund(payment)}
+                        disabled={refundingId !== null}
+                      >
+                        <Text style={styles.refundButtonText}>
+                          {refundingId === payment.id
+                            ? t.paymentVerification.refunding
+                            : t.paymentVerification.refundConfirmButton}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 )}
               </View>
             ))
@@ -248,6 +323,49 @@ const styles = StyleSheet.create({
   },
   verifyButtonText: {
     color: '#F5EDD8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  refundButton: {
+    backgroundColor: '#B04A3C',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 4,
+    flex: 1,
+  },
+  refundButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  refundForm: {
+    marginTop: 8,
+    gap: 8,
+  },
+  refundInput: {
+    backgroundColor: '#F5EDD8',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#333',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  refundFormButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  refundCancelButton: {
+    flex: 1,
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  refundCancelButtonText: {
+    color: '#666',
     fontSize: 14,
     fontWeight: '600',
   },
