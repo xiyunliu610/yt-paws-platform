@@ -21,6 +21,7 @@ describe('Payments correctness (e2e)', () => {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET as string;
 
   let ownerToken: string;
+  let ownerId: string;
   let customerToken: string;
   let customerId: string;
   let serviceId: string;
@@ -97,6 +98,7 @@ describe('Payments correctness (e2e)', () => {
       });
     });
     businessId = owner.businessId as string;
+    ownerId = owner.id;
 
     const ownerRes = await request(app.getHttpServer())
       .post('/auth/login')
@@ -127,7 +129,7 @@ describe('Payments correctness (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.notification.deleteMany({ where: { userId: customerId } });
+    await prisma.notification.deleteMany({ where: { userId: { in: [customerId, ownerId] } } });
     await prisma.stripeCheckoutAttempt.deleteMany({ where: { payment: { booking: { customerId } } } });
     await prisma.payment.deleteMany({ where: { booking: { customerId } } });
     await prisma.booking.deleteMany({ where: { customerId } });
@@ -248,6 +250,84 @@ describe('Payments correctness (e2e)', () => {
         where: { userId: customerId, title: 'Payment Failed' },
       });
       expect(failureNotifications).toBe(1);
+    });
+  });
+
+  describe('cross-method double payment prevention', () => {
+    it('cancels an abandoned pending payment when the customer switches method', async () => {
+      const booking = await createBooking();
+
+      const wechat = await request(app.getHttpServer())
+        .post(`/payments/wechat/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(201);
+
+      // Stripe API call itself will fail (no real key in this environment)
+      // — that's fine, the cancel-on-switch runs before it.
+      await request(app.getHttpServer())
+        .post(`/payments/stripe/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ returnUrl: 'exp://test/redirect' });
+
+      const abandonedWechat = await prisma.payment.findUniqueOrThrow({ where: { id: wechat.body.paymentId } });
+      expect(abandonedWechat.status).toBe('cancelled');
+    });
+
+    it('blocks starting a different payment method while one is awaiting verification', async () => {
+      const booking = await createBooking();
+
+      const wechat = await request(app.getHttpServer())
+        .post(`/payments/wechat/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/payments/${wechat.body.paymentId}/mark-paid`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post(`/payments/stripe/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ returnUrl: 'exp://test/redirect' })
+        .expect(400);
+    });
+
+    it('backstops a true race (webhook + owner verification landing on two different methods for the same booking) without ever leaving two paid rows', async () => {
+      const booking = await createBooking();
+
+      // WeChat "wins" the race first.
+      const wechatPayment = await prisma.payment.create({
+        data: { bookingId: booking.id, method: 'wechat_qr', amount: 60, status: 'paid', verifiedAt: new Date() },
+      });
+
+      // A Stripe payment for the same booking is still in flight — this can
+      // only happen at the DB level in this test because it's simulating
+      // the narrow window loadPayableBooking's pending_verification check
+      // doesn't cover (both methods reaching a terminal state almost
+      // simultaneously), not because the app would normally allow it.
+      const stripePayment = await prisma.payment.create({
+        data: { bookingId: booking.id, method: 'stripe', amount: 60, status: 'pending' },
+      });
+      const attempt = await prisma.stripeCheckoutAttempt.create({
+        data: { paymentId: stripePayment.id, sessionId: `cs_test_race_${stripePayment.id}` },
+      });
+
+      const { payload, header } = signedWebhook(attempt.sessionId, 'checkout.session.completed');
+      await postWebhook(payload, header).expect(201);
+
+      const updatedStripePayment = await prisma.payment.findUniqueOrThrow({ where: { id: stripePayment.id } });
+      expect(updatedStripePayment.status).toBe('cancelled');
+
+      const updatedWechatPayment = await prisma.payment.findUniqueOrThrow({ where: { id: wechatPayment.id } });
+      expect(updatedWechatPayment.status).toBe('paid');
+
+      const paidCount = await prisma.payment.count({ where: { bookingId: booking.id, status: 'paid' } });
+      expect(paidCount).toBe(1);
+
+      const refundNotifications = await prisma.notification.count({
+        where: { userId: ownerId, title: 'Duplicate Payment Received — Refund Needed' },
+      });
+      expect(refundNotifications).toBe(1);
     });
   });
 });

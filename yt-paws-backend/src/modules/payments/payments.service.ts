@@ -67,7 +67,41 @@ export class PaymentsService {
       throw new BadRequestException('This booking has already been paid for');
     }
 
+    // A `pending_verification` WeChat payment means the customer has
+    // already claimed (via markWechatPaid) that real money has moved
+    // outside the app, awaiting the owner's confirmation. Letting them
+    // start a *different* payment method on top of that is exactly how a
+    // booking ends up with two real payments — see
+    // payment_booking_paid_unique on the Payment model. `pending` (not yet
+    // claimed) payments aren't blocked here; initiateStripe/initiateWechat
+    // instead cancel the other method's still-`pending` attempt when the
+    // customer switches, since nothing's actually been paid yet.
+    const awaitingVerification = await this.prisma.payment.findFirst({
+      where: { bookingId, status: PaymentStatus.pending_verification },
+    });
+    if (awaitingVerification) {
+      throw new BadRequestException(
+        'A payment for this booking is already awaiting verification — wait for it to be confirmed before trying another payment method',
+      );
+    }
+
     return booking;
+  }
+
+  // Called by initiateStripe/initiateWechat before creating their own
+  // Payment: if the customer had started paying via the *other* method and
+  // abandoned it without completing (still `pending`, nothing claimed or
+  // captured yet), switching methods should void that attempt rather than
+  // leave both alive — two simultaneously "active" payments for the same
+  // booking, one per method, is exactly the setup for a double payment (see
+  // payment_booking_paid_unique). Already-`pending_verification` WeChat
+  // payments are never touched here — loadPayableBooking blocks switching
+  // methods in that case instead of silently cancelling a claimed payment.
+  private async cancelOtherPendingMethodPayments(bookingId: string, keepMethod: PaymentMethod) {
+    await this.prisma.payment.updateMany({
+      where: { bookingId, method: { not: keepMethod }, status: PaymentStatus.pending },
+      data: { status: PaymentStatus.cancelled },
+    });
   }
 
   // Shared by initiateStripe/initiateWechat: return the one "active" Payment
@@ -108,6 +142,30 @@ export class PaymentsService {
     }
   }
 
+  // Last-resort backstop for payment_booking_paid_unique: a true race where
+  // two different payment methods for the same booking are confirmed
+  // (webhook fires; owner clicks verify) close enough together that
+  // loadPayableBooking's pending_verification check didn't catch it. Real
+  // money has already moved by this point (Stripe charged the card, or the
+  // owner is confirming a real WeChat transfer) — this can't be silently
+  // discarded, so the losing payment is marked `cancelled` (not `paid`,
+  // to keep revenue reporting correct) and the business is notified to
+  // refund it manually.
+  private async handleDuplicatePaymentRace(payment: {
+    id: string;
+    bookingId: string;
+    method: PaymentMethod;
+    amount: Prisma.Decimal;
+    referenceNote: string | null;
+  }, businessId: string) {
+    await this.prisma.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.cancelled } });
+    await this.notifications.notifyBusinessManagers(
+      businessId,
+      'Duplicate Payment Received — Refund Needed',
+      `A ${payment.method} payment of NZD ${Number(payment.amount).toFixed(2)}${payment.referenceNote ? ` (ref ${payment.referenceNote})` : ''} for booking ${payment.bookingId} was received after another payment method had already been confirmed for the same booking. It was NOT recorded as paid, to avoid double-counting revenue — please refund it manually.`,
+    );
+  }
+
   // US-04.1: creates a Stripe Checkout Session (a Stripe-hosted payment
   // page) plus a matching StripeCheckoutAttempt, rather than a raw
   // PaymentIntent — chosen specifically so the app never needs a native
@@ -128,6 +186,7 @@ export class PaymentsService {
   // a webhook event this service could no longer resolve back to a Payment.
   async initiateStripe(user: RequestingUser, bookingId: string, returnUrl: string) {
     const booking = await this.loadPayableBooking(user, bookingId);
+    await this.cancelOtherPendingMethodPayments(bookingId, PaymentMethod.stripe);
 
     const payment = await this.getOrCreateActivePayment({
       bookingId,
@@ -202,16 +261,27 @@ export class PaymentsService {
           if (succeeded) {
             // Same atomic-guard pattern for the parent Payment: only the
             // request that actually moves it pending -> paid notifies.
-            const advanced = await this.prisma.payment.updateMany({
-              where: { id: attempt.paymentId, status: PaymentStatus.pending },
-              data: { status: PaymentStatus.paid, verifiedAt: new Date() },
-            });
-            if (advanced.count === 1) {
-              await this.notifications.notify(
-                attempt.payment.booking.customerId,
-                'Payment Successful',
-                `Your payment of NZD ${amount.toFixed(2)} was successful.`,
-              );
+            try {
+              const advanced = await this.prisma.payment.updateMany({
+                where: { id: attempt.paymentId, status: PaymentStatus.pending },
+                data: { status: PaymentStatus.paid, verifiedAt: new Date() },
+              });
+              if (advanced.count === 1) {
+                await this.notifications.notify(
+                  attempt.payment.booking.customerId,
+                  'Payment Successful',
+                  `Your payment of NZD ${amount.toFixed(2)} was successful.`,
+                );
+              }
+            } catch (err) {
+              if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION) {
+                // payment_booking_paid_unique: a WeChat payment for this
+                // booking was already confirmed paid. Stripe has already
+                // captured the charge — this needs a manual refund.
+                await this.handleDuplicatePaymentRace(attempt.payment, attempt.payment.booking.businessId);
+              } else {
+                throw err;
+              }
             }
           } else {
             // An expired session only fails the Payment if no other attempt
@@ -251,6 +321,7 @@ export class PaymentsService {
   // wechat_qr payment is reused instead of creating a new one each call.
   async initiateWechat(user: RequestingUser, bookingId: string) {
     const booking = await this.loadPayableBooking(user, bookingId);
+    await this.cancelOtherPendingMethodPayments(bookingId, PaymentMethod.wechat_qr);
     const business = await this.prisma.business.findUnique({ where: { id: booking.businessId } });
 
     const payment = await this.getOrCreateActivePayment({
@@ -334,12 +405,28 @@ export class PaymentsService {
     }
 
     const verifiedAt = new Date();
-    const advanced = await this.prisma.payment.updateMany({
-      where: { id: paymentId, status: PaymentStatus.pending_verification },
-      data: { status: PaymentStatus.paid, verifiedAt },
-    });
-    if (advanced.count === 0) {
-      throw new BadRequestException('This payment is not awaiting verification');
+    try {
+      const advanced = await this.prisma.payment.updateMany({
+        where: { id: paymentId, status: PaymentStatus.pending_verification },
+        data: { status: PaymentStatus.paid, verifiedAt },
+      });
+      if (advanced.count === 0) {
+        throw new BadRequestException('This payment is not awaiting verification');
+      }
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION) {
+        // payment_booking_paid_unique: a Stripe payment for this booking
+        // was already confirmed paid (e.g. its webhook landed between this
+        // payment reaching pending_verification and the owner clicking
+        // verify — loadPayableBooking only blocks *starting* a second
+        // method, not this). The owner is asserting a real WeChat transfer
+        // was received, so it can't be silently dropped either.
+        await this.handleDuplicatePaymentRace(payment, payment.booking.businessId);
+        throw new BadRequestException(
+          'Another payment method for this booking was already confirmed paid. This WeChat payment was recorded as cancelled — refund it manually.',
+        );
+      }
+      throw err;
     }
 
     // US-05.2

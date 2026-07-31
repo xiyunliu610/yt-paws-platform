@@ -13,10 +13,32 @@ function resolveDevHost(): string | null {
   return hostUri?.split(':')[0] ?? null;
 }
 
+// EXPO_PUBLIC_-prefixed env vars are inlined into the JS bundle at build
+// time (Expo SDK 49+, no extra config needed) — set per environment via
+// eas.json's per-profile `env`, or a local .env.* file. This is the only
+// way a standalone (non-Metro) build reaches a real backend; without it,
+// the dev-host/localhost fallback below would make a production build
+// silently try to talk to the phone it's running on.
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
+
 const devHost = resolveDevHost();
-const BASE_URL = devHost
-  ? `http://${devHost}:${API_PORT}`
-  : Platform.select({ android: `http://10.0.2.2:${API_PORT}`, default: `http://localhost:${API_PORT}` });
+const BASE_URL =
+  configuredApiUrl ||
+  (devHost
+    ? `http://${devHost}:${API_PORT}`
+    : Platform.select({ android: `http://10.0.2.2:${API_PORT}`, default: `http://localhost:${API_PORT}` }));
+
+if (!configuredApiUrl && !__DEV__) {
+  // A release JS bundle (EAS preview/production build, or `expo export`)
+  // has no Metro dev server to infer a host from, so devHost is always
+  // null here — this only fires when EXPO_PUBLIC_API_URL was left unset
+  // for a non-dev build, which otherwise fails silently (every request
+  // just times out against the phone's own loopback address).
+  console.error(
+    'EXPO_PUBLIC_API_URL is not set for this build — the app cannot reach a backend. ' +
+      "Set it in eas.json's env for this build profile before distributing this build.",
+  );
+}
 
 export class ApiError extends Error {
   constructor(

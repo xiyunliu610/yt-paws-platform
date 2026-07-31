@@ -37,6 +37,12 @@ enum PaymentStatus {
   paid
   failed
   refunded
+  // Voided without money changing hands — either superseded by the
+  // customer switching payment method (see PaymentsService), or the losing
+  // side of a genuine cross-method double-payment race (see the
+  // payment_booking_paid_unique index below). Distinct from `failed`,
+  // which means the payment attempt itself didn't go through.
+  cancelled
 }
 
 enum CheckoutAttemptStatus {
@@ -177,14 +183,25 @@ model Booking {
   updatedAt       DateTime      @updatedAt
 }
 
-// At most one "active" Payment per booking per method — enforced by two
+// At most one "active" Payment per booking per method, and at most one
+// "paid" Payment per booking across *all* methods — enforced by three
 // partial unique indexes Prisma's schema DSL can't express (no WHERE clause
-// support), added by hand in the
-// 20260729130000_payment_dedup_and_stripe_attempts migration instead:
+// support), added by hand instead:
 //   payment_stripe_pending_unique   ON ("bookingId") WHERE method='stripe' AND status='pending'
+//     (20260729130000_payment_dedup_and_stripe_attempts)
 //   payment_wechat_active_unique    ON ("bookingId") WHERE method='wechat_qr' AND status IN ('pending','pending_verification')
+//     (20260729130000_payment_dedup_and_stripe_attempts)
+//   payment_booking_paid_unique     ON ("bookingId") WHERE status='paid'
+//     (20260731000000_cross_method_payment_dedup) — the second index only
+//     dedupes within one method; without this one, a booking could have a
+//     Stripe payment reach `paid` via the webhook *and* a WeChat payment
+//     reach `paid` via owner verification, independently, since neither
+//     path checks the other method. See PaymentsService for how a
+//     violation here is handled (it's a real possible race, not just a
+//     theoretical one — the app doesn't stop a customer from having both a
+//     Stripe checkout and a WeChat transfer in flight at once).
 // A `prisma migrate dev` run against this schema has no matching construct
-// for them, so it will propose dropping them — always review with
+// for any of them, so it will propose dropping them — always review with
 // --create-only rather than letting it apply automatically.
 model Payment {
   id               String                  @id @default(uuid()) @db.Uuid
