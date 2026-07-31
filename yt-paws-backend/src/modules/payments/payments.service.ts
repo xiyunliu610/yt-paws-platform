@@ -61,7 +61,7 @@ export class PaymentsService {
     }
 
     const alreadyPaid = await this.prisma.payment.findFirst({
-      where: { bookingId, status: PaymentStatus.paid },
+      where: { bookingId, status: { in: [PaymentStatus.paid, PaymentStatus.refund_pending] } },
     });
     if (alreadyPaid) {
       throw new BadRequestException('This booking has already been paid for');
@@ -497,11 +497,24 @@ export class PaymentsService {
   // actions an owner takes separately (e.g. PATCH /bookings/:id/cancel),
   // since not every refund implies the booking itself is off.
   //
-  // Claims the payment (paid -> refunded) atomically *before* calling out
-  // to Stripe, rather than after: only the request that wins the claim ever
-  // calls the refund API, so two concurrent refund attempts can't both
-  // issue a Stripe refund. If the Stripe call then fails, the claim is
-  // rolled back — the payment is still actually paid in that case.
+  // Three steps, not two: `paid -> refund_pending` is claimed atomically
+  // *before* calling out to Stripe (so only the request that wins the claim
+  // ever calls the refund API, and payment_booking_paid_unique — which now
+  // also covers refund_pending — keeps this booking's "one payment holding
+  // the money" slot reserved for the whole window, not just released the
+  // moment the claim lands); then Stripe is called with an idempotency key
+  // (a retried request can't double-refund the same charge); then the
+  // payment is finalized to `refunded`, or rolled back to `paid` if Stripe's
+  // call failed — at which point rolling back can't collide with a *new*
+  // payment having become `paid` in the interim, because refund_pending
+  // blocked that the whole time.
+  //
+  // Known gap: if the process crashes between Stripe confirming the refund
+  // and the `refunded` write landing, the payment is stuck in
+  // `refund_pending` with the money already returned by Stripe — there's no
+  // automatic reconciliation for that yet (would need a Stripe refund
+  // webhook or a periodic reconciliation job); an owner would need to check
+  // the Stripe dashboard and this is a manual fix-up for now.
   async refundPayment(user: RequestingUser, paymentId: string, reason: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
@@ -514,15 +527,15 @@ export class PaymentsService {
       throw new ForbiddenException('You do not have access to this payment');
     }
 
-    const refundedAt = new Date();
     const claimed = await this.prisma.payment.updateMany({
       where: { id: paymentId, status: PaymentStatus.paid },
-      data: { status: PaymentStatus.refunded, refundedAt, refundReason: reason, refundedById: user.userId },
+      data: { status: PaymentStatus.refund_pending, refundReason: reason, refundedById: user.userId },
     });
     if (claimed.count === 0) {
       throw new BadRequestException('Only a paid payment can be refunded (it may already be refunded)');
     }
 
+    let stripeRefundId: string | undefined;
     if (payment.method === PaymentMethod.stripe) {
       const succeededAttempt = await this.prisma.stripeCheckoutAttempt.findFirst({
         where: { paymentId: payment.id, status: CheckoutAttemptStatus.succeeded },
@@ -533,13 +546,17 @@ export class PaymentsService {
         if (!succeededAttempt?.paymentIntentId) {
           throw new Error('No Stripe charge found for this payment');
         }
-        await this.stripe.refunds.create({ payment_intent: succeededAttempt.paymentIntentId });
+        const refund = await this.stripe.refunds.create(
+          { payment_intent: succeededAttempt.paymentIntentId },
+          { idempotencyKey: `refund_${payment.id}` },
+        );
+        stripeRefundId = refund.id;
       } catch (err) {
         // Roll back the claim: Stripe didn't actually refund anything, so
         // the payment is still paid in reality.
         await this.prisma.payment.update({
           where: { id: paymentId },
-          data: { status: PaymentStatus.paid, refundedAt: null, refundReason: null, refundedById: null },
+          data: { status: PaymentStatus.paid, refundReason: null, refundedById: null },
         });
         const message = err instanceof Error ? err.message : 'unknown error';
         throw new BadRequestException(`Stripe refund failed: ${message}`);
@@ -549,6 +566,12 @@ export class PaymentsService {
     // already returned the money manually outside the app, same trust
     // model as verifyWechatPayment confirming a transfer was received.
 
+    const refundedAt = new Date();
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: PaymentStatus.refunded, refundedAt, stripeRefundId },
+    });
+
     await this.notifications.notify(
       payment.booking.customerId,
       'Payment Refunded',
@@ -556,7 +579,14 @@ export class PaymentsService {
     );
 
     const { booking: _booking, ...paymentFields } = payment;
-    return { ...paymentFields, status: PaymentStatus.refunded, refundedAt, refundReason: reason, refundedById: user.userId };
+    return {
+      ...paymentFields,
+      status: PaymentStatus.refunded,
+      refundedAt,
+      refundReason: reason,
+      refundedById: user.userId,
+      stripeRefundId,
+    };
   }
 
   // Backs the owner-side Payment Verification screen: every payment for the

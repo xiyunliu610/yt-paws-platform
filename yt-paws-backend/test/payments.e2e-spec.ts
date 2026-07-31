@@ -499,6 +499,26 @@ describe('Payments correctness (e2e)', () => {
       expect(stillPaid.status).toBe('paid');
       expect(stillPaid.refundedAt).toBeNull();
     });
+
+    it('blocks a new payment for the booking while a refund is `refund_pending` (payment_booking_paid_unique now covers it)', async () => {
+      const booking = await createBooking();
+      const payment = await prisma.payment.create({
+        data: { bookingId: booking.id, method: 'wechat_qr', amount: 60, status: 'refund_pending' },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/payments/wechat/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(400);
+
+      // Direct DB check too: the unique index itself should reject a second
+      // paid/refund_pending row for this booking, not just the app-level check.
+      await expect(
+        prisma.payment.create({ data: { bookingId: booking.id, method: 'stripe', amount: 60, status: 'paid' } }),
+      ).rejects.toThrow();
+
+      await prisma.payment.delete({ where: { id: payment.id } });
+    });
   });
 
   describe('business settings', () => {

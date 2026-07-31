@@ -43,6 +43,13 @@ enum PaymentStatus {
   // payment_booking_paid_unique index below). Distinct from `failed`,
   // which means the payment attempt itself didn't go through.
   cancelled
+  // Reserved between claiming a refund and it actually completing — see
+  // PaymentsService.refundPayment. Exists so the booking-level "at most one
+  // payment currently holding this booking's money" invariant
+  // (payment_booking_paid_unique) covers this window too: without it, a new
+  // payment could reach `paid` for the same booking while a refund for the
+  // old one was still in flight with Stripe.
+  refund_pending
 }
 
 enum CheckoutAttemptStatus {
@@ -192,15 +199,21 @@ model Booking {
 //     (20260729130000_payment_dedup_and_stripe_attempts)
 //   payment_wechat_active_unique    ON ("bookingId") WHERE method='wechat_qr' AND status IN ('pending','pending_verification')
 //     (20260729130000_payment_dedup_and_stripe_attempts)
-//   payment_booking_paid_unique     ON ("bookingId") WHERE status='paid'
-//     (20260731000000_cross_method_payment_dedup) — the second index only
-//     dedupes within one method; without this one, a booking could have a
-//     Stripe payment reach `paid` via the webhook *and* a WeChat payment
-//     reach `paid` via owner verification, independently, since neither
-//     path checks the other method. See PaymentsService for how a
-//     violation here is handled (it's a real possible race, not just a
-//     theoretical one — the app doesn't stop a customer from having both a
-//     Stripe checkout and a WeChat transfer in flight at once).
+//   payment_booking_paid_unique     ON ("bookingId") WHERE status IN ('paid','refund_pending')
+//     (20260731000000_cross_method_payment_dedup; predicate widened to
+//     include refund_pending by 20260801000000_refund_state_machine) — the
+//     second index only dedupes within one method; without this one, a
+//     booking could have a Stripe payment reach `paid` via the webhook
+//     *and* a WeChat payment reach `paid` via owner verification,
+//     independently, since neither path checks the other method. See
+//     PaymentsService for how a violation here is handled (it's a real
+//     possible race, not just a theoretical one — the app doesn't stop a
+//     customer from having both a Stripe checkout and a WeChat transfer in
+//     flight at once). refund_pending is included so a refund actually in
+//     flight with Stripe still reserves the booking's "one payment holding
+//     the money" slot — otherwise a new payment could reach `paid` for the
+//     same booking mid-refund, and the refund's rollback-to-`paid` on
+//     failure would then collide with it.
 // A `prisma migrate dev` run against this schema has no matching construct
 // for any of them, so it will propose dropping them — always review with
 // --create-only rather than letting it apply automatically.
@@ -226,6 +239,12 @@ model Payment {
   refundReason     String?
   refundedById     String?                 @db.Uuid
   refundedBy       User?                   @relation("PaymentRefundedBy", fields: [refundedById], references: [id])
+  // Stripe's refund id (re_...), captured after a successful
+  // stripe.refunds.create call — kept for support/audit lookups against the
+  // Stripe dashboard. (The idempotency key that prevents double-refunding
+  // on a retried request is the Payment's own id, passed to
+  // stripe.refunds.create — this column is the result, not the key.)
+  stripeRefundId   String?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }

@@ -9,8 +9,12 @@ interface RequestingUser {
 
 interface UpdateBusinessInput {
   name?: string;
-  region?: string;
-  wechatQrCodeUrl?: string;
+  // null clears the field; undefined leaves it unchanged — Prisma's update
+  // treats them differently (null -> SET column = NULL, undefined -> don't
+  // touch the column), so this distinction has to survive from the DTO
+  // through to here.
+  region?: string | null;
+  wechatQrCodeUrl?: string | null;
 }
 
 @Injectable()

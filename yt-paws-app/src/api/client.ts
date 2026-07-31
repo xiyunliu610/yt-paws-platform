@@ -267,7 +267,7 @@ export interface Payment {
   bookingId: string;
   method: 'stripe' | 'wechat_qr';
   amount: number;
-  status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded' | 'cancelled';
+  status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded' | 'cancelled' | 'refund_pending';
   referenceNote: string | null;
   refundReason?: string | null;
   createdAt: string;
@@ -355,8 +355,9 @@ export interface Business {
 
 export interface BusinessUpdateInput {
   name?: string;
-  region?: string;
-  wechatQrCodeUrl?: string;
+  // null clears the field; undefined/omitted leaves it unchanged.
+  region?: string | null;
+  wechatQrCodeUrl?: string | null;
 }
 
 export const businessesApi = {

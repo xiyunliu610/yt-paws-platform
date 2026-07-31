@@ -224,6 +224,37 @@ export class BookingsService {
     return updated;
   }
 
+  // Lets the person actually caring for the pet during this booking (the
+  // assigned staff member, or the business's owner/admin) see the pet's
+  // full profile — dietNotes, personality, health records, etc. — plus the
+  // customer's contact info, none of which was reachable before: PetsService
+  // only ever let a pet's owner read it (see pets.service.ts), so a staff
+  // member had no way to see this even for a booking they were actively
+  // carrying out. Scoped to the booking itself (not a general "see any pet
+  // in my business" grant) so staff only see what they're assigned to.
+  async findCareDetails(user: RequestingUser, bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        pet: { include: { healthRecords: { orderBy: { date: 'desc' } } } },
+        customer: { select: { name: true, email: true, phone: true } },
+      },
+    });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    const isCustomer = booking.customerId === user.userId;
+    const isAssignedStaff = user.role === Role.staff && booking.assignedStaffId === user.userId;
+    const isManager =
+      (user.role === Role.owner || user.role === Role.admin) && user.businessId === booking.businessId;
+    if (!isCustomer && !isAssignedStaff && !isManager) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    return { pet: booking.pet, customer: booking.customer };
+  }
+
   // PRD US-03.6: owner assigns a booking to a staff member of the same business.
   async assignStaff(requester: RequestingUser, bookingId: string, staffId: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });

@@ -21,6 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
   failed: '#FF5252',
   refunded: '#999999',
   cancelled: '#999999',
+  refund_pending: '#C9A227',
 };
 
 const PaymentVerificationScreen = () => {
@@ -71,6 +72,8 @@ const PaymentVerificationScreen = () => {
         return t.paymentHistory.statusRefunded;
       case 'cancelled':
         return t.paymentHistory.statusCancelled;
+      case 'refund_pending':
+        return t.paymentHistory.statusRefundPending;
       default:
         return status;
     }
@@ -116,13 +119,8 @@ const PaymentVerificationScreen = () => {
     setRefundReason('');
   };
 
-  const handleRefund = (payment: Payment) => {
+  const submitRefund = (payment: Payment) => {
     if (!token) return;
-    if (!refundReason.trim()) {
-      Alert.alert(t.paymentVerification.refundFailedTitle, t.paymentVerification.enterRefundReason);
-      return;
-    }
-
     setRefundingId(payment.id);
     paymentsApi
       .refund(token, payment.id, refundReason.trim())
@@ -136,6 +134,31 @@ const PaymentVerificationScreen = () => {
         Alert.alert(t.paymentVerification.refundFailedTitle, message);
       })
       .finally(() => setRefundingId(null));
+  };
+
+  const handleRefund = (payment: Payment) => {
+    if (!refundReason.trim()) {
+      Alert.alert(t.paymentVerification.refundFailedTitle, t.paymentVerification.enterRefundReason);
+      return;
+    }
+
+    // WeChat has no refund API — tapping this only records that the owner
+    // has *already* sent the money back manually. Confirm that explicitly
+    // so the button can't be mistaken for an automatic refund the way the
+    // Stripe path actually is.
+    if (payment.method === 'wechat_qr') {
+      Alert.alert(
+        t.paymentVerification.manualRefundConfirmTitle,
+        t.paymentVerification.manualRefundConfirmMessage,
+        [
+          { text: t.paymentVerification.refundCancelButton, style: 'cancel' },
+          { text: t.paymentVerification.manualRefundConfirmButton, onPress: () => submitRefund(payment) },
+        ],
+      );
+      return;
+    }
+
+    submitRefund(payment);
   };
 
   return (
@@ -191,12 +214,21 @@ const PaymentVerificationScreen = () => {
 
                 {payment.status === 'paid' && refundFormId !== payment.id && (
                   <TouchableOpacity style={styles.refundButton} onPress={() => openRefundForm(payment)}>
-                    <Text style={styles.refundButtonText}>{t.paymentVerification.refundButton}</Text>
+                    <Text style={styles.refundButtonText}>
+                      {payment.method === 'wechat_qr'
+                        ? t.paymentVerification.markManualRefundButton
+                        : t.paymentVerification.refundButton}
+                    </Text>
                   </TouchableOpacity>
                 )}
 
                 {refundFormId === payment.id && (
                   <View style={styles.refundForm}>
+                    {payment.method === 'wechat_qr' && (
+                      <Text style={styles.manualRefundWarning}>
+                        {t.paymentVerification.manualRefundWarning}
+                      </Text>
+                    )}
                     <TextInput
                       style={styles.refundInput}
                       placeholder={t.paymentVerification.refundReasonPlaceholder}
@@ -223,7 +255,9 @@ const PaymentVerificationScreen = () => {
                         <Text style={styles.refundButtonText}>
                           {refundingId === payment.id
                             ? t.paymentVerification.refunding
-                            : t.paymentVerification.refundConfirmButton}
+                            : payment.method === 'wechat_qr'
+                              ? t.paymentVerification.markManualRefundButton
+                              : t.paymentVerification.refundConfirmButton}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -342,6 +376,11 @@ const styles = StyleSheet.create({
   refundForm: {
     marginTop: 8,
     gap: 8,
+  },
+  manualRefundWarning: {
+    fontSize: 13,
+    color: '#B04A3C',
+    fontWeight: '600',
   },
   refundInput: {
     backgroundColor: '#F5EDD8',

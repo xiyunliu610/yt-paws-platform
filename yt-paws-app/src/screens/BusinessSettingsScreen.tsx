@@ -24,7 +24,7 @@ const BusinessSettingsScreen = () => {
   const [failed, setFailed] = useState(false);
   const [name, setName] = useState('');
   const [region, setRegion] = useState('');
-  const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string | undefined>(undefined);
+  const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const loadBusiness = useCallback(() => {
@@ -35,7 +35,7 @@ const BusinessSettingsScreen = () => {
         setBusiness(result);
         setName(result.name);
         setRegion(result.region ?? '');
-        setWechatQrCodeUrl(result.wechatQrCodeUrl ?? undefined);
+        setWechatQrCodeUrl(result.wechatQrCodeUrl);
         setFailed(false);
       })
       .catch(() => setFailed(true));
@@ -85,7 +85,9 @@ const BusinessSettingsScreen = () => {
     try {
       const updated = await businessesApi.updateMine(token, {
         name: name.trim(),
-        region: region.trim() || undefined,
+        // null (not undefined) so an emptied field actually clears the
+        // column instead of the update silently leaving the old value.
+        region: region.trim() || null,
         wechatQrCodeUrl,
       });
       setBusiness(updated);
@@ -139,6 +141,15 @@ const BusinessSettingsScreen = () => {
               <Text style={styles.qrCodePlaceholderText}>{t.businessSettings.qrCodePlaceholder}</Text>
             )}
           </TouchableOpacity>
+          {wechatQrCodeUrl && (
+            <TouchableOpacity
+              style={styles.removeQrCodeButton}
+              onPress={() => setWechatQrCodeUrl(null)}
+              disabled={isSaving}
+            >
+              <Text style={styles.removeQrCodeButtonText}>{t.businessSettings.removeQrCode}</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
@@ -208,6 +219,15 @@ const styles = StyleSheet.create({
   qrCodePlaceholderText: {
     fontSize: 14,
     color: '#999',
+  },
+  removeQrCodeButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  removeQrCodeButtonText: {
+    fontSize: 13,
+    color: '#B04A3C',
+    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: '#2C4A3E',

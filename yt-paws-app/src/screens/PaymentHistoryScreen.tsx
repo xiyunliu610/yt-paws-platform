@@ -12,6 +12,7 @@ const STATUS_COLORS: Record<string, string> = {
   failed: '#FF5252',
   refunded: '#999999',
   cancelled: '#999999',
+  refund_pending: '#C9A227',
 };
 
 const PaymentHistoryScreen = () => {
@@ -48,6 +49,8 @@ const PaymentHistoryScreen = () => {
         return t.paymentHistory.statusRefunded;
       case 'cancelled':
         return t.paymentHistory.statusCancelled;
+      case 'refund_pending':
+        return t.paymentHistory.statusRefundPending;
       default:
         return status;
     }

@@ -33,6 +33,11 @@ export class ReportsService {
     return booking;
   }
 
+  // Matches loadBookingForWrite's permission, not "anyone in the business":
+  // an unassigned staff member knowing a bookingId could otherwise read
+  // another customer's photos and notes just by being employed by the same
+  // business. Owner/admin still see everything in their business — they're
+  // the ones actually managing it.
   private async loadBookingForRead(user: RequestingUser, bookingId: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) {
@@ -40,8 +45,9 @@ export class ReportsService {
     }
 
     const isCustomer = booking.customerId === user.userId;
-    const isBusinessMember = !!user.businessId && booking.businessId === user.businessId;
-    if (!isCustomer && !isBusinessMember) {
+    const isAssignedStaff = user.role === Role.staff && booking.assignedStaffId === user.userId;
+    const isManager = (user.role === Role.owner || user.role === Role.admin) && booking.businessId === user.businessId;
+    if (!isCustomer && !isAssignedStaff && !isManager) {
       throw new ForbiddenException('You do not have access to this booking');
     }
 
