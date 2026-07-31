@@ -65,6 +65,13 @@ export class PaymentsController {
     return this.paymentsService.refundPayment(req.user, id, body.reason);
   }
 
+  @Post(':id/reconcile-refund')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  reconcileRefund(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.paymentsService.reconcileRefund(req.user, id);
+  }
+
   @Get('mine')
   @UseGuards(JwtAuthGuard)
   findMine(@Req() req: AuthenticatedRequest) {

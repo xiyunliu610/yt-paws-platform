@@ -21,6 +21,7 @@ import {
   paymentsApi,
   staffApi,
   Booking,
+  BookingCareDetails,
   DailyReport,
   Payment,
   StaffMember,
@@ -56,6 +57,8 @@ const BookingDetailScreen = () => {
   const [payment, setPayment] = useState<Payment | null | undefined>(undefined);
   const [staffList, setStaffList] = useState<StaffMember[] | null>(null);
   const [assigningStaffId, setAssigningStaffId] = useState<string | null>(null);
+  const [careDetails, setCareDetails] = useState<BookingCareDetails | null>(null);
+  const [careDetailsFailed, setCareDetailsFailed] = useState(false);
 
   const isManager = user?.role === 'owner' || user?.role === 'admin';
   const isAssignedStaff = user?.role === 'staff' && booking.assignedStaffId === user.id;
@@ -72,6 +75,19 @@ const BookingDetailScreen = () => {
           setReportsFailed(false);
         })
         .catch(() => setReportsFailed(true));
+    }, [token, booking.id]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      bookingsApi
+        .careDetails(token, booking.id)
+        .then((details) => {
+          setCareDetails(details);
+          setCareDetailsFailed(false);
+        })
+        .catch(() => setCareDetailsFailed(true));
     }, [token, booking.id]),
   );
 
@@ -252,6 +268,45 @@ const BookingDetailScreen = () => {
                 </Text>
               </View>
             )}
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t.myBookings.careDetailsTitle}</Text>
+            {careDetails === null && !careDetailsFailed ? (
+              <ActivityIndicator color="#2C4A3E" />
+            ) : careDetailsFailed ? (
+              <Text style={styles.helperText}>{t.myBookings.loadCareDetailsFailed}</Text>
+            ) : careDetails ? (
+              <View style={styles.card}>
+                {!!careDetails.pet.photoUrl && (
+                  <Image source={{ uri: careDetails.pet.photoUrl }} style={styles.petPhoto} />
+                )}
+                <Text style={styles.careName}>{careDetails.pet.name}</Text>
+                <Text style={styles.careText}>
+                  {[careDetails.pet.species, careDetails.pet.breed].filter(Boolean).join(' · ') || t.myBookings.notProvided}
+                </Text>
+                <Text style={styles.careLabel}>{t.myBookings.personalityLabel}</Text>
+                <Text style={styles.careText}>{careDetails.pet.personality || t.myBookings.notProvided}</Text>
+                <Text style={styles.careLabel}>{t.myBookings.dietNotesLabel}</Text>
+                <Text style={styles.careText}>{careDetails.pet.dietNotes || t.myBookings.notProvided}</Text>
+                <Text style={styles.careLabel}>{t.myBookings.customerContactLabel}</Text>
+                <Text style={styles.careText}>
+                  {[careDetails.customer.name, careDetails.customer.phone, careDetails.customer.email]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+                <Text style={styles.careLabel}>{t.myBookings.healthRecordsLabel}</Text>
+                {careDetails.pet.healthRecords.length === 0 ? (
+                  <Text style={styles.careText}>{t.myBookings.noHealthRecords}</Text>
+                ) : (
+                  careDetails.pet.healthRecords.map((record) => (
+                    <Text key={record.id} style={styles.careText}>
+                      {formatDate(record.date)} · {record.type}{record.notes ? ` — ${record.notes}` : ''}
+                    </Text>
+                  ))
+                )}
+              </View>
+            ) : null}
           </View>
 
           {isManager && staffList && staffList.length > 0 && (
@@ -480,6 +535,30 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 8,
     marginRight: 8,
+  },
+  petPhoto: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    marginBottom: 12,
+  },
+  careName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2C4A3E',
+    marginBottom: 4,
+  },
+  careLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 12,
+    marginBottom: 3,
+  },
+  careText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
   },
 });
 

@@ -242,7 +242,7 @@ Corresponding backend module: `payments`
 
 **Acceptance Criteria**
 - Given a `paid` payment, When the owner refunds it with a reason, Then the payment moves to "Refunded", the reason is recorded, and the customer is notified
-- Given the payment was via Stripe, When the refund is confirmed, Then the underlying Stripe charge is actually refunded through the Stripe API, not just marked refunded locally
+- Given the payment was via Stripe, When the refund is confirmed, Then the underlying Stripe charge is actually refunded through the Stripe API, not just marked refunded locally; pending/ambiguous provider results remain `refund_pending` and can be reconciled safely by an owner/admin
 - Given the payment was via WeChat, When the owner refunds it, Then the system records the refund (the owner has already returned the money manually outside the app — same trust model as WeChat payment verification)
 - Given a payment is not currently `paid` (already refunded, still pending, etc.), When a refund is attempted, Then the system rejects it
 - Out of scope for Version 1: partial-amount refunds (full refund only), and any automatic link between refunding a payment and cancelling its booking — those are two separate owner actions

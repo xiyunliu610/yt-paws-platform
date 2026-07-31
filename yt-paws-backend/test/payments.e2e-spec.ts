@@ -256,21 +256,20 @@ describe('Payments correctness (e2e)', () => {
   describe('cross-method double payment prevention', () => {
     it('cancels an abandoned pending payment when the customer switches method', async () => {
       const booking = await createBooking();
+      // Model an abandoned Stripe Payment without an open external Session;
+      // the method-switch behavior under test is local and CI must not rely
+      // on an outbound call to Stripe with a deliberately invalid key.
+      const stripePayment = await prisma.payment.create({
+        data: { bookingId: booking.id, method: 'stripe', amount: 60, status: 'pending' },
+      });
 
-      const wechat = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post(`/payments/wechat/${booking.id}`)
         .set('Authorization', `Bearer ${customerToken}`)
         .expect(201);
 
-      // Stripe API call itself will fail (no real key in this environment)
-      // — that's fine, the cancel-on-switch runs before it.
-      await request(app.getHttpServer())
-        .post(`/payments/stripe/${booking.id}`)
-        .set('Authorization', `Bearer ${customerToken}`)
-        .send({ returnUrl: 'exp://test/redirect' });
-
-      const abandonedWechat = await prisma.payment.findUniqueOrThrow({ where: { id: wechat.body.paymentId } });
-      expect(abandonedWechat.status).toBe('cancelled');
+      const abandonedStripe = await prisma.payment.findUniqueOrThrow({ where: { id: stripePayment.id } });
+      expect(abandonedStripe.status).toBe('cancelled');
     });
 
     it('blocks starting a different payment method while one is awaiting verification', async () => {

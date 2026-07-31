@@ -212,6 +212,11 @@ export interface Booking {
   service?: { name: string };
 }
 
+export interface BookingCareDetails {
+  pet: Pet & { healthRecords: PetHealthRecord[] };
+  customer: { name: string | null; email: string; phone: string | null };
+}
+
 export const bookingsApi = {
   create: (
     token: string,
@@ -219,6 +224,9 @@ export const bookingsApi = {
   ) => request<Booking>('/bookings', { method: 'POST', body: JSON.stringify(data) }, token),
 
   mine: (token: string) => request<Booking[]>('/bookings/mine', {}, token),
+
+  careDetails: (token: string, bookingId: string) =>
+    request<BookingCareDetails>(`/bookings/${bookingId}/care-details`, {}, token),
 
   cancel: (token: string, bookingId: string) =>
     request<Booking>(`/bookings/${bookingId}/cancel`, { method: 'PATCH' }, token),
@@ -321,6 +329,10 @@ export const paymentsApi = {
       { method: 'PATCH', body: JSON.stringify({ reason }) },
       token,
     ),
+
+  // Owner/admin recovery path for a Stripe refund left in refund_pending.
+  reconcileRefund: (token: string, paymentId: string) =>
+    request<Payment>(`/payments/${paymentId}/reconcile-refund`, { method: 'POST' }, token),
 
   // Creates a Stripe Checkout Session; returnUrl is where the hosted page
   // redirects back to (see src/screens/PaymentScreen.tsx, which builds it

@@ -34,6 +34,7 @@ const PaymentVerificationScreen = () => {
   const [refundFormId, setRefundFormId] = useState<string | null>(null);
   const [refundReason, setRefundReason] = useState('');
   const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [reconcilingId, setReconcilingId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!token) return;
@@ -161,6 +162,20 @@ const PaymentVerificationScreen = () => {
     submitRefund(payment);
   };
 
+  const handleReconcile = async (payment: Payment) => {
+    if (!token) return;
+    setReconcilingId(payment.id);
+    try {
+      await paymentsApi.reconcileRefund(token, payment.id);
+      load();
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.paymentVerification.reconcileFailedMessage;
+      Alert.alert(t.paymentVerification.refundFailedTitle, message);
+    } finally {
+      setReconcilingId(null);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -218,6 +233,20 @@ const PaymentVerificationScreen = () => {
                       {payment.method === 'wechat_qr'
                         ? t.paymentVerification.markManualRefundButton
                         : t.paymentVerification.refundButton}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {payment.status === 'refund_pending' && payment.method === 'stripe' && (
+                  <TouchableOpacity
+                    style={[styles.verifyButton, reconcilingId === payment.id && styles.verifyButtonDisabled]}
+                    onPress={() => handleReconcile(payment)}
+                    disabled={reconcilingId !== null}
+                  >
+                    <Text style={styles.verifyButtonText}>
+                      {reconcilingId === payment.id
+                        ? t.paymentVerification.reconciling
+                        : t.paymentVerification.reconcileRefundButton}
                     </Text>
                   </TouchableOpacity>
                 )}
