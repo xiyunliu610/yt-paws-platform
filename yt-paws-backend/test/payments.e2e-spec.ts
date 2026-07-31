@@ -292,6 +292,53 @@ describe('Payments correctness (e2e)', () => {
         .expect(400);
     });
 
+    it('does not silently lose a charge if the abandoned Stripe session gets paid anyway after a switch to WeChat', async () => {
+      const booking = await createBooking();
+
+      // Simulate initiateStripe's result directly (rather than calling it,
+      // which would hit the real Stripe API with no valid key in this
+      // environment) — a pending Payment with one open attempt, exactly
+      // what cancelOtherPendingMethodPayments finds and cancels below.
+      const stripePayment = await prisma.payment.create({
+        data: { bookingId: booking.id, method: 'stripe', amount: 60, status: 'pending' },
+      });
+      const attempt = await prisma.stripeCheckoutAttempt.create({
+        data: { paymentId: stripePayment.id, sessionId: `cs_test_abandoned_${stripePayment.id}` },
+      });
+
+      // Switch to WeChat — cancels the Stripe payment locally. The actual
+      // Stripe-side expire call fails silently (no real API key here),
+      // which is exactly the case this test is for: the session is still
+      // "payable" from Stripe's perspective even though the local Payment
+      // is now cancelled.
+      await request(app.getHttpServer())
+        .post(`/payments/wechat/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(201);
+
+      const cancelledPayment = await prisma.payment.findUniqueOrThrow({ where: { id: stripePayment.id } });
+      expect(cancelledPayment.status).toBe('cancelled');
+
+      // The customer completes payment on the old, still-open session anyway.
+      const { payload, header } = signedWebhook(attempt.sessionId, 'checkout.session.completed');
+      await postWebhook(payload, header).expect(201);
+
+      // Must not silently stay `cancelled` with no record of the charge —
+      // handleDuplicatePaymentRace is a no-op status-wise here (already
+      // cancelled) but must still fire the refund notification.
+      const stillCancelled = await prisma.payment.findUniqueOrThrow({ where: { id: stripePayment.id } });
+      expect(stillCancelled.status).toBe('cancelled');
+
+      const refundNotifications = await prisma.notification.count({
+        where: {
+          userId: ownerId,
+          title: 'Duplicate Payment Received — Refund Needed',
+          body: { contains: booking.id },
+        },
+      });
+      expect(refundNotifications).toBe(1);
+    });
+
     it('backstops a true race (webhook + owner verification landing on two different methods for the same booking) without ever leaving two paid rows', async () => {
       const booking = await createBooking();
 
@@ -325,7 +372,11 @@ describe('Payments correctness (e2e)', () => {
       expect(paidCount).toBe(1);
 
       const refundNotifications = await prisma.notification.count({
-        where: { userId: ownerId, title: 'Duplicate Payment Received — Refund Needed' },
+        where: {
+          userId: ownerId,
+          title: 'Duplicate Payment Received — Refund Needed',
+          body: { contains: booking.id },
+        },
       });
       expect(refundNotifications).toBe(1);
     });

@@ -97,11 +97,38 @@ export class PaymentsService {
   // payment_booking_paid_unique). Already-`pending_verification` WeChat
   // payments are never touched here — loadPayableBooking blocks switching
   // methods in that case instead of silently cancelling a claimed payment.
+  //
+  // Marking the local Payment `cancelled` isn't enough on its own for a
+  // Stripe payment: the actual Checkout Session stays open and payable on
+  // Stripe's side (sessions default to a 24h expiry, not "expires the
+  // moment we stop caring locally") — a customer could still complete
+  // payment on an old, still-open tab after switching to WeChat, and the
+  // resulting real charge needs to land somewhere, not vanish. This
+  // proactively expires the Stripe side too; handleStripeWebhook also has
+  // a fallback for the case where this call doesn't win the race (the
+  // customer pays in the gap before the expire request lands, or the
+  // Stripe API call itself fails).
   private async cancelOtherPendingMethodPayments(bookingId: string, keepMethod: PaymentMethod) {
-    await this.prisma.payment.updateMany({
+    const toCancel = await this.prisma.payment.findMany({
       where: { bookingId, method: { not: keepMethod }, status: PaymentStatus.pending },
+      include: { checkoutAttempts: { where: { status: CheckoutAttemptStatus.pending } } },
+    });
+    if (toCancel.length === 0) {
+      return;
+    }
+
+    await this.prisma.payment.updateMany({
+      where: { id: { in: toCancel.map((p) => p.id) } },
       data: { status: PaymentStatus.cancelled },
     });
+
+    // Best-effort: a session that's already expired/completed on Stripe's
+    // side (or an unconfigured/invalid API key in dev) throws here — that
+    // must not block the method switch itself.
+    const sessionIds = toCancel.flatMap((p) => p.checkoutAttempts.map((a) => a.sessionId));
+    await Promise.all(
+      sessionIds.map((sessionId) => this.stripe.checkout.sessions.expire(sessionId).catch(() => undefined)),
+    );
   }
 
   // Shared by initiateStripe/initiateWechat: return the one "active" Payment
@@ -142,15 +169,16 @@ export class PaymentsService {
     }
   }
 
-  // Last-resort backstop for payment_booking_paid_unique: a true race where
-  // two different payment methods for the same booking are confirmed
-  // (webhook fires; owner clicks verify) close enough together that
-  // loadPayableBooking's pending_verification check didn't catch it. Real
-  // money has already moved by this point (Stripe charged the card, or the
-  // owner is confirming a real WeChat transfer) — this can't be silently
-  // discarded, so the losing payment is marked `cancelled` (not `paid`,
-  // to keep revenue reporting correct) and the business is notified to
-  // refund it manually.
+  // Last-resort backstop for any case where real money moved (Stripe
+  // charged the card, or the owner is confirming a real WeChat transfer)
+  // but the atomic pending -> paid transition didn't happen — either
+  // payment_booking_paid_unique caught a true cross-method race, or (see
+  // handleStripeWebhook) the Payment had already been cancelled locally
+  // (customer switched method) by the time Stripe told us the old session
+  // was paid anyway. Either way this can't be silently discarded: marks
+  // the payment `cancelled` (a no-op if it already was) rather than `paid`,
+  // to keep revenue reporting correct, and notifies the business to refund
+  // it manually.
   private async handleDuplicatePaymentRace(payment: {
     id: string;
     bookingId: string;
@@ -272,6 +300,15 @@ export class PaymentsService {
                   'Payment Successful',
                   `Your payment of NZD ${amount.toFixed(2)} was successful.`,
                 );
+              } else {
+                // Stripe confirmed a real charge, but the Payment wasn't
+                // `pending` anymore — most likely it was already cancelled
+                // locally (the customer switched to WeChat and this old
+                // session got paid anyway, faster than
+                // cancelOtherPendingMethodPayments's Stripe-side expire
+                // call could land) rather than a same-booking race caught
+                // by the unique index below. Money moved either way.
+                await this.handleDuplicatePaymentRace(attempt.payment, attempt.payment.booking.businessId);
               }
             } catch (err) {
               if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION) {
