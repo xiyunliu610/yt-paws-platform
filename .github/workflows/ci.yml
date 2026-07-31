@@ -38,6 +38,9 @@ jobs:
       - name: Install backend
         working-directory: yt-paws-backend
         run: npm ci
+      - name: Generate Prisma client
+        working-directory: yt-paws-backend
+        run: npx prisma generate
       - name: Migrate isolated test database
         working-directory: yt-paws-backend
         run: npx prisma migrate deploy
