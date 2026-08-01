@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -17,7 +18,7 @@ import { ApiError, staffApi, StaffMember } from '../api/client';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const StaffManagementScreen = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { t } = useLanguage();
 
   const [staff, setStaff] = useState<StaffMember[] | null>(null);
@@ -27,6 +28,7 @@ const StaffManagementScreen = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const loadStaff = useCallback(() => {
     if (!token) return;
@@ -85,6 +87,20 @@ const StaffManagementScreen = () => {
 
   const roleLabel = (role: string) =>
     role === 'owner' ? t.staffManagement.roleOwner : t.staffManagement.roleStaff;
+
+  const handleStatusChange = async (member: StaffMember, isActive: boolean) => {
+    if (!token) return;
+    setUpdatingId(member.id);
+    try {
+      const updated = await staffApi.updateStatus(token, member.id, isActive);
+      setStaff((current) => current?.map((item) => (item.id === member.id ? updated : item)) ?? null);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.staffManagement.statusFailedMessage;
+      Alert.alert(t.staffManagement.statusFailedTitle, message);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -152,10 +168,17 @@ const StaffManagementScreen = () => {
                 <View style={styles.staffInfo}>
                   <Text style={styles.staffName}>{member.name ?? member.email}</Text>
                   <Text style={styles.staffEmail}>{member.email}</Text>
+                  {!member.isActive && <Text style={styles.inactiveText}>{t.staffManagement.inactive}</Text>}
                 </View>
                 <View style={styles.roleBadge}>
                   <Text style={styles.roleBadgeText}>{roleLabel(member.role)}</Text>
                 </View>
+                <Switch
+                  value={member.isActive}
+                  onValueChange={(value) => handleStatusChange(member, value)}
+                  disabled={member.id === user?.id || updatingId !== null}
+                  trackColor={{ false: '#D0D0D0', true: '#2C4A3E' }}
+                />
               </View>
             ))
           )}
@@ -279,6 +302,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#2C4A3E',
+  },
+  inactiveText: {
+    marginTop: 3,
+    color: '#B00020',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

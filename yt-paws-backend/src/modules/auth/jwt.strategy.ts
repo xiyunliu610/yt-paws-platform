@@ -9,6 +9,7 @@ export interface JwtPayload {
   email: string;
   role: string;
   businessId: string | null;
+  tokenVersion: number;
 }
 
 @Injectable()
@@ -32,7 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   // otherwise take effect until the (now short, but still real) 24h expiry.
   async validate(payload: JwtPayload) {
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user || !user.isActive) {
+    if (!user || !user.isActive || user.deletedAt || user.tokenVersion !== payload.tokenVersion) {
       throw new UnauthorizedException();
     }
 

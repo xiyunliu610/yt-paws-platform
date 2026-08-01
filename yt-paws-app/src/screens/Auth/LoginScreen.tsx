@@ -13,6 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useAuth, ApiError } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { authApi } from '../../api/client';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -58,8 +59,18 @@ const LoginScreen = () => {
     navigation.navigate('Register' as never);
   };
 
-  const handleForgotPassword = () => {
-    Alert.alert(t.login.forgotPasswordTitle, t.login.forgotPasswordMessage);
+  const handleForgotPassword = async () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert(t.login.errorTitle, t.login.enterResetEmail);
+      return;
+    }
+    try {
+      await authApi.forgotPassword(email.trim());
+      Alert.alert(t.login.forgotPasswordTitle, t.login.forgotPasswordMessage);
+    } catch {
+      Alert.alert(t.login.errorTitle, t.login.resetRequestFailed);
+    }
   };
 
   const toggleLanguage = () => {

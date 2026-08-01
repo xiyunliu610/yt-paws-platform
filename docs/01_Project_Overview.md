@@ -137,7 +137,7 @@ Expand PetHome into a comprehensive pet care platform: pet store, membership sys
 | Performance | Average API response time < 500ms |
 | Availability | 99.9% service uptime target |
 | Scalability | Support thousands of users without redesign; data model reserves multi-tenant (multi-business) extensibility |
-| Security | HTTPS, JWT authentication, encrypted password storage, role-based access control |
+| Security | HTTPS, JWT authentication, encrypted password storage, role-based access control, immediate session revocation after password/account/staff-status changes |
 | Maintainability | Modular architecture, comprehensive documentation, consistent coding standards |
 | Internationalization | Chinese and English language support |
 
@@ -215,6 +215,10 @@ The following assumptions underlie all current design decisions. If any assumpti
 | Mobile Only | Version 1 does not provide a web client, only iOS/Android mobile apps; whether the Admin Dashboard needs a web client will be evaluated separately |
 | Single Currency (NZD) | Multi-currency settlement is not currently considered; both Stripe and WeChat payments are priced in New Zealand dollars |
 
+### Account lifecycle and data retention (Version 1 baseline)
+
+Users can change/reset passwords, managers can activate/deactivate staff, and users can initiate account deletion in the app. Deactivation/deletion takes effect on the next authenticated request. Account deletion uses irreversible anonymization rather than deleting financial history: contact/profile data, push tokens, pet care details, health records, report text/photos and notifications are removed; minimal Booking, Service and Payment records (amount, method, status, provider references and timestamps) remain for accounting, refund, fraud and dispute handling. A sole active Owner must transfer responsibility or activate another Owner before being deactivated or deleted.
+
 ---
 
 ## 15. Documentation Map
@@ -254,3 +258,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-07-26 | v0.5 | Corrected the Documentation Map: `03_System_Architecture.md` had reached v0.5 but was still listed as "Not started" | Xiyun Liu |
 | 2026-07-29 | v0.6 | Clarified that `Pet` is deliberately not one of the tables reserving `business_id` — a pet belongs to its owning customer, not a business, and can be booked with any business; corrected §11's bullet, which previously listed Pet alongside Booking/Service as if it carried `business_id` | Xiyun Liu |
 | 2026-07-30 | v0.7 | Reversed the v0.4 decision: business onboarding is bootstrap-only as of this date, not an ongoing self-service surface — see `02_Product_Requirements.md` US-01.4 and `03_System_Architecture.md`'s ADR table for why (open registration meant customer service browsing, which has no per-business filter, would mix every registered business's listings) | Xiyun Liu |
+| 2026-08-01 | v0.8 | Added the Version 1 account lifecycle/data-retention baseline: password reset/change and session revocation, staff activation safeguards, in-app account deletion, irreversible anonymization of personal/care media, and retention of only the booking/payment records required for financial and dispute history | Xiyun Liu |

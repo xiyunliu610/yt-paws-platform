@@ -96,10 +96,13 @@ model User {
   // (or are running in an environment where remote push isn't available,
   // e.g. Expo Go on SDK 53+) — in-app notifications work regardless.
   pushToken        String?
-  // Not yet settable via any endpoint — added so JwtStrategy can reject a
-  // disabled account immediately (it looks the user up fresh on every
-  // request rather than trusting the JWT's claims; see jwt.strategy.ts).
   isActive         Boolean        @default(true)
+  // Every JWT carries the value current at issuance. Password changes,
+  // resets and account deletion increment it, invalidating all older JWTs
+  // on their very next authenticated request.
+  tokenVersion     Int            @default(0)
+  mustChangePassword Boolean      @default(false)
+  deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   pets             Pet[]
@@ -107,6 +110,19 @@ model User {
   assignedBookings Booking[]      @relation("StaffAssignedBookings")
   notifications    Notification[]
   refundsIssued    Payment[]      @relation("PaymentRefundedBy")
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
 }
 
 model Pet {

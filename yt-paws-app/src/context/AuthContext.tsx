@@ -12,6 +12,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone?: string) => Promise<void>;
   logout: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -68,8 +69,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     ]);
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!token) throw new ApiError(401, 'Not authenticated');
+    const response = await authApi.changePassword(token, currentPassword, newPassword);
+    await persistSession(response.token, response.user);
+  };
+
   return (
-    <AuthContext.Provider value={{ token, user, isRestoring, login, register, logout }}>
+    <AuthContext.Provider value={{ token, user, isRestoring, login, register, logout, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

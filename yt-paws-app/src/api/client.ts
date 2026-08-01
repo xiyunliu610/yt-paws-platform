@@ -74,6 +74,7 @@ export interface AuthUser {
   email: string;
   name: string | null;
   role: string;
+  mustChangePassword: boolean;
 }
 
 export interface AuthResponse {
@@ -93,6 +94,32 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+
+  forgotPassword: (email: string) =>
+    request<{ accepted: true }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (resetToken: string, newPassword: string) =>
+    request<{ reset: true }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: resetToken, newPassword }),
+    }),
+
+  changePassword: (token: string, currentPassword: string, newPassword: string) =>
+    request<AuthResponse>(
+      '/auth/change-password',
+      { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) },
+      token,
+    ),
+
+  deleteAccount: (token: string, password: string) =>
+    request<{ deleted: true }>(
+      '/auth/account',
+      { method: 'DELETE', body: JSON.stringify({ password }) },
+      token,
+    ),
 
 };
 
@@ -356,6 +383,8 @@ export interface StaffMember {
   name: string | null;
   phone: string | null;
   role: string;
+  isActive: boolean;
+  mustChangePassword: boolean;
 }
 
 export interface Business {
@@ -388,6 +417,13 @@ export const staffApi = {
     request<{ user: StaffMember; temporaryPassword: string }>(
       '/auth/staff',
       { method: 'POST', body: JSON.stringify(data) },
+      token,
+    ),
+
+  updateStatus: (token: string, staffId: string, isActive: boolean) =>
+    request<StaffMember>(
+      `/auth/staff/${staffId}/status`,
+      { method: 'PATCH', body: JSON.stringify({ isActive }) },
       token,
     ),
 };

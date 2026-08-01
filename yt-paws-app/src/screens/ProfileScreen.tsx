@@ -16,7 +16,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { ApiError, petsApi, Pet } from '../api/client';
+import { ApiError, authApi, petsApi, Pet } from '../api/client';
 import { registerForPushNotificationsAsync, unregisterPushNotifications } from '../notifications/pushToken';
 
 type PetTypeKey = 'dog' | 'cat' | 'other';
@@ -40,7 +40,7 @@ const PET_TYPE_KEYS: PetTypeKey[] = ['dog', 'cat', 'other'];
 
 const ProfileScreen = () => {
   const navigation = useNavigation<ProfileNavigationProp>();
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, changePassword } = useAuth();
   const { language, setLanguage, t } = useLanguage();
 
   const displayName = user?.name ?? 'Guest';
@@ -55,6 +55,13 @@ const ProfileScreen = () => {
   const [isSavingPet, setIsSavingPet] = useState(false);
   const [notifications, setNotifications] = useState(false);
   const [emailUpdates, setEmailUpdates] = useState(true);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showDeleteForm, setShowDeleteForm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Refetch on focus (not just mount) so a pet added from the Booking
   // screen's inline form shows up here without needing a full app restart.
@@ -232,6 +239,60 @@ const ProfileScreen = () => {
 
   const toggleLanguage = () => {
     setLanguage(language === 'en' ? 'zh' : 'en');
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword) {
+      Alert.alert(t.profile.passwordErrorTitle, t.profile.passwordFieldsRequired);
+      return;
+    }
+    setIsChangingPassword(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setShowPasswordForm(false);
+      Alert.alert(t.profile.passwordChangedTitle, t.profile.passwordChangedMessage);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.profile.passwordChangeFailed;
+      Alert.alert(t.profile.passwordErrorTitle, message);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const performDeleteAccount = async () => {
+    if (!token || !deletePassword) return;
+    setIsDeleting(true);
+    try {
+      await authApi.deleteAccount(token, deletePassword);
+      await logout();
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.profile.deleteAccountFailed;
+      Alert.alert(t.profile.deleteAccountErrorTitle, message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    if (!deletePassword) {
+      Alert.alert(t.profile.deleteAccountErrorTitle, t.profile.deletePasswordRequired);
+      return;
+    }
+    Alert.alert(t.profile.deleteAccountConfirmTitle, t.profile.deleteAccountConfirmMessage, [
+      { text: t.profile.cancel, style: 'cancel' },
+      {
+        text: t.profile.continueDelete,
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert(t.profile.deleteAccountFinalTitle, t.profile.deleteAccountFinalMessage, [
+            { text: t.profile.cancel, style: 'cancel' },
+            { text: t.profile.deleteAccount, style: 'destructive', onPress: performDeleteAccount },
+          ]),
+      },
+    ]);
   };
 
   return (
@@ -481,6 +542,58 @@ const ProfileScreen = () => {
               <Text style={styles.menuValue}>{t.profile.languageCurrent[language]}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => setShowPasswordForm((value) => !value)}>
+              <Text style={styles.menuText}>{t.profile.changePassword}</Text>
+              <Text style={styles.menuArrow}>›</Text>
+            </TouchableOpacity>
+
+            {showPasswordForm && (
+              <View style={styles.securityForm}>
+                <TextInput
+                  style={styles.input}
+                  placeholder={t.profile.currentPassword}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  secureTextEntry
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder={t.profile.newPassword}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                />
+                <TouchableOpacity style={styles.saveButton} onPress={handleChangePassword} disabled={isChangingPassword}>
+                  <Text style={styles.saveButtonText}>
+                    {isChangingPassword ? t.profile.changingPassword : t.profile.changePassword}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => setShowDeleteForm((value) => !value)}>
+              <Text style={styles.deleteMenuText}>{t.profile.deleteAccount}</Text>
+              <Text style={styles.menuArrow}>›</Text>
+            </TouchableOpacity>
+
+            {showDeleteForm && (
+              <View style={styles.securityForm}>
+                <Text style={styles.deleteWarning}>{t.profile.deleteAccountWarning}</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder={t.profile.confirmPassword}
+                  value={deletePassword}
+                  onChangeText={setDeletePassword}
+                  secureTextEntry
+                />
+                <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount} disabled={isDeleting}>
+                  <Text style={styles.deleteAccountButtonText}>
+                    {isDeleting ? t.profile.deletingAccount : t.profile.deleteAccount}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -827,6 +940,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     marginTop: 24,
+  },
+  securityForm: {
+    backgroundColor: 'white',
+    padding: 14,
+    borderRadius: 12,
+    gap: 10,
+    marginTop: 8,
+  },
+  deleteMenuText: {
+    fontSize: 16,
+    color: '#B00020',
+  },
+  deleteWarning: {
+    color: '#B00020',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  deleteAccountButton: {
+    backgroundColor: '#B00020',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  deleteAccountButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
 

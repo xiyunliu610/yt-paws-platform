@@ -1,10 +1,20 @@
-import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
-import { RegisterDto, LoginDto, RegisterBusinessDto, CreateStaffDto } from './dto/auth.dto';
+import {
+  ChangePasswordDto,
+  CreateStaffDto,
+  DeleteAccountDto,
+  ForgotPasswordDto,
+  LoginDto,
+  RegisterBusinessDto,
+  RegisterDto,
+  ResetPasswordDto,
+  UpdateStaffStatusDto,
+} from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -18,6 +28,28 @@ export class AuthController {
   @Post('login')
   login(@Body() body: LoginDto) {
     return this.authService.login(body.email, body.password);
+  }
+
+  @Post('forgot-password')
+  forgotPassword(@Body() body: ForgotPasswordDto) {
+    return this.authService.forgotPassword(body.email);
+  }
+
+  @Post('reset-password')
+  resetPassword(@Body() body: ResetPasswordDto) {
+    return this.authService.resetPassword(body.token, body.newPassword);
+  }
+
+  @Patch('change-password')
+  @UseGuards(JwtAuthGuard)
+  changePassword(@Req() req: AuthenticatedRequest, @Body() body: ChangePasswordDto) {
+    return this.authService.changePassword(req.user.userId, body.currentPassword, body.newPassword);
+  }
+
+  @Delete('account')
+  @UseGuards(JwtAuthGuard)
+  deleteAccount(@Req() req: AuthenticatedRequest, @Body() body: DeleteAccountDto) {
+    return this.authService.deleteAccount(req.user.userId, body.password);
   }
 
   @Post('register-business')
@@ -43,5 +75,16 @@ export class AuthController {
   @Roles('owner', 'admin')
   listStaff(@Req() req: AuthenticatedRequest) {
     return this.authService.listStaff(req.user.businessId);
+  }
+
+  @Patch('staff/:id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  updateStaffStatus(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateStaffStatusDto,
+  ) {
+    return this.authService.updateStaffStatus(req.user, id, body.isActive);
   }
 }

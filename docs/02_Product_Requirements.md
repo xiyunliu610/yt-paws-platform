@@ -81,6 +81,28 @@ Corresponding backend module: `auth`
 
 *Already implemented: `POST /auth/register-business`, now bootstrap-only (`AuthService.registerBusiness` checks `Business` row count). The `RegisterBusinessScreen` and its "Register Business" link on the login screen were removed from the app (2026-07-30) along with the now-dead `authApi.registerBusiness` client call — none of the three had a reachable path to success once a `Business` already exists.*
 
+### US-01.5 Password and Session Security
+> As a user, I want to reset or change my password and have older sessions revoked, so that a lost credential does not keep granting access.
+
+**Acceptance Criteria**
+- Forgot-password always returns the same generic response, whether an account exists or not
+- Reset tokens are random, stored only as SHA-256 hashes, expire after 30 minutes and work once
+- Password change/reset increments `User.tokenVersion`; every older JWT returns 401 on its next request
+- A newly created staff account is marked `mustChangePassword` until its first successful password change
+- Transactional email delivery is still an external production dependency: the API creates the secure reset token, but production must send it through the selected email provider; raw tokens are exposed only when the explicit E2E-only environment switch is enabled
+
+### US-01.6 Staff Activation and Account Deletion
+> As an owner or user, I want safe staff offboarding and account deletion, so that former users immediately lose access and personal data is not retained unnecessarily.
+
+**Acceptance Criteria**
+- Owner/admin can activate/deactivate a staff/owner account only within their own business
+- A manager cannot deactivate themselves or the last active Owner; this invariant is checked in a Serializable transaction
+- Deactivation increments `tokenVersion`, clears the push token and invalidates current JWTs immediately
+- Profile exposes password-confirmed account deletion with two destructive confirmations
+- The last active Owner cannot delete their account
+- Deletion anonymizes the User, removes notifications/reset tokens, clears pet profiles/photos/health records and report text/media, unassigns staff bookings and removes the `refundedBy` personal reference
+- Booking/Service/Payment financial facts remain for accounting, refund, fraud and dispute records; the deleted customer identity is represented only by the anonymized User id/email
+
 ---
 
 ## Module 2: Pets
@@ -361,3 +383,4 @@ Corresponding backend module: `reports`
 | 2026-07-30 | v0.11 | Rewrote US-01.4: business registration is bootstrap-only, not ongoing self-service — `POST /auth/register-business` now rejects once a `Business` row exists. Removed the `RegisterBusinessScreen`/login-screen entry point/API client call as a result, since a customer-facing "Register Business" action could now only ever fail | Xiyun Liu |
 | 2026-07-31 | v0.12 | Added US-03.7 (owner service management — `ServiceManagementScreen`, previously API-only), US-04.4 (owner-initiated full refunds via `PATCH /payments/:id/refund`), and US-04.5 (business settings — name/region/WeChat QR, `BusinessSettingsScreen`, `GET /businesses/me` added since there was previously no way to read current values back). Rewrote US-02.1 (Pet creation): progressive profile-building (name only required at creation) is now the *accepted* V1 behavior rather than a gap against a stricter AC that was never actually built | Xiyun Liu |
 | 2026-08-01 | v0.13 | Corrected event names in US-05.2's implementation note (`checkout.session.completed`/`.expired`, not the pre-rewrite `payment_intent.succeeded`/`.payment_failed`) and US-06.1's now-outdated "no server-side file-too-large check" line (DTO-level size/shape limits were added 2026-07-31). Added the "V1 never hard-deletes a Service" AC to US-03.7. Backend gained `GET /bookings/:id/care-details` (customer/assigned-staff/owner-admin) so staff caring for a pet can see its full profile — not yet wired into a screen, tracked as follow-up — and `ReportsService`'s read permission was tightened to match write (assigned staff only); see `03_System_Architecture.md` v0.14 for both | Xiyun Liu |
+| 2026-08-01 | v0.14 | Added US-01.5/01.6: hashed single-use password reset tokens, password-change session revocation, staff first-password flag and activation controls, last-owner/self-deactivation protection, plus password-confirmed in-app account deletion with explicit anonymization and financial-record retention rules | Xiyun Liu |

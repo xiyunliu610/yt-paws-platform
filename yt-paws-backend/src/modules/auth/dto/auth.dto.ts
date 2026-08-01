@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, MaxLength } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -74,4 +74,46 @@ export class CreateStaffDto {
   @IsString()
   @MaxLength(30)
   phone?: string;
+}
+
+export class UpdateStaffStatusDto {
+  @IsBoolean()
+  isActive: boolean;
+}
+
+export class ForgotPasswordDto {
+  @IsEmail()
+  @MaxLength(255)
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @IsString()
+  @MinLength(32)
+  @MaxLength(200)
+  token: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  newPassword: string;
+}
+
+export class ChangePasswordDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(72)
+  currentPassword: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  newPassword: string;
+}
+
+export class DeleteAccountDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(72)
+  password: string;
 }

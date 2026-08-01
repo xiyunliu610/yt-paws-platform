@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-import { Role, User } from '@prisma/client';
+import { Prisma, Role, User } from '@prisma/client';
 
 // PRD US-01.1: at least 8 characters, containing both letters and numbers.
 const PASSWORD_MIN_LENGTH = 8;
@@ -18,6 +18,17 @@ const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).+$/;
 // Unambiguous charset (no 0/O/1/l/I) for temporary passwords handed to owners
 // to relay to new staff (PRD US-03.5).
 const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
+
+interface RequestingUser {
+  userId: string;
+  role: string;
+  businessId: string | null;
+}
+
+function hashResetToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
 
 function generateTemporaryPassword(length = 12): string {
   const bytes = crypto.randomBytes(length);
@@ -50,17 +61,27 @@ export class AuthService {
     }
   }
 
-  private signToken(user: Pick<User, 'id' | 'email' | 'role' | 'businessId'>) {
+  private signToken(user: Pick<User, 'id' | 'email' | 'role' | 'businessId' | 'tokenVersion'>) {
     return this.jwtService.sign({
       sub: user.id,
       email: user.email,
       role: user.role,
       businessId: user.businessId,
+      tokenVersion: user.tokenVersion,
     });
   }
 
   private toAuthResponse(user: User, token: string) {
-    return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
+    return {
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        mustChangePassword: user.mustChangePassword,
+      },
+    };
   }
 
   async register(email: string, password: string, name: string, phone?: string) {
@@ -79,7 +100,7 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    if (!user || !user.isActive || user.deletedAt) {
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -153,6 +174,7 @@ export class AuthService {
         phone,
         role: Role.staff,
         businessId: ownerBusinessId,
+        mustChangePassword: true,
       },
     });
 
@@ -181,6 +203,208 @@ export class AuthService {
       name: user.name,
       phone: user.phone,
       role: user.role,
+      isActive: user.isActive,
+      mustChangePassword: user.mustChangePassword,
     }));
+  }
+
+  async updateStaffStatus(requester: RequestingUser, targetId: string, isActive: boolean) {
+    if (!requester.businessId) {
+      throw new BadRequestException('Your account is not associated with a business');
+    }
+    if (requester.userId === targetId) {
+      throw new BadRequestException('You cannot change your own active status');
+    }
+
+    const target = await this.prisma.user.findUnique({ where: { id: targetId } });
+    if (
+      !target ||
+      target.businessId !== requester.businessId ||
+      (target.role !== Role.staff && target.role !== Role.owner && target.role !== Role.admin)
+    ) {
+      throw new ForbiddenException('You do not have access to this staff account');
+    }
+    if (target.deletedAt) {
+      throw new BadRequestException('A deleted account cannot be reactivated');
+    }
+
+    const update = () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          if (!isActive && target.role === Role.owner) {
+            const activeOwners = await tx.user.count({
+              where: { businessId: requester.businessId, role: Role.owner, isActive: true, deletedAt: null },
+            });
+            if (activeOwners <= 1) {
+              throw new BadRequestException('The last active owner cannot be deactivated');
+            }
+          }
+          return tx.user.update({
+            where: { id: targetId },
+            data: { isActive, tokenVersion: { increment: 1 }, pushToken: isActive ? undefined : null },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    let user: User;
+    try {
+      user = await update();
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        user = await update();
+      } else {
+        throw error;
+      }
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      role: user.role,
+      isActive: user.isActive,
+      mustChangePassword: user.mustChangePassword,
+    };
+  }
+
+  async forgotPassword(email: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+    });
+    let rawToken: string | undefined;
+    if (user?.isActive && !user.deletedAt) {
+      rawToken = crypto.randomBytes(32).toString('base64url');
+      await this.prisma.$transaction([
+        this.prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } }),
+        this.prisma.passwordResetToken.create({
+          data: {
+            userId: user.id,
+            tokenHash: hashResetToken(rawToken),
+            expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+          },
+        }),
+      ]);
+      // Email delivery is intentionally outside this basic flow. Tests may
+      // opt in to seeing the token; production always returns only the same
+      // generic response used for unknown email addresses.
+    }
+    return {
+      accepted: true,
+      ...(process.env.EXPOSE_PASSWORD_RESET_TOKEN === 'true' && rawToken ? { resetToken: rawToken } : {}),
+    };
+  }
+
+  async resetPassword(rawToken: string, newPassword: string) {
+    this.validatePasswordStrength(newPassword);
+    const token = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash: hashResetToken(rawToken) },
+      include: { user: true },
+    });
+    if (!token || token.usedAt || token.expiresAt <= new Date() || !token.user.isActive || token.user.deletedAt) {
+      throw new BadRequestException('This password reset token is invalid or expired');
+    }
+    const password = await bcrypt.hash(newPassword, 10);
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: token.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+      if (claimed.count !== 1) throw new BadRequestException('This password reset token is invalid or expired');
+      await tx.user.update({
+        where: { id: token.userId },
+        data: { password, tokenVersion: { increment: 1 }, mustChangePassword: false },
+      });
+      await tx.passwordResetToken.deleteMany({ where: { userId: token.userId, id: { not: token.id } } });
+    });
+    return { reset: true };
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    this.validatePasswordStrength(newPassword);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive || user.deletedAt || !(await bcrypt.compare(currentPassword, user.password))) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    if (await bcrypt.compare(newPassword, user.password)) {
+      throw new BadRequestException('New password must be different from the current password');
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: await bcrypt.hash(newPassword, 10),
+        tokenVersion: { increment: 1 },
+        mustChangePassword: false,
+      },
+    });
+    return this.toAuthResponse(updated, this.signToken(updated));
+  }
+
+  async deleteAccount(userId: string, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive || user.deletedAt || !(await bcrypt.compare(password, user.password))) {
+      throw new UnauthorizedException('Password is incorrect');
+    }
+    const anonymizedEmail = `deleted-${user.id}@deleted.invalid`;
+    const replacementPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+    const anonymize = () => this.prisma.$transaction(async (tx) => {
+      if (user.role === Role.owner && user.businessId) {
+        const activeOwners = await tx.user.count({
+          where: { businessId: user.businessId, role: Role.owner, isActive: true, deletedAt: null },
+        });
+        if (activeOwners <= 1) {
+          throw new BadRequestException('Transfer ownership or activate another owner before deleting this account');
+        }
+      }
+      const pets = await tx.pet.findMany({ where: { ownerId: userId }, select: { id: true } });
+      const petIds = pets.map((pet) => pet.id);
+      await tx.notification.deleteMany({ where: { userId } });
+      await tx.passwordResetToken.deleteMany({ where: { userId } });
+      await tx.petHealthRecord.deleteMany({ where: { petId: { in: petIds } } });
+      await tx.dailyReport.updateMany({
+        where: { booking: { customerId: userId } },
+        data: { text: null, mediaUrls: [] },
+      });
+      await tx.pet.updateMany({
+        where: { ownerId: userId },
+        data: {
+          name: 'Deleted pet',
+          species: null,
+          breed: null,
+          age: null,
+          weight: null,
+          personality: null,
+          dietNotes: null,
+          isNeutered: null,
+          photoUrl: null,
+        },
+      });
+      await tx.booking.updateMany({ where: { assignedStaffId: userId }, data: { assignedStaffId: null } });
+      await tx.payment.updateMany({ where: { refundedById: userId }, data: { refundedById: null } });
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          email: anonymizedEmail,
+          password: replacementPassword,
+          name: null,
+          phone: null,
+          pushToken: null,
+          isActive: false,
+          tokenVersion: { increment: 1 },
+          mustChangePassword: false,
+          deletedAt: new Date(),
+        },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    try {
+      await anonymize();
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        await anonymize();
+      } else {
+        throw error;
+      }
+    }
+    return { deleted: true };
   }
 }
