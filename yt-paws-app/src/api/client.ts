@@ -128,13 +128,14 @@ export type MediaPurpose = 'pet' | 'report' | 'wechat-qr';
 
 export const mediaApi = {
   upload: async (token: string, localUri: string, purpose: MediaPurpose, contentType = 'image/jpeg') => {
-    const signed = await request<{ uploadUrl: string; publicUrl: string }>(
-      '/media/upload-url',
-      { method: 'POST', body: JSON.stringify({ purpose, contentType }) },
-      token,
-    );
     const fileResponse = await fetch(localUri);
     const blob = await fileResponse.blob();
+    if (blob.size > 5 * 1024 * 1024) throw new ApiError(413, 'Image must be 5 MB or smaller');
+    const signed = await request<{ uploadUrl: string; publicUrl: string }>(
+      '/media/upload-url',
+      { method: 'POST', body: JSON.stringify({ purpose, contentType, size: blob.size }) },
+      token,
+    );
     const uploadResponse = await fetch(signed.uploadUrl, {
       method: 'PUT',
       headers: { 'Content-Type': contentType },

@@ -1,6 +1,6 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.16
+**Document Status:** Draft v0.17
 **Related Document:** `01_Project_Overview.md`
 **Last Updated:** 2026-08-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -241,6 +241,8 @@ Corresponding backend module: `payments`
 
 *Already implemented (frontend added 2026-07-28): `POST /payments/stripe/:bookingId` now creates a Stripe **Checkout Session** (a Stripe-hosted payment page), not a raw PaymentIntent — chosen specifically so the app never needs a native Stripe SDK or a card-entry form; `POST /payments/stripe/webhook` verifies the signature and marks the `Payment` `paid`/`failed` on `checkout.session.completed`/`checkout.session.expired`. Note this marks the associated `Payment.status`, not `Booking.status` — `Booking` has no "paid" state in its enum, by design (see `03_System_Architecture.md` §6). `PaymentScreen` now has a Card/WeChat method selector; the Card tab's "Pay with Card" button calls `initiateStripe` with a `Linking.createURL()`-derived return URL, opens `checkoutUrl` via `expo-web-browser`'s `openAuthSessionAsync` (works inside Expo Go — no dev-client build needed), and on return polls a new `GET /payments/:id` a few times to reflect the outcome, since the redirect itself is only a UX signal, never proof of payment. Still untested against a real Stripe account — `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` remain unset in `.env`; the business owner needs to supply their own Stripe test keys before this can be exercised end to end.*
 
+**App Review note:** “Payments in this app are exclusively for physical pet boarding and pet-care services delivered outside the app. No digital content, app functionality, subscriptions, or virtual goods are sold.” This maps to Apple App Review Guideline 3.1.3(e), not an in-app digital purchase.
+
 ### US-04.2 Chinese User — WeChat QR Payment
 > As a Chinese-speaking user, I want to scan a WeChat QR code to complete payment, so that I can pay using a method I'm familiar with.
 
@@ -334,11 +336,11 @@ Both user stories above are split into two independently-working halves:
 Corresponding backend module: `reports`
 
 ### US-06.1 Business Publishes a Daily Report
-> As a service provider, I want to upload text, photos and video for an in-progress booking to record the pet's condition that day, so that the owner can feel confident about their pet's wellbeing.
+> As a service provider, I want to upload text and photos for an in-progress booking to record the pet's condition that day, so that the owner can feel confident about their pet's wellbeing.
 
 **Acceptance Criteria**
-- Given a booking's status is "In Progress", When the business enters a text description, uploads photos/video, and submits, Then the system creates a daily report record linked to that booking with a timestamp
-- Given an uploaded photo/video exceeds the system's allowed file size, When submitted, Then the system shows a "file too large" message and blocks the upload
+- Given a booking's status is "In Progress", When the business enters a text description, uploads up to three photos, and submits, Then the system creates a daily report record linked to that booking with a timestamp
+- Given an uploaded photo exceeds 5 MB, When submitted, Then the App blocks the upload before requesting an object-storage URL
 - Given there are multiple daily reports in one day (e.g. morning and evening), When viewing the report list, Then multiple entries display in chronological order rather than overwriting each other
 
 *Already implemented: `POST /reports/:bookingId` for the assigned staff or business owner/admin, restricted to `in_progress`. `ReportComposeScreen` accepts text and up to three photos, uploads each directly with a five-minute presigned object-storage URL, then submits only HTTPS URLs in `mediaUrls`. DTOs reject inline data URIs.*
@@ -350,7 +352,7 @@ Corresponding backend module: `reports`
 - Given the user's pet has an associated in-progress/completed booking, When the user opens that booking's detail page, Then they see all related daily reports (text + media)
 - Given that booking has no daily reports yet, When the user views it, Then the system shows "No daily reports yet" rather than an error or blank page
 
-*Already implemented: `GET /reports/:bookingId` (the booking's own customer, or any member of the business), returned in chronological order. Wired into `BookingDetailScreen`'s "Daily Reports" section for every role that can open the screen (customer, assigned staff, owner/admin), rendering each report's text and photo thumbnails, with a friendly "No daily reports yet" empty state and a refetch-on-focus so a report just published in `ReportComposeScreen` (see US-06.1) shows up immediately on return.*
+*Already implemented: `GET /reports/:bookingId` (the booking's own customer, assigned staff, or owner/admin), returned in chronological order. Wired into `BookingDetailScreen`'s "Daily Reports" section for those roles, rendering each report's text and photo thumbnails, with a friendly "No daily reports yet" empty state and a refetch-on-focus.*
 
 ---
 
@@ -361,7 +363,7 @@ Corresponding backend module: `reports`
 | Category | Requirement (draft, to be confirmed) |
 |---|---|
 | Bilingual Support | Interface text must support Chinese/English switching, without mixed languages |
-| Media Storage | Daily report photos/videos need a storage solution (local/cloud, to be determined in the Architecture document) |
+| Media Storage | V1 daily-report photos use S3-compatible object storage through purpose/role-scoped presigned uploads; video is explicitly deferred beyond V1 |
 | Data Privacy | Pet information and payment information require appropriate access control (users can only see their own data) |
 | WeChat Payment Verification SLA | Needs agreement with the business on a reasonable average verification turnaround (e.g. within 24 hours) |
 | Multi-Tenant Data Isolation | Core business-owned tables (Booking, Service, Payment via Booking, etc.) reserve a `business_id` field; in Version 1 all data belongs to Y&T Paws by default, but query logic should filter by `business_id` rather than hard-coding the assumption of "only one business." Pet is intentionally excluded — it belongs to its owning customer, not a business (see `01_Project_Overview.md` §11) |
@@ -388,3 +390,4 @@ Corresponding backend module: `reports`
 | 2026-08-01 | v0.14 | Added US-01.5/01.6: hashed single-use password reset tokens, password-change session revocation, staff first-password flag and activation controls, last-owner/self-deactivation protection, plus password-confirmed in-app account deletion with explicit anonymization and financial-record retention rules | Xiyun Liu |
 | 2026-08-01 | v0.15 | Completed password reset delivery and recovery UX (Resend, App deep link, web fallback), enforced the staff first-password gate in App/API, added persistent login/reset abuse controls and security audit events, published linked privacy/terms/external deletion pages, and replaced new base64 media writes with S3-compatible direct uploads | Xiyun Liu |
 | 2026-08-02 | v0.16 | Added production-operability acceptance baseline in code/CI: strict secret/provider validation, Docker packaging, automatic Prisma migration, database readiness and process liveness probes, graceful shutdown and production image build verification | Xiyun Liu |
+| 2026-08-02 | v0.17 | Aligned V1 daily reports with the shipped photo-only implementation (maximum three JPEG/PNG/WebP images, 5 MB each; video deferred), removed unfinished social/profile/favorites/coupon surfaces from the review build, and linked Profile support actions to the public support page | Xiyun Liu |

@@ -1,6 +1,6 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.18
+**Document Status:** Draft v0.19
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
 **Last Updated:** 2026-08-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -250,7 +250,7 @@ Written down explicitly to avoid scope creep during development:
 
 ---
 
-## 5. Media Storage Architecture (Media / Pet Daily Report Photos & Videos)
+## 5. Media Storage Architecture (Photos in V1)
 
 PetHome adopts a cloud object storage architecture for media files. The specific provider (e.g., Cloudflare R2, AWS S3, Alibaba Cloud OSS, Tencent Cloud COS) will be selected during deployment planning. The architecture is provider-agnostic.
 
@@ -262,8 +262,9 @@ sequenceDiagram
     participant API as NestJS (reports / future Media Service)
     participant Storage as Cloud Object Storage
 
-    App->>API: Request upload permission (file type/size)
-    API->>API: Validate user permission, file size limit
+    App->>App: Reject image larger than 5 MB
+    App->>API: Request upload permission (purpose/type/size)
+    API->>API: Validate role, purpose, type and declared size
     API->>Storage: Generate presigned upload URL
     Storage-->>API: Return presigned URL
     API-->>App: Return presigned URL
@@ -273,7 +274,7 @@ sequenceDiagram
 ```
 
 **Why not upload to the backend server first, then forward to cloud storage?**
-- Avoids the backend server bearing the traffic load of large files (especially video)
+- Avoids the backend server bearing image traffic load
 - Faster upload speed and better user experience
 - The backend only handles "issuing upload permission" and "recording the upload result" — clearer responsibility
 
@@ -283,7 +284,7 @@ sequenceDiagram
 
 ### 5.3 Implemented S3-Compatible Uploads (2026-08-01)
 
-The `media` module now issues five-minute presigned PUT URLs for JPEG/PNG/WebP objects. Pet photos, daily-report photos and the WeChat QR image upload directly from the App to an S3-compatible service (AWS S3 or Cloudflare R2), then persist only the public HTTPS URL in PostgreSQL. Write DTOs no longer accept data URIs. Existing base64 rows are migrated with `npm run media:migrate` after storage environment variables are configured. Account deletion removes the relevant object keys on a best-effort basis after the database anonymization transaction; failed storage deletion is recorded as a security event for operational follow-up.
+The `media` module now issues five-minute presigned PUT URLs for JPEG/PNG/WebP objects up to 5 MB. Pet photos, daily-report photos and the WeChat QR image upload directly from the App to an S3-compatible service (AWS S3 or Cloudflare R2), then persist only the public HTTPS URL in PostgreSQL. Write DTOs no longer accept data URIs. Existing base64 rows are migrated with `npm run media:migrate` after storage environment variables are configured. Account deletion removes the relevant object keys on a best-effort basis after the database anonymization transaction; failed storage deletion is recorded as a security event for operational follow-up. Video selection, upload, playback and storage policies are deliberately outside V1.
 
 ---
 
@@ -540,3 +541,4 @@ flowchart TB
 | 2026-08-01 | v0.16 | Added account-security lifecycle: `tokenVersion` JWT revocation, hashed/expiring/single-use reset tokens, password change and staff first-password flag, same-business staff activation with self/last-owner protection at Serializable isolation, and password-confirmed in-app account deletion with documented anonymization versus financial-retention behavior | Xiyun Liu |
 | 2026-08-01 | v0.17 | Implemented Resend password-reset delivery with App/web fallback, explicit `ytpaws` deep linking, mandatory first-password access gates, persistent security rate limiting/login lockout/audit events, public legal/deletion pages, and the S3-compatible `media` module with direct uploads and legacy base64 migration | Xiyun Liu |
 | 2026-08-02 | v0.18 | Replaced the deployment placeholder with a production Docker baseline: strict environment validation, platform `PORT`, automatic Prisma migration, liveness/readiness endpoints, shutdown hooks and CI image builds; removed stale Base64-media ADR text | Xiyun Liu |
+| 2026-08-02 | v0.19 | Finalized store-facing native configuration and media scope: explicit image-picker/notification plugins, photo-only minimum permissions, exempt-encryption declaration, explicit EAS `projectId` token attribution, removal of unfinished UI actions, public support route, and a 5 MB V1 image-upload limit with video deferred | Xiyun Liu |

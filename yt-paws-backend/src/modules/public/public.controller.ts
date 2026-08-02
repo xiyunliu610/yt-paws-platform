@@ -20,6 +20,13 @@ export class PublicController {
     res.type('html').send(shell('Account Deletion', `<h1>Delete your Y&amp;T Paws account</h1><p>The fastest verified method is Profile → Delete account in the App. If you cannot access the App, email the support address below from your registered email with subject “Account deletion request”. We will verify ownership before processing.</p><h2>Deleted</h2><p>Profile contact data, security events tied to the account/email hash, pet care details and health records, report text and photos, notification tokens and password-reset records are removed or anonymised.</p><h2>Retained</h2><p>Minimal booking, service-price snapshot and payment records are retained only for accounting, refunds, fraud prevention and dispute obligations. They remain linked to an anonymised identifier, not your original email or name.</p>`));
   }
 
+  @Get('support')
+  support(@Res() res: Response) {
+    const email = process.env.SUPPORT_EMAIL ?? 'Support email is being configured';
+    const emailLink = email.includes('@') ? `<p><a href="mailto:${email}">${email}</a></p>` : `<p>${email}</p>`;
+    res.type('html').send(shell('Support', `<h1>Y&amp;T Paws Support</h1><p>For help with your account, bookings, payments, refunds, pet records or account deletion, contact us using the address below.</p>${emailLink}<p>Please do not send passwords, full card details or other sensitive payment credentials by email.</p>`));
+  }
+
   @Get('reset-password')
   reset(@Query('token') token: string | undefined, @Res() res: Response) {
     const safeToken = JSON.stringify(token ?? '');

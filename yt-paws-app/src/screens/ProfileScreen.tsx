@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, authApi, petsApi, Pet, PUBLIC_WEB_URL } from '../api/client';
@@ -47,7 +46,6 @@ const ProfileScreen = () => {
   const displayName = user?.name ?? 'Guest';
   const displayEmail = user?.email ?? '';
 
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [pets, setPets] = useState<Pet[] | null>(null);
   const [petsFailed, setPetsFailed] = useState(false);
   const [isAddingPet, setIsAddingPet] = useState(false);
@@ -76,70 +74,6 @@ const ProfileScreen = () => {
     }, [token]),
   );
 
-  const pickImage = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (status !== 'granted') {
-        Alert.alert(t.profile.permissionRequiredTitle, t.profile.libraryPermissionMessage);
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setAvatarUri(result.assets[0].uri);
-        Alert.alert(t.profile.avatarUpdatedTitle, t.profile.avatarUpdatedMessage);
-        // TODO: upload to the server once a media endpoint exists.
-      }
-    } catch (error) {
-      console.error('Choosing an avatar photo failed:', error);
-      Alert.alert(t.profile.pickImageErrorTitle, t.profile.pickImageErrorMessage);
-    }
-  };
-
-  const takePhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-
-      if (status !== 'granted') {
-        Alert.alert(t.profile.permissionRequiredTitle, t.profile.cameraPermissionMessage);
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        setAvatarUri(result.assets[0].uri);
-        Alert.alert(t.profile.avatarUpdatedTitle, t.profile.avatarUpdatedMessage);
-        // TODO: upload to the server once a media endpoint exists.
-      }
-    } catch (error) {
-      console.error('Taking an avatar photo failed:', error);
-      Alert.alert(t.profile.pickImageErrorTitle, t.profile.takePhotoErrorMessage);
-    }
-  };
-
-  const selectAvatarMethod = () => {
-    Alert.alert(
-      t.profile.chooseAvatarTitle,
-      t.profile.chooseAvatarMessage,
-      [
-        { text: t.profile.chooseFromLibrary, onPress: pickImage },
-        { text: t.profile.takePhoto, onPress: takePhoto },
-        { text: t.profile.cancel, style: 'cancel' },
-      ]
-    );
-  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -157,10 +91,6 @@ const ProfileScreen = () => {
         },
       ]
     );
-  };
-
-  const handleEditProfile = () => {
-    Alert.alert(t.profile.editProfileTitle, t.profile.comingSoon);
   };
 
   const handleAddPet = () => {
@@ -305,21 +235,11 @@ const ProfileScreen = () => {
         <View style={styles.header}>
           <View style={styles.profileCard}>
             <View style={styles.avatarContainer}>
-              {avatarUri ? (
-                <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-              ) : (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {displayName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <TouchableOpacity
-                style={styles.editAvatarButton}
-                onPress={selectAvatarMethod}
-              >
-                <Text style={styles.editAvatarText}>Edit</Text>
-              </TouchableOpacity>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
             </View>
 
             <View style={styles.userInfoContainer}>
@@ -327,12 +247,6 @@ const ProfileScreen = () => {
               <Text style={styles.userEmail}>{displayEmail}</Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={handleEditProfile}
-            >
-              <Text style={styles.editButtonText}>{t.profile.editProfile}</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -484,24 +398,6 @@ const ProfileScreen = () => {
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => Alert.alert(t.profile.favoritesTitle, t.profile.comingSoon)}
-            >
-              <Text style={styles.menuText}>{t.profile.myFavorites}</Text>
-              <Text style={styles.menuArrow}>›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => Alert.alert(t.profile.couponsTitle, t.profile.comingSoon)}
-            >
-              <Text style={styles.menuText}>{t.profile.coupons}</Text>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>3</Text>
-              </View>
-              <Text style={styles.menuArrow}>›</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.section}>
@@ -612,7 +508,7 @@ const ProfileScreen = () => {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert(t.profile.contactSupportTitle, t.profile.contactSupportMessage)}
+              onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/support`)}
             >
               <Text style={styles.menuText}>{t.profile.contactSupport}</Text>
               <Text style={styles.menuArrow}>›</Text>
@@ -620,7 +516,7 @@ const ProfileScreen = () => {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert(t.profile.helpCenterTitle, t.profile.comingSoon)}
+              onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/support`)}
             >
               <Text style={styles.menuText}>{t.profile.helpCenter}</Text>
               <Text style={styles.menuArrow}>›</Text>

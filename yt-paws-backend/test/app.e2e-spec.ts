@@ -22,6 +22,11 @@ describe('Application bootstrap (e2e)', () => {
       .expect(401);
   });
 
+  it('serves the external support page without authentication', async () => {
+    const response = await request(app.getHttpServer()).get('/support').expect(200);
+    expect(response.text).toContain('Y&amp;T Paws Support');
+  });
+
   afterEach(async () => {
     await app.close();
   });

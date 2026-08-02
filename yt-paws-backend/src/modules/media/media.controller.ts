@@ -21,6 +21,6 @@ export class MediaController {
     if (body.purpose === 'pet' && req.user.role !== 'customer') {
       throw new ForbiddenException('Only customers can upload pet photos');
     }
-    return this.media.createUploadUrl(req.user.userId, body.purpose, body.contentType);
+    return this.media.createUploadUrl(req.user.userId, body.purpose, body.contentType, body.size);
   }
 }

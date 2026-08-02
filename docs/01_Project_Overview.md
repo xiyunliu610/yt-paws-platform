@@ -1,6 +1,6 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.10
+**Document Status:** Draft v0.11
 **Last Updated:** 2026-08-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
@@ -261,3 +261,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-08-01 | v0.8 | Added the Version 1 account lifecycle/data-retention baseline: password reset/change and session revocation, staff activation safeguards, in-app account deletion, irreversible anonymization of personal/care media, and retention of only the booking/payment records required for financial and dispute history | Xiyun Liu |
 | 2026-08-01 | v0.9 | Completed the launch-oriented account/media baseline: Resend password-reset delivery with App/web fallback links, mandatory staff first-password gate, `ytpaws://` deep links, public privacy/terms/deletion pages, persistent security-event rate limiting and login lockout, plus S3-compatible direct media uploads and a legacy base64 migration command | Xiyun Liu |
 | 2026-08-02 | v0.10 | Added the vendor-neutral production deployment baseline: Docker image, automatic database migrations, health probes, platform port support, graceful shutdown, strict production environment validation and CI container verification | Xiyun Liu |
+| 2026-08-02 | v0.11 | Added App-store readiness cleanup: formal mobile display name and native permission/export settings, removal of unfinished review-facing actions, explicit EAS push-project handling and a real support page; confirmed V1 daily reports are photo-only with a 5 MB image limit | Xiyun Liu |

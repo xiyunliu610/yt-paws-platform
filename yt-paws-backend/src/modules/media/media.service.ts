@@ -30,13 +30,13 @@ export class MediaService {
     };
   }
 
-  async createUploadUrl(userId: string, purpose: string, contentType: string) {
+  async createUploadUrl(userId: string, purpose: string, contentType: string, size: number) {
     const { bucket, publicBaseUrl, client } = this.settings();
     const extension = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
     const key = `${purpose}/${userId}/${crypto.randomUUID()}.${extension}`;
     const uploadUrl = await getSignedUrl(
       client,
-      new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType }),
+      new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType, ContentLength: size }),
       { expiresIn: 300 },
     );
     return { uploadUrl, publicUrl: `${publicBaseUrl}/${key}`, expiresIn: 300 };

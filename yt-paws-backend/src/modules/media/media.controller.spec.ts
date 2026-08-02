@@ -8,14 +8,14 @@ describe('MediaController upload authorization', () => {
   const req = (role: string) => ({ user: { userId: 'user-id', role, businessId: null, email: 'x@example.com', mustChangePassword: false } }) as any;
 
   it('allows only the appropriate role for each media purpose', async () => {
-    await expect(controller.createUploadUrl(req('customer'), { purpose: 'pet', contentType: 'image/jpeg' })).resolves.toBeDefined();
-    await expect(controller.createUploadUrl(req('staff'), { purpose: 'report', contentType: 'image/jpeg' })).resolves.toBeDefined();
-    await expect(controller.createUploadUrl(req('owner'), { purpose: 'wechat-qr', contentType: 'image/png' })).resolves.toBeDefined();
+    await expect(controller.createUploadUrl(req('customer'), { purpose: 'pet', contentType: 'image/jpeg', size: 100 })).resolves.toBeDefined();
+    await expect(controller.createUploadUrl(req('staff'), { purpose: 'report', contentType: 'image/jpeg', size: 100 })).resolves.toBeDefined();
+    await expect(controller.createUploadUrl(req('owner'), { purpose: 'wechat-qr', contentType: 'image/png', size: 100 })).resolves.toBeDefined();
   });
 
   it('rejects cross-purpose uploads', () => {
-    expect(() => controller.createUploadUrl(req('customer'), { purpose: 'report', contentType: 'image/jpeg' })).toThrow(ForbiddenException);
-    expect(() => controller.createUploadUrl(req('staff'), { purpose: 'pet', contentType: 'image/jpeg' })).toThrow(ForbiddenException);
-    expect(() => controller.createUploadUrl(req('customer'), { purpose: 'wechat-qr', contentType: 'image/png' })).toThrow(ForbiddenException);
+    expect(() => controller.createUploadUrl(req('customer'), { purpose: 'report', contentType: 'image/jpeg', size: 100 })).toThrow(ForbiddenException);
+    expect(() => controller.createUploadUrl(req('staff'), { purpose: 'pet', contentType: 'image/jpeg', size: 100 })).toThrow(ForbiddenException);
+    expect(() => controller.createUploadUrl(req('customer'), { purpose: 'wechat-qr', contentType: 'image/png', size: 100 })).toThrow(ForbiddenException);
   });
 });

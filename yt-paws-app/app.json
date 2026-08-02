@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "yt-paws-app",
+    "name": "Y&T Paws",
     "slug": "yt-paws-app",
     "scheme": "ytpaws",
     "version": "1.0.0",
@@ -14,8 +14,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.ytpaws.app"
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ytpaws.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Allow Y&T Paws to select pet and daily care photos."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -31,7 +35,16 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Y&T Paws to select pet and daily care photos.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      "expo-notifications"
     ]
   }
 }

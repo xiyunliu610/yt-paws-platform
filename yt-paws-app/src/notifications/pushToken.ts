@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { notificationsApi } from '../api/client';
 
 // Best-effort only, by design: as of SDK 53+, Expo Go no longer supports
@@ -32,10 +33,12 @@ export async function registerForPushNotificationsAsync(token: string): Promise<
       return false;
     }
 
-    // No EAS projectId is configured in app.json yet; getExpoPushTokenAsync
-    // relies on auto-detecting one and throws if it can't, which the
-    // catch block below treats the same as any other "push unavailable" case.
-    const pushToken = await Notifications.getExpoPushTokenAsync();
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    if (!projectId) {
+      console.warn('Push notification registration skipped: EAS projectId is not configured');
+      return false;
+    }
+    const pushToken = await Notifications.getExpoPushTokenAsync({ projectId });
     await notificationsApi.registerDevice(token, pushToken.data);
     return true;
   } catch (error) {

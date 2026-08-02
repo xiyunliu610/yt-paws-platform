@@ -156,21 +156,6 @@ const LoginScreen = () => {
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>{t.login.or}</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <View style={styles.socialContainer}>
-            <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>{t.login.apple}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>{t.login.google}</Text>
-            </TouchableOpacity>
-          </View>
-
           <View style={styles.registerContainer}>
             <Text style={styles.registerText}>{t.login.noAccount}</Text>
             <TouchableOpacity onPress={navigateToRegister} disabled={isLoading}>
