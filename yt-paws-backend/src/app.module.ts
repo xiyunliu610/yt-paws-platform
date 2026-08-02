@@ -9,6 +9,8 @@ import { BusinessesModule } from './modules/businesses/businesses.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PublicModule } from './modules/public/public.module';
+import { MediaModule } from './modules/media/media.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     PaymentsModule,
     ReportsModule,
     NotificationsModule,
+    PublicModule,
+    MediaModule,
   ],
 })
 export class AppModule {}

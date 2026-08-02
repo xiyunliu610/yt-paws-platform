@@ -45,7 +45,6 @@ const LoginScreen = () => {
 
     try {
       await login(email, password);
-      navigation.navigate('Home' as never);
     } catch (error) {
       console.error('Login failed:', error);
       const message = error instanceof ApiError ? error.message : t.login.loginFailedMessage;

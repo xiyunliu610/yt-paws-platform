@@ -9,10 +9,12 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Linking,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth, ApiError } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { PUBLIC_WEB_URL } from '../../api/client';
 
 const RegisterScreen = () => {
   const navigation = useNavigation();
@@ -211,9 +213,9 @@ const RegisterScreen = () => {
             <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]} />
             <Text style={styles.termsText}>
               {t.register.terms}
-              <Text style={styles.termsLink}>{t.register.termsLink}</Text>
+              <Text style={styles.termsLink} onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/terms`)}>{t.register.termsLink}</Text>
               {t.register.and}
-              <Text style={styles.termsLink}>{t.register.privacyLink}</Text>
+              <Text style={styles.termsLink} onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/privacy`)}>{t.register.privacyLink}</Text>
             </Text>
           </TouchableOpacity>
 

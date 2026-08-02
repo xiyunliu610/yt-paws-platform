@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DecimalToNumberInterceptor } from '../src/common/interceptors/decimal-to-number.interceptor';
+import * as crypto from 'crypto';
 
 process.env.EXPOSE_PASSWORD_RESET_TOKEN = 'true';
 
@@ -76,6 +77,7 @@ describe('Account security and deletion (e2e)', () => {
   afterAll(async () => {
     const userIds = [ownerId, adminId, staffId, customerId, resetUserId].filter(Boolean);
     await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.securityEvent.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.notification.deleteMany({ where: { userId: { in: userIds } } });
     await prisma.stripeCheckoutAttempt.deleteMany({ where: { payment: { booking: { businessId } } } });
     await prisma.payment.deleteMany({ where: { booking: { businessId } } });
@@ -178,6 +180,35 @@ describe('Account security and deletion (e2e)', () => {
         .set('Authorization', `Bearer ${resetUserToken}`)
         .expect(401);
       resetUserToken = await login(emails.reset, 'ResetAgain123');
+    });
+
+    it('rejects an expired reset token', async () => {
+      const rawToken = crypto.randomBytes(32).toString('base64url');
+      await prisma.passwordResetToken.create({
+        data: {
+          userId: resetUserId,
+          tokenHash: crypto.createHash('sha256').update(rawToken).digest('hex'),
+          expiresAt: new Date(Date.now() - 1000),
+        },
+      });
+      await request(app.getHttpServer())
+        .post('/auth/reset-password')
+        .send({ token: rawToken, newPassword: 'ExpiredToken123' })
+        .expect(400);
+    });
+
+    it('locks an account after five consecutive invalid passwords', async () => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await request(app.getHttpServer())
+          .post('/auth/login')
+          .send({ email: emails.reset, password: 'WrongPassword123' })
+          .expect(401);
+      }
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: emails.reset, password: 'ResetAgain123' })
+        .expect(401);
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: resetUserId } })).lockedUntil).not.toBeNull();
     });
   });
 

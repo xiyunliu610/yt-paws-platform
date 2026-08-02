@@ -27,6 +27,8 @@ import NotificationsScreen from './src/screens/NotificationsScreen';
 import PaymentVerificationScreen from './src/screens/PaymentVerificationScreen';
 import ServiceManagementScreen from './src/screens/ServiceManagementScreen';
 import BusinessSettingsScreen from './src/screens/BusinessSettingsScreen';
+import ResetPasswordScreen from './src/screens/Auth/ResetPasswordScreen';
+import RequiredPasswordChangeScreen from './src/screens/Auth/RequiredPasswordChangeScreen';
 
 const Stack = createStackNavigator();
 
@@ -39,7 +41,7 @@ const HomeRouter = () => {
 };
 
 const Navigation = () => {
-  const { token, isRestoring } = useAuth();
+  const { token, user, isRestoring } = useAuth();
 
   // Best-effort push registration once a session exists. No-ops quietly if
   // permission is denied or (as in Expo Go on SDK 53+) remote push simply
@@ -61,8 +63,23 @@ const Navigation = () => {
     );
   }
 
+  const linking = {
+    prefixes: ['ytpaws://'],
+    config: { screens: { ResetPassword: 'reset-password' } },
+  };
+
+  if (token && user?.mustChangePassword) {
+    return (
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="RequiredPasswordChange" component={RequiredPasswordChangeScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator
         initialRouteName={token ? 'Home' : 'Login'}
         screenOptions={{
@@ -96,6 +113,8 @@ const Navigation = () => {
             headerShown: true,
           }}
         />
+
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ title: 'Reset Password' }} />
 
         <Stack.Screen
           name="Home"

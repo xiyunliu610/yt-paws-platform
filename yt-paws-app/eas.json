@@ -11,13 +11,15 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REPLACE_WITH_STAGING_API_DOMAIN"
+        "EXPO_PUBLIC_API_URL": "https://REPLACE_WITH_STAGING_API_DOMAIN",
+        "EXPO_PUBLIC_WEB_URL": "https://REPLACE_WITH_STAGING_API_DOMAIN"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://REPLACE_WITH_PRODUCTION_API_DOMAIN"
+        "EXPO_PUBLIC_API_URL": "https://REPLACE_WITH_PRODUCTION_API_DOMAIN",
+        "EXPO_PUBLIC_WEB_URL": "https://REPLACE_WITH_PRODUCTION_API_DOMAIN"
       }
     }
   },

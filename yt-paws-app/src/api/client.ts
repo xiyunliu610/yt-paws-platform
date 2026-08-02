@@ -20,6 +20,7 @@ function resolveDevHost(): string | null {
 // the dev-host/localhost fallback below would make a production build
 // silently try to talk to the phone it's running on.
 const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
+export const PUBLIC_WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || configuredApiUrl || 'http://localhost:3000').replace(/\/$/, '');
 
 const devHost = resolveDevHost();
 const BASE_URL =
@@ -123,6 +124,27 @@ export const authApi = {
 
 };
 
+export type MediaPurpose = 'pet' | 'report' | 'wechat-qr';
+
+export const mediaApi = {
+  upload: async (token: string, localUri: string, purpose: MediaPurpose, contentType = 'image/jpeg') => {
+    const signed = await request<{ uploadUrl: string; publicUrl: string }>(
+      '/media/upload-url',
+      { method: 'POST', body: JSON.stringify({ purpose, contentType }) },
+      token,
+    );
+    const fileResponse = await fetch(localUri);
+    const blob = await fileResponse.blob();
+    const uploadResponse = await fetch(signed.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: blob,
+    });
+    if (!uploadResponse.ok) throw new ApiError(uploadResponse.status, 'Media upload failed');
+    return signed.publicUrl;
+  },
+};
+
 export interface Service {
   id: string;
   businessId: string;
@@ -174,8 +196,7 @@ export interface Pet {
   personality: string | null;
   dietNotes: string | null;
   isNeutered: boolean | null;
-  // Same interim base64-data-URI approach as DailyReport.mediaUrls — see
-  // docs/03_System_Architecture.md §5.3.
+  // HTTPS object-storage URL.
   photoUrl: string | null;
 }
 

@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.9
+**Document Status:** Draft v0.17
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-07-28
+**Last Updated:** 2026-08-01
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -281,14 +281,9 @@ sequenceDiagram
 - Currently only the `reports` (pet daily reports) module uses media storage
 - Future v1.5 private chat and v2 camera screenshots/recordings will reuse the same cloud storage infrastructure (see Section 3.2, Media Service evolution direction) rather than each implementing it independently
 
-### 5.3 Interim Stopgap: Base64-Embedded Photos (Frontend Only, 2026-07-27)
+### 5.3 Implemented S3-Compatible Uploads (2026-08-01)
 
-`ReportComposeScreen` (the business-side daily report authoring screen) needed to ship before a storage provider was chosen, so it does **not** implement the presigned-URL flow above. Instead, photos are captured with the picker's `base64: true` option and submitted directly as `data:image/jpeg;base64,...` strings in `DailyReport.mediaUrls` — no upload step, no cloud storage involved. This is a deliberate, scoped-down interim measure, not a change to the target architecture in 5.1:
-
-- Capped at 3 photos per report, JPEG quality 0.5, to keep the inline payload size reasonable
-- No video support (base64-embedding video would be impractical)
-- `DailyReport.mediaUrls` (`String[]`) accepts this without a schema change, since it has always been an untyped array of strings
-- **Must be replaced**, not extended, once Section 5.1's presigned-upload flow is implemented — at that point `mediaUrls` should hold real object-storage URLs again, consistent with how the backend (`reports.service.ts`) already assumes them to be "already hosted somewhere"
+The `media` module now issues five-minute presigned PUT URLs for JPEG/PNG/WebP objects. Pet photos, daily-report photos and the WeChat QR image upload directly from the App to an S3-compatible service (AWS S3 or Cloudflare R2), then persist only the public HTTPS URL in PostgreSQL. Write DTOs no longer accept data URIs. Existing base64 rows are migrated with `npm run media:migrate` after storage environment variables are configured. Account deletion removes the relevant object keys on a best-effort basis after the database anonymization transaction; failed storage deletion is recorded as a security event for operational follow-up.
 
 ---
 
@@ -408,7 +403,9 @@ Detailed plans are in `11_Security.md`; the Version 1 baseline is listed here:
 
 **Session freshness and revocation (updated 2026-08-01).** JWTs remain valid for at most 24h, but now carry `tokenVersion`. `JwtStrategy.validate` loads the User on every request and rejects a missing, inactive/deleted user or a version mismatch. Password change/reset, staff activation changes and account deletion increment `tokenVersion`, so all older JWTs fail on their next request; a successful password change returns one replacement JWT. A refresh-token/session-device model and explicit logout revocation remain future hardening, but password/offboarding revocation no longer waits for expiry.
 
-**Password reset.** `POST /auth/forgot-password` returns the same generic payload for known and unknown email addresses. For an active account it creates 32 random bytes, persists only their SHA-256 hash in `PasswordResetToken`, expires it after 30 minutes and invalidates other unused reset tokens. `POST /auth/reset-password` atomically claims the token once, changes the bcrypt password and increments `tokenVersion`. Production email delivery is deliberately not pretended to exist: raw tokens are returned only under the explicit E2E switch; a transactional email provider is still required before public launch.
+**Password reset.** `POST /auth/forgot-password` returns the same generic payload for known and unknown email addresses. For an active account it creates 32 random bytes, persists only their SHA-256 hash, expires it after 30 minutes and invalidates other unused tokens. Resend sends a public HTTPS landing-page URL. That page offers `ytpaws://reset-password` for an installed App and a web form when the App is absent. Token validation remains server-side, atomic and single-use. Production startup rejects the raw-token test switch.
+
+**Abuse controls and first-login gate.** Login/reset attempts are counted from persisted `SecurityEvent` rows by IP and hashed email; five consecutive invalid passwords lock that User for 15 minutes. Successful login clears the counter. Newly provisioned staff are denied every authenticated business endpoint except `PATCH /auth/change-password` while `mustChangePassword=true`; the App mounts only the required-password screen for the same state.
 
 **Staff/offboarding invariant.** `PATCH /auth/staff/:id/status` is owner/admin-only and same-business scoped. Self-deactivation and reactivation of deleted users are rejected. Last-active-owner count plus update executes at Serializable isolation (with one serialization retry), as does owner account deletion, preventing two concurrent requests from removing every active Owner.
 
@@ -540,3 +537,4 @@ flowchart TB
 | 2026-08-01 | v0.14 | Two permission fixes: added `GET /bookings/:id/care-details` so the staff member/owner actually caring for a pet can see its full profile (`PetsService` previously only let the *owner* read a pet at all); tightened `ReportsService`'s read permission to match write (assigned staff only, not any business member — a real over-broad-read gap, not just a hardening pass). Revised §6.3's refund state machine from a two-state `paid → refunded` to three states (`paid → refund_pending → refunded`/`paid`): the two-state version released `payment_booking_paid_unique`'s reservation the moment the claim landed, so a new payment could reach `paid` for the same booking while a Stripe refund was still in flight, and a subsequent rollback-to-`paid` on Stripe failure could then collide with it. Added a Stripe refund idempotency key and `stripeRefundId` capture. Documented the known gap this still doesn't close (a crash between Stripe confirming and the final DB write) | Xiyun Liu |
 | 2026-08-01 | v0.15 | Wired booking care details into the mobile booking screen. Closed the refund recovery gap with refund metadata, Stripe refund webhooks, an idempotent owner/admin reconciliation endpoint and UI, provider-status-aware finalization, and atomic manual WeChat finalization. Added a full-test script and isolated PostgreSQL CI workflow | Xiyun Liu |
 | 2026-08-01 | v0.16 | Added account-security lifecycle: `tokenVersion` JWT revocation, hashed/expiring/single-use reset tokens, password change and staff first-password flag, same-business staff activation with self/last-owner protection at Serializable isolation, and password-confirmed in-app account deletion with documented anonymization versus financial-retention behavior | Xiyun Liu |
+| 2026-08-01 | v0.17 | Implemented Resend password-reset delivery with App/web fallback, explicit `ytpaws` deep linking, mandatory first-password access gates, persistent security rate limiting/login lockout/audit events, public legal/deletion pages, and the S3-compatible `media` module with direct uploads and legacy base64 migration | Xiyun Liu |

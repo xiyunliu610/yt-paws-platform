@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.5
-**Last Updated:** 2026-07-26
+**Document Status:** Draft v0.9
+**Last Updated:** 2026-08-01
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---
@@ -259,3 +259,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-07-29 | v0.6 | Clarified that `Pet` is deliberately not one of the tables reserving `business_id` — a pet belongs to its owning customer, not a business, and can be booked with any business; corrected §11's bullet, which previously listed Pet alongside Booking/Service as if it carried `business_id` | Xiyun Liu |
 | 2026-07-30 | v0.7 | Reversed the v0.4 decision: business onboarding is bootstrap-only as of this date, not an ongoing self-service surface — see `02_Product_Requirements.md` US-01.4 and `03_System_Architecture.md`'s ADR table for why (open registration meant customer service browsing, which has no per-business filter, would mix every registered business's listings) | Xiyun Liu |
 | 2026-08-01 | v0.8 | Added the Version 1 account lifecycle/data-retention baseline: password reset/change and session revocation, staff activation safeguards, in-app account deletion, irreversible anonymization of personal/care media, and retention of only the booking/payment records required for financial and dispute history | Xiyun Liu |
+| 2026-08-01 | v0.9 | Completed the launch-oriented account/media baseline: Resend password-reset delivery with App/web fallback links, mandatory staff first-password gate, `ytpaws://` deep links, public privacy/terms/deletion pages, persistent security-event rate limiting and login lockout, plus S3-compatible direct media uploads and a legacy base64 migration command | Xiyun Liu |

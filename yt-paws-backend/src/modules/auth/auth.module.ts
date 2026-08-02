@@ -6,6 +6,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { MailService } from './mail.service';
+import { SecurityService } from './security.service';
 
 @Module({
   imports: [
@@ -25,7 +27,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, MailService, SecurityService],
   controllers: [AuthController],
   exports: [JwtAuthGuard, PassportModule],
 })

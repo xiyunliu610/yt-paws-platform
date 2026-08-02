@@ -18,7 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { ApiError, petsApi, Pet, PetHealthRecord } from '../api/client';
+import { ApiError, petsApi, mediaApi, Pet, PetHealthRecord } from '../api/client';
 
 type RootStackParamList = {
   PetDetail: { pet: Pet };
@@ -67,8 +67,6 @@ const PetDetailScreen = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // Same interim base64-data-URI approach as daily report photos (see
-  // docs/03_System_Architecture.md §5.3) — no cloud storage exists yet.
   const pickPhoto = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -82,11 +80,10 @@ const PetDetailScreen = () => {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
-        base64: true,
       });
 
-      if (!result.canceled && result.assets[0]?.base64) {
-        setPhotoUrl(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      if (!result.canceled && result.assets[0]?.uri) {
+        setPhotoUrl(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Choosing a pet photo failed:', error);
@@ -103,9 +100,12 @@ const PetDetailScreen = () => {
 
     setIsSaving(true);
     try {
+      const storedPhotoUrl = photoUrl && !photoUrl.startsWith('https://')
+        ? await mediaApi.upload(token, photoUrl, 'pet')
+        : photoUrl;
       await petsApi.update(token, pet.id, {
         name: name.trim(),
-        photoUrl: photoUrl || undefined,
+        photoUrl: storedPhotoUrl || undefined,
         species: species.trim() || undefined,
         breed: breed.trim() || undefined,
         age: age.trim() ? parseInt(age, 10) : undefined,

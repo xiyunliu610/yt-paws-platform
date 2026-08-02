@@ -10,6 +10,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { Prisma, Role, User } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { MailService } from './mail.service';
+import { SecurityService } from './security.service';
+import { DeleteObjectsCommand, S3Client } from '@aws-sdk/client-s3';
 
 // PRD US-01.1: at least 8 characters, containing both letters and numbers.
 const PASSWORD_MIN_LENGTH = 8;
@@ -19,6 +23,8 @@ const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).+$/;
 // to relay to new staff (PRD US-03.5).
 const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
+const LOGIN_LOCK_THRESHOLD = 5;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
 
 interface RequestingUser {
   userId: string;
@@ -44,6 +50,9 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private config: ConfigService,
+    private mail: MailService,
+    private security: SecurityService,
   ) {}
 
   private validatePasswordStrength(password: string) {
@@ -98,16 +107,39 @@ export class AuthService {
     return this.toAuthResponse(user, this.signToken(user));
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, ipAddress = 'unknown') {
+    await this.security.enforceRateLimit('login_attempt', ipAddress, email, 100, 20, 15 * 60 * 1000);
+    await this.security.log('login_attempt', { ipAddress, email });
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !user.isActive || user.deletedAt) {
+      await this.security.log('login_failed', { ipAddress, email });
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      await this.security.log('login_blocked', { ipAddress, email, userId: user.id });
       throw new UnauthorizedException('Invalid email or password');
     }
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
+      const failures = user.failedLoginAttempts + 1;
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: failures,
+          lockedUntil: failures >= LOGIN_LOCK_THRESHOLD ? new Date(Date.now() + LOGIN_LOCK_MS) : null,
+        },
+      });
+      await this.security.log('login_failed', { ipAddress, email, userId: user.id });
       throw new UnauthorizedException('Invalid email or password');
     }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+    await this.security.log('login_succeeded', { ipAddress, email, userId: user.id });
 
     return this.toAuthResponse(user, this.signToken(user));
   }
@@ -267,8 +299,10 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(email: string) {
+  async forgotPassword(email: string, ipAddress = 'unknown') {
     const normalizedEmail = email.trim().toLowerCase();
+    await this.security.enforceRateLimit('password_reset_requested', ipAddress, normalizedEmail, 30, 3, 60 * 60 * 1000);
+    await this.security.log('password_reset_requested', { ipAddress, email: normalizedEmail });
     const user = await this.prisma.user.findFirst({
       where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
     });
@@ -285,9 +319,15 @@ export class AuthService {
           },
         }),
       ]);
-      // Email delivery is intentionally outside this basic flow. Tests may
-      // opt in to seeing the token; production always returns only the same
-      // generic response used for unknown email addresses.
+      const publicWebUrl = this.config.get<string>('PUBLIC_WEB_URL') ?? 'http://localhost:3000';
+      const resetUrl = `${publicWebUrl.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
+      try {
+        await this.mail.sendPasswordReset(user.email, resetUrl);
+        await this.security.log('password_reset_email_sent', { ipAddress, email: normalizedEmail, userId: user.id });
+      } catch (error) {
+        await this.security.log('password_reset_email_failed', { ipAddress, email: normalizedEmail, userId: user.id });
+        if (this.config.get<string>('NODE_ENV') !== 'production') throw error;
+      }
     }
     return {
       accepted: true,
@@ -317,6 +357,7 @@ export class AuthService {
       });
       await tx.passwordResetToken.deleteMany({ where: { userId: token.userId, id: { not: token.id } } });
     });
+    await this.security.log('password_reset_succeeded', { userId: token.userId });
     return { reset: true };
   }
 
@@ -337,6 +378,7 @@ export class AuthService {
         mustChangePassword: false,
       },
     });
+    await this.security.log('password_changed', { userId });
     return this.toAuthResponse(updated, this.signToken(updated));
   }
 
@@ -347,6 +389,10 @@ export class AuthService {
     }
     const anonymizedEmail = `deleted-${user.id}@deleted.invalid`;
     const replacementPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+    const ownedMedia = [
+      ...(await this.prisma.pet.findMany({ where: { ownerId: userId }, select: { photoUrl: true } })).map((pet) => pet.photoUrl),
+      ...(await this.prisma.dailyReport.findMany({ where: { booking: { customerId: userId } }, select: { mediaUrls: true } })).flatMap((report) => report.mediaUrls),
+    ].filter((url): url is string => Boolean(url?.startsWith('https://')));
     const anonymize = () => this.prisma.$transaction(async (tx) => {
       if (user.role === Role.owner && user.businessId) {
         const activeOwners = await tx.user.count({
@@ -405,6 +451,28 @@ export class AuthService {
         throw error;
       }
     }
+    await this.deleteStoredMedia(ownedMedia);
     return { deleted: true };
+  }
+
+  private async deleteStoredMedia(urls: string[]) {
+    const bucket = this.config.get<string>('OBJECT_STORAGE_BUCKET');
+    const publicUrl = this.config.get<string>('OBJECT_STORAGE_PUBLIC_URL')?.replace(/\/$/, '');
+    const accessKeyId = this.config.get<string>('OBJECT_STORAGE_ACCESS_KEY_ID');
+    const secretAccessKey = this.config.get<string>('OBJECT_STORAGE_SECRET_ACCESS_KEY');
+    if (!bucket || !publicUrl || !accessKeyId || !secretAccessKey) return;
+    const keys = urls.filter((url) => url.startsWith(`${publicUrl}/`)).map((url) => decodeURIComponent(url.slice(publicUrl.length + 1)));
+    if (!keys.length) return;
+    const client = new S3Client({
+      region: this.config.get<string>('OBJECT_STORAGE_REGION') ?? 'auto',
+      endpoint: this.config.get<string>('OBJECT_STORAGE_ENDPOINT'),
+      forcePathStyle: Boolean(this.config.get<string>('OBJECT_STORAGE_ENDPOINT')),
+      credentials: { accessKeyId, secretAccessKey },
+    });
+    try {
+      await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((Key) => ({ Key })) } }));
+    } catch {
+      await this.security.log('account_media_delete_failed', { userId: undefined, metadata: { objectCount: keys.length } });
+    }
   }
 }

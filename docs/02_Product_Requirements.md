@@ -1,8 +1,8 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.9
+**Document Status:** Draft v0.15
 **Related Document:** `01_Project_Overview.md`
-**Last Updated:** 2026-07-28
+**Last Updated:** 2026-08-01
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 **Scope:** Version 1 (six core modules, of equal priority, sequenced according to current development progress)
 
@@ -88,8 +88,10 @@ Corresponding backend module: `auth`
 - Forgot-password always returns the same generic response, whether an account exists or not
 - Reset tokens are random, stored only as SHA-256 hashes, expire after 30 minutes and work once
 - Password change/reset increments `User.tokenVersion`; every older JWT returns 401 on its next request
-- A newly created staff account is marked `mustChangePassword` until its first successful password change
-- Transactional email delivery is still an external production dependency: the API creates the secure reset token, but production must send it through the selected email provider; raw tokens are exposed only when the explicit E2E-only environment switch is enabled
+- A newly created staff account is marked `mustChangePassword`; both App navigation and authenticated backend routes block business access until successful password change
+- Resend sends a link to the public reset landing page. Installed Apps open `ytpaws://reset-password`; without the App, the same page provides a web reset form
+- Login and reset requests are rate-limited by both IP and email hash; five consecutive bad passwords lock the account for 15 minutes and security events are persisted without plaintext email search keys
+- Production startup rejects `EXPOSE_PASSWORD_RESET_TOKEN=true`; raw reset tokens are available only to opted-in non-production tests
 
 ### US-01.6 Staff Activation and Account Deletion
 > As an owner or user, I want safe staff offboarding and account deletion, so that former users immediately lose access and personal data is not retained unnecessarily.
@@ -119,7 +121,7 @@ Corresponding backend module: `pets`
 - Given the name field is empty, When the user submits, Then the system blocks submission and highlights the missing field
 - Given the user uploads a pet photo (at creation or later via US-02.2), When the upload succeeds, Then the photo displays on the pet's profile card
 
-*Already implemented: `POST /pets` requires only `name`. Creation is wired into the app as a minimal name + species form in two places (`ProfileScreen`'s "My Pets" and an inline prompt inside `BookingScreen` when a customer has no pets yet). The remaining fields (age, weight, spay/neuter status, personality, dietary notes, and — as of 2026-07-27 — a photo) are filled in afterwards via `PetDetailScreen` (see US-02.2). The photo AC is satisfied via the same interim base64-data-URI approach as daily report photos (`Pet.photoUrl`; see `03_System_Architecture.md` §5.3), not a real upload to cloud storage.*
+*Already implemented: `POST /pets` requires only `name`. Creation is wired into the app as a minimal name + species form in two places (`ProfileScreen` and `BookingScreen`). Remaining fields are filled in via `PetDetailScreen`; photos use the S3-compatible presigned upload flow and PostgreSQL stores only the resulting HTTPS URL.*
 
 <details>
 <summary>Superseded AC (pre-2026-07-31): require name + breed at creation</summary>
@@ -278,7 +280,7 @@ Corresponding backend module: `payments`
 - Given the owner opens "Business Settings", When the page loads, Then it shows the business's current name, region/contact info, and WeChat QR code (if set)
 - Given the owner edits the name, region, or uploads a new QR code image, When they save, Then the changes take effect immediately — including for `US-04.2`'s WeChat payment flow, which reads the QR code from the same field
 
-*Already implemented: `GET /businesses/me` (added 2026-07-31 — previously only `PATCH` existed, with no way to read current values back) plus the existing `PATCH /businesses/me`, now also accepting `name`/`region` (previously only `wechatQrCodeUrl`). `BusinessSettingsScreen` (reachable from `ProfileScreen`'s "Business Settings" quick action, owner/admin only) uses the same base64-data-URI photo picker pattern as `PetDetailScreen`/`ReportComposeScreen` for the QR code image (see `03_System_Architecture.md` §5.3 — still no real object storage).*
+*Already implemented: `GET /businesses/me` plus `PATCH /businesses/me` for name, region and WeChat QR. `BusinessSettingsScreen` uploads the QR image through the shared S3-compatible presigned upload flow.*
 
 ### Payment Strategy and Future Expansion
 
@@ -339,7 +341,7 @@ Corresponding backend module: `reports`
 - Given an uploaded photo/video exceeds the system's allowed file size, When submitted, Then the system shows a "file too large" message and blocks the upload
 - Given there are multiple daily reports in one day (e.g. morning and evening), When viewing the report list, Then multiple entries display in chronological order rather than overwriting each other
 
-*Already implemented: `POST /reports/:bookingId` (the booking's assigned staff, or the business's owner/admin). Restricted to bookings in `in_progress` status, driven from the frontend by the "advance status" action on `BookingDetailScreen` (see US-03.3). Wired into a new `ReportComposeScreen`, reachable from `BookingDetailScreen`'s "Add Daily Report" button (shown to the assigned staff member or the owner/admin, only while the booking is `in_progress`): a text field plus up to 3 photos. Since Section 5's presigned cloud-storage upload flow still isn't implemented, photos are captured with `base64: true` and submitted as `data:image/jpeg;base64,...` URIs directly in `mediaUrls`, rather than as real hosted URLs — a deliberate interim stopgap (see `03_System_Architecture.md` ADR, 2026-07-27) until a storage provider is chosen. **Server-side size/shape limits added 2026-07-31**: `CreateReportDto` caps `mediaUrls` at 3 items, each at most 2,000,000 characters, and requires an `https://` or `data:image/(jpeg|png|webp);base64,` shape (see `common/validation/media-uri.ts`) — this is a coarse backstop, not a real "decode and check byte size" check, since the server never receives anything but a string here.*
+*Already implemented: `POST /reports/:bookingId` for the assigned staff or business owner/admin, restricted to `in_progress`. `ReportComposeScreen` accepts text and up to three photos, uploads each directly with a five-minute presigned object-storage URL, then submits only HTTPS URLs in `mediaUrls`. DTOs reject inline data URIs.*
 
 ### US-06.2 User Views Pet Daily Reports
 > As a logged-in user, I want to view daily reports for my pet during a care period, so that I can stay updated on my pet's condition.
@@ -384,3 +386,4 @@ Corresponding backend module: `reports`
 | 2026-07-31 | v0.12 | Added US-03.7 (owner service management — `ServiceManagementScreen`, previously API-only), US-04.4 (owner-initiated full refunds via `PATCH /payments/:id/refund`), and US-04.5 (business settings — name/region/WeChat QR, `BusinessSettingsScreen`, `GET /businesses/me` added since there was previously no way to read current values back). Rewrote US-02.1 (Pet creation): progressive profile-building (name only required at creation) is now the *accepted* V1 behavior rather than a gap against a stricter AC that was never actually built | Xiyun Liu |
 | 2026-08-01 | v0.13 | Corrected event names in US-05.2's implementation note (`checkout.session.completed`/`.expired`, not the pre-rewrite `payment_intent.succeeded`/`.payment_failed`) and US-06.1's now-outdated "no server-side file-too-large check" line (DTO-level size/shape limits were added 2026-07-31). Added the "V1 never hard-deletes a Service" AC to US-03.7. Backend gained `GET /bookings/:id/care-details` (customer/assigned-staff/owner-admin) so staff caring for a pet can see its full profile — not yet wired into a screen, tracked as follow-up — and `ReportsService`'s read permission was tightened to match write (assigned staff only); see `03_System_Architecture.md` v0.14 for both | Xiyun Liu |
 | 2026-08-01 | v0.14 | Added US-01.5/01.6: hashed single-use password reset tokens, password-change session revocation, staff first-password flag and activation controls, last-owner/self-deactivation protection, plus password-confirmed in-app account deletion with explicit anonymization and financial-record retention rules | Xiyun Liu |
+| 2026-08-01 | v0.15 | Completed password reset delivery and recovery UX (Resend, App deep link, web fallback), enforced the staff first-password gate in App/API, added persistent login/reset abuse controls and security audit events, published linked privacy/terms/external deletion pages, and replaced new base64 media writes with S3-compatible direct uploads | Xiyun Liu |

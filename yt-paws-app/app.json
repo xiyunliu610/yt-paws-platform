@@ -2,6 +2,7 @@
   "expo": {
     "name": "yt-paws-app",
     "slug": "yt-paws-app",
+    "scheme": "ytpaws",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

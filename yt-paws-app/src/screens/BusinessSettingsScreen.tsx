@@ -14,7 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { ApiError, businessesApi, Business } from '../api/client';
+import { ApiError, businessesApi, mediaApi, Business } from '../api/client';
 
 const BusinessSettingsScreen = () => {
   const { token } = useAuth();
@@ -47,8 +47,6 @@ const BusinessSettingsScreen = () => {
     }, [loadBusiness]),
   );
 
-  // Same interim base64-data-URI approach as pet/report photos (see
-  // docs/03_System_Architecture.md §5.3) — no cloud storage exists yet.
   const pickQrCode = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -62,11 +60,10 @@ const BusinessSettingsScreen = () => {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
-        base64: true,
       });
 
-      if (!result.canceled && result.assets[0]?.base64) {
-        setWechatQrCodeUrl(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      if (!result.canceled && result.assets[0]?.uri) {
+        setWechatQrCodeUrl(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Choosing a WeChat QR code image failed:', error);
@@ -83,12 +80,15 @@ const BusinessSettingsScreen = () => {
 
     setIsSaving(true);
     try {
+      const storedQrCodeUrl = wechatQrCodeUrl && !wechatQrCodeUrl.startsWith('https://')
+        ? await mediaApi.upload(token, wechatQrCodeUrl, 'wechat-qr')
+        : wechatQrCodeUrl;
       const updated = await businessesApi.updateMine(token, {
         name: name.trim(),
         // null (not undefined) so an emptied field actually clears the
         // column instead of the update silently leaving the old value.
         region: region.trim() || null,
-        wechatQrCodeUrl,
+        wechatQrCodeUrl: storedQrCodeUrl,
       });
       setBusiness(updated);
       Alert.alert(t.businessSettings.savedTitle, t.businessSettings.savedMessage);

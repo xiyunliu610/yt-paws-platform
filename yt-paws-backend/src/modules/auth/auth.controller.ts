@@ -4,6 +4,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
+import type { Request } from 'express';
 import {
   ChangePasswordDto,
   CreateStaffDto,
@@ -26,13 +27,13 @@ export class AuthController {
   }
 
   @Post('login')
-  login(@Body() body: LoginDto) {
-    return this.authService.login(body.email, body.password);
+  login(@Body() body: LoginDto, @Req() req: Request) {
+    return this.authService.login(body.email, body.password, this.clientIp(req));
   }
 
   @Post('forgot-password')
-  forgotPassword(@Body() body: ForgotPasswordDto) {
-    return this.authService.forgotPassword(body.email);
+  forgotPassword(@Body() body: ForgotPasswordDto, @Req() req: Request) {
+    return this.authService.forgotPassword(body.email, this.clientIp(req));
   }
 
   @Post('reset-password')
@@ -86,5 +87,10 @@ export class AuthController {
     @Body() body: UpdateStaffStatusDto,
   ) {
     return this.authService.updateStaffStatus(req.user, id, body.isActive);
+  }
+
+  private clientIp(req: Request) {
+    const forwarded = req.headers['x-forwarded-for'];
+    return (Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0])?.trim() || req.ip || 'unknown';
   }
 }

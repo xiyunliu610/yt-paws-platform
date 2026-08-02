@@ -10,13 +10,14 @@ import {
   Alert,
   Switch,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { ApiError, authApi, petsApi, Pet } from '../api/client';
+import { ApiError, authApi, petsApi, Pet, PUBLIC_WEB_URL } from '../api/client';
 import { registerForPushNotificationsAsync, unregisterPushNotifications } from '../notifications/pushToken';
 
 type PetTypeKey = 'dog' | 'cat' | 'other';
@@ -528,9 +529,19 @@ const ProfileScreen = () => {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert(t.profile.privacyTitle, t.profile.comingSoon)}
+              onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/privacy`)}
             >
               <Text style={styles.menuText}>{t.profile.privacySettings}</Text>
+              <Text style={styles.menuArrow}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/terms`)}>
+              <Text style={styles.menuText}>{language === 'zh' ? '服务条款' : 'Terms of Service'}</Text>
+              <Text style={styles.menuArrow}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/account-deletion`)}>
+              <Text style={styles.menuText}>{language === 'zh' ? '账号删除与数据保留' : 'Account deletion & retention'}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
 

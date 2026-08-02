@@ -3,6 +3,8 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import * as bcrypt from 'bcryptjs';
+
+jest.setTimeout(15000);
 import { Role } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -68,7 +70,18 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
         .post('/auth/login')
         .send({ email, password: res.body.temporaryPassword })
         .expect(201);
-      return { userId: res.body.user.id as string, token: loginRes.body.token as string };
+      expect(loginRes.body.user.mustChangePassword).toBe(true);
+      await request(app.getHttpServer())
+        .get('/pets')
+        .set('Authorization', `Bearer ${loginRes.body.token}`)
+        .expect(403);
+      const changed = await request(app.getHttpServer())
+        .patch('/auth/change-password')
+        .set('Authorization', `Bearer ${loginRes.body.token}`)
+        .send({ currentPassword: res.body.temporaryPassword, newPassword: 'changed123' })
+        .expect(200);
+      expect(changed.body.user.mustChangePassword).toBe(false);
+      return { userId: res.body.user.id as string, token: changed.body.token as string };
     };
 
     const staff1 = await createStaff(staff1Email);

@@ -15,7 +15,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { ApiError, reportsApi } from '../api/client';
+import { ApiError, reportsApi, mediaApi } from '../api/client';
 
 type RootStackParamList = {
   ReportCompose: { bookingId: string };
@@ -24,10 +24,6 @@ type RootStackParamList = {
 type ReportComposeRouteProp = RouteProp<RootStackParamList, 'ReportCompose'>;
 type Navigation = StackNavigationProp<RootStackParamList>;
 
-// No cloud storage/presigned-upload flow exists yet (see
-// docs/03_System_Architecture.md §5), so photos are embedded directly as
-// base64 data URIs rather than uploaded to a URL. Kept small and
-// photos-only (no video) to keep the payload size reasonable.
 const MAX_PHOTOS = 3;
 
 const ReportComposeScreen = () => {
@@ -54,14 +50,10 @@ const ReportComposeScreen = () => {
         allowsMultipleSelection: true,
         selectionLimit: MAX_PHOTOS - photos.length,
         quality: 0.5,
-        base64: true,
       });
 
       if (!result.canceled) {
-        const dataUris = result.assets
-          .filter((asset) => !!asset.base64)
-          .map((asset) => `data:image/jpeg;base64,${asset.base64}`);
-        setPhotos((prev) => [...prev, ...dataUris].slice(0, MAX_PHOTOS));
+        setPhotos((prev) => [...prev, ...result.assets.map((asset) => asset.uri)].slice(0, MAX_PHOTOS));
       }
     } catch (error) {
       console.error('Choosing report photos failed:', error);
@@ -82,9 +74,10 @@ const ReportComposeScreen = () => {
 
     setIsSubmitting(true);
     try {
+      const mediaUrls = await Promise.all(photos.map((uri) => mediaApi.upload(token, uri, 'report')));
       await reportsApi.create(token, bookingId, {
         text: text.trim() || undefined,
-        mediaUrls: photos,
+        mediaUrls,
       });
       Alert.alert(t.reportCompose.successTitle, t.reportCompose.successMessage, [
         { text: 'OK', onPress: () => navigation.goBack() },

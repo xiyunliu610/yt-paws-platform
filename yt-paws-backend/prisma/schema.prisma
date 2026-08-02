@@ -102,6 +102,8 @@ model User {
   // on their very next authenticated request.
   tokenVersion     Int            @default(0)
   mustChangePassword Boolean      @default(false)
+  failedLoginAttempts Int         @default(0)
+  lockedUntil       DateTime?
   deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -111,6 +113,7 @@ model User {
   notifications    Notification[]
   refundsIssued    Payment[]      @relation("PaymentRefundedBy")
   passwordResetTokens PasswordResetToken[]
+  securityEvents    SecurityEvent[]
 }
 
 model PasswordResetToken {
@@ -125,6 +128,21 @@ model PasswordResetToken {
   @@index([userId, expiresAt])
 }
 
+model SecurityEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      String
+  ipAddress String?
+  emailHash String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([type, ipAddress, createdAt])
+  @@index([type, emailHash, createdAt])
+  @@index([userId, createdAt])
+}
+
 model Pet {
   id            String            @id @default(uuid()) @db.Uuid
   name          String
@@ -135,9 +153,8 @@ model Pet {
   personality   String?
   dietNotes     String?
   isNeutered    Boolean?
-  // Same interim approach as DailyReport.mediaUrls (see
-  // docs/03_System_Architecture.md §5.3): a data: URI until real cloud
-  // storage exists, not a hosted URL.
+  // Public object-storage URL. Legacy data: URIs can be migrated with the
+  // media migration command before production rollout.
   photoUrl      String?
   ownerId       String            @db.Uuid
   owner         User              @relation(fields: [ownerId], references: [id])
