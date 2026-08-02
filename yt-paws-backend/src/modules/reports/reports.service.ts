@@ -54,11 +54,9 @@ export class ReportsService {
     return booking;
   }
 
-  // US-06.1: only while the booking is actively being carried out. Media
-  // upload/storage isn't implemented yet (see docs/03_System_Architecture.md
-  // §5 — presigned-URL flow is still a TBD provider), so mediaUrls are
-  // assumed to already be hosted somewhere; there's no server-side "file too
-  // large" check to perform without receiving the bytes ourselves.
+  // US-06.1: only while the booking is actively being carried out. The App
+  // uploads images directly through MediaService's presigned URLs, so this
+  // endpoint receives and persists only hosted HTTPS URLs.
   async create(user: RequestingUser, bookingId: string, data: CreateReportInput) {
     const booking = await this.loadBookingForWrite(user, bookingId);
     if (booking.status !== BookingStatus.in_progress) {

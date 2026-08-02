@@ -1,8 +1,8 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.15
+**Document Status:** Draft v0.16
 **Related Document:** `01_Project_Overview.md`
-**Last Updated:** 2026-08-01
+**Last Updated:** 2026-08-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 **Scope:** Version 1 (six core modules, of equal priority, sequenced according to current development progress)
 
@@ -387,3 +387,4 @@ Corresponding backend module: `reports`
 | 2026-08-01 | v0.13 | Corrected event names in US-05.2's implementation note (`checkout.session.completed`/`.expired`, not the pre-rewrite `payment_intent.succeeded`/`.payment_failed`) and US-06.1's now-outdated "no server-side file-too-large check" line (DTO-level size/shape limits were added 2026-07-31). Added the "V1 never hard-deletes a Service" AC to US-03.7. Backend gained `GET /bookings/:id/care-details` (customer/assigned-staff/owner-admin) so staff caring for a pet can see its full profile — not yet wired into a screen, tracked as follow-up — and `ReportsService`'s read permission was tightened to match write (assigned staff only); see `03_System_Architecture.md` v0.14 for both | Xiyun Liu |
 | 2026-08-01 | v0.14 | Added US-01.5/01.6: hashed single-use password reset tokens, password-change session revocation, staff first-password flag and activation controls, last-owner/self-deactivation protection, plus password-confirmed in-app account deletion with explicit anonymization and financial-record retention rules | Xiyun Liu |
 | 2026-08-01 | v0.15 | Completed password reset delivery and recovery UX (Resend, App deep link, web fallback), enforced the staff first-password gate in App/API, added persistent login/reset abuse controls and security audit events, published linked privacy/terms/external deletion pages, and replaced new base64 media writes with S3-compatible direct uploads | Xiyun Liu |
+| 2026-08-02 | v0.16 | Added production-operability acceptance baseline in code/CI: strict secret/provider validation, Docker packaging, automatic Prisma migration, database readiness and process liveness probes, graceful shutdown and production image build verification | Xiyun Liu |

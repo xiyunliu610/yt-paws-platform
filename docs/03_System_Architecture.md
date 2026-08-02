@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.17
+**Document Status:** Draft v0.18
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-08-01
+**Last Updated:** 2026-08-02
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -407,6 +407,8 @@ Detailed plans are in `11_Security.md`; the Version 1 baseline is listed here:
 
 **Abuse controls and first-login gate.** Login/reset attempts are counted from persisted `SecurityEvent` rows by IP and hashed email; five consecutive invalid passwords lock that User for 15 minutes. Successful login clears the counter. Newly provisioned staff are denied every authenticated business endpoint except `PATCH /auth/change-password` while `mustChangePassword=true`; the App mounts only the required-password screen for the same state.
 
+Security events have a 90-day operational retention window, pruned at most once per process-hour during new event writes. Account deletion removes events tied to either the User id or the original email hash before anonymization.
+
 **Staff/offboarding invariant.** `PATCH /auth/staff/:id/status` is owner/admin-only and same-business scoped. Self-deactivation and reactivation of deleted users are rejected. Last-active-owner count plus update executes at Serializable isolation (with one serialization retry), as does owner account deletion, preventing two concurrent requests from removing every active Owner.
 
 **Account deletion and retention.** `DELETE /auth/account` requires the current password; the Profile UI adds two destructive confirmations. It immediately disables/anonymizes the User and clears name, phone, original email, password usability, push token, notifications and reset tokens. Owned Pet care fields/photos are blanked, health records deleted, and the customer's daily-report text/media removed. Staff assignments and `Payment.refundedById` are detached. Booking, Service and Payment rows, amounts/statuses/provider references and timestamps remain because they are required to reconcile real money, refunds, accounting, fraud and disputes. This is anonymization with minimal financial retention, not a claim that every database row is physically erased.
@@ -451,16 +453,16 @@ The project uses three standard environments to avoid contaminating production d
 
 ---
 
-## 11. Deployment Architecture (Placeholder, TBD)
+## 11. Deployment Architecture
 
-The specific deployment platform has not yet been decided and will be determined in `10_Deployment.md`. A generic deployment topology is given here to clarify the relationships between layers, without binding to a specific vendor:
+The hosting vendor remains selectable, but the deployable unit is now concrete: `yt-paws-backend/Dockerfile` builds the NestJS production image, its entrypoint runs `prisma migrate deploy` before accepting traffic, the server honors the platform-provided `PORT`, and `/health/live` plus `/health/ready` support process and database health checks. Production startup fails immediately when required database, JWT, Stripe, Resend, legal-site, CORS or object-storage configuration is missing or unsafe.
 
 ```mermaid
 flowchart TB
     Internet["User Devices"] --> CDN["CDN / Reverse Proxy<br/>(TBD)"]
-    CDN --> API["NestJS Application<br/>(hosting platform TBD)"]
-    API --> DB[("PostgreSQL<br/>(hosting approach TBD)")]
-    API --> Storage["Cloud Object Storage"]
+    CDN --> API["NestJS Docker Image<br/>health-checked modular monolith"]
+    API --> DB[("Managed PostgreSQL<br/>migration + backup required")]
+    API --> Storage["S3-compatible Object Storage"]
 ```
 
 ---
@@ -475,11 +477,11 @@ flowchart TB
 | ORM | Prisma |
 | Authentication | JWT |
 | Payment Services | Payment providers (Current: Stripe [NZ], WeChat personal QR [China, manual verification]) |
-| Media Storage | Cloud object storage (Candidates: Cloudflare R2 / AWS S3 / other OSS, TBD) |
+| Media Storage | S3-compatible object storage (AWS S3 or Cloudflare R2 configuration supported) |
 | Push Notifications | Push notification provider (Candidates: Expo Push / Firebase Cloud Messaging, TBD) |
 | AI (from v1.5) | LLM provider (Candidates: OpenAI / Anthropic / Google Gemini) |
 | Camera (from v2) | IP camera (Currently planned: TP-Link Tapo) |
-| Deployment (TBD) | Candidates: AWS / Railway / Render — see `10_Deployment.md` |
+| Deployment | OCI/Docker image; compatible with AWS, Railway, Render and similar managed container platforms |
 
 ---
 
@@ -493,7 +495,7 @@ flowchart TB
 | WeChat payment integration approach | Personal QR code + manual verification, rather than the official merchant API | The official merchant API has a high application threshold; manual verification is a pragmatic transitional approach for now, with an extension point reserved for switching to the official API in the future |
 | Third-party service description approach | Provider-agnostic | Storage, push, AI, camera, etc. categories only define responsibilities without binding to a specific vendor, reducing future documentation and code changes when switching providers |
 | Business onboarding (revised 2026-07-30) | `POST /auth/register-business` creates the `Business` row and its first `owner` User atomically, but only once — `AuthService.registerBusiness` rejects the call if a `Business` already exists | The original "self-service for any number of businesses, starting now" design meant `services.findAll` (no `businessId` filter for customers) mixed every registered business's listings — real marketplace behavior V1 explicitly isn't supposed to have. Bootstrapping the one V1 tenant doesn't need that; a real multi-business flow (discovery, selection, isolation) is Version 4 work, done properly then |
-| Staff provisioning | Owner creates staff accounts directly (`POST /auth/staff`) with a system-generated temporary password returned to the owner, rather than an email invite flow | No transactional email infrastructure exists yet; owners already relay information to staff manually (WeChat, phone), so this fits current operating reality without new infrastructure |
+| Staff provisioning | Owner creates staff accounts directly (`POST /auth/staff`) with a system-generated temporary password returned to the owner; the staff member is forced to change it before any business API access | Password-reset transactional email now exists, but staff provisioning deliberately remains owner-mediated for V1 operations |
 | Service pricing model | `Service.pricing_unit` enum (`flat` \| `per_day`, default `flat`) rather than a fixed per-service formula | Boarding is naturally priced per night, grooming/house-visits per session; a single field lets both coexist without a booking-total field or per-service special-casing in the payments module |
 | Payment amount storage (revised 2026-07-29) | `Booking.unit_price`/`pricing_unit` snapshot `Service`'s values at creation time; `Payment.amount` is computed from that snapshot once, at first payment initiation, and reused by every later attempt | The original "compute fresh from `Service.price` every time" design meant a price change could change what an already-placed, unpaid booking owed — a real billing-dispute risk, not an acceptable V1 tradeoff. Snapshotting at booking time (not payment time) fixes this while keeping `Booking` itself total-free |
 | Stripe webhook correlation (revised 2026-07-29) | A `StripeCheckoutAttempt` row per Checkout Session (FK to `Payment`, unique `session_id`); the webhook looks up by `session_id`, not by anything stored on `Payment` | The original "one `providerRef` on `Payment`, overwritten on retry" design broke exactly the retry case it was meant to handle: the old session stays payable until it expires, so overwriting the reference made its eventual webhook unresolvable. Attempts are additive, not overwritten, so every session ever created for a `Payment` stays resolvable |
@@ -506,8 +508,7 @@ flowchart TB
 | Booking status progression | `PATCH /bookings/:id/status`, forward-only through `pending → confirmed → in_progress → completed`, one step at a time (owner/admin only) | Daily reports (US-06.1) require a booking to be `in_progress`, and no endpoint could produce that transition before this was added; forward-only, single-step validation keeps the state machine simple and prevents skipping steps or reviving a cancelled booking |
 | Staff directory endpoint | `GET /auth/staff` (owner/admin only) added to the `auth` module rather than creating a `users` module | The only two frontend consumers (the booking-assignment picker and `StaffManagementScreen`) both need "everyone assignable in my business," which is exactly `auth.service.createStaff`'s counterpart; a separate `users` module would be premature for a single read endpoint |
 | WeChat payment idempotency | `initiateWechat` reuses an existing pending/pending-verification payment for the booking instead of always creating a new `Payment` row | The frontend payment screen calls this endpoint every time it mounts (not just once), since there was no other way to recover the QR/reference note after navigating away mid-flow; making the endpoint idempotent was cheaper than adding client-side caching of payment intents |
-| Daily report photos (interim) | Photos captured client-side as base64 and stored inline in `DailyReport.mediaUrls` (`data:image/jpeg;base64,...`), not uploaded to cloud storage | `ReportComposeScreen` needed to ship before a storage provider was chosen (§5 is still TBD); capped at 3 photos and JPEG quality 0.5 to bound payload size. Explicitly interim — see §5.3 — and must be replaced once presigned uploads exist, not extended |
-| Pet photo (interim) | Same base64-data-URI approach as daily report photos, applied to `Pet.photoUrl` | Consistency: two independent "just ship the photo, storage isn't chosen yet" problems solved the same way, so there's only one pattern to later replace, not two |
+| Media uploads (revised 2026-08-01) | App requests a purpose/role-scoped five-minute presigned PUT URL, uploads directly to S3/R2 and stores only the HTTPS object URL | Keeps image bytes out of PostgreSQL/API traffic; `media:migrate` converts legacy Base64 rows before production rollout |
 | Notifications module scope | A real `notifications` module exists (§7) with a read/mark-read/device-registration surface, but no public "create" endpoint — only `bookings`/`payments` can create rows, by calling `NotificationsService` directly as an injected dependency | Keeps "no dedicated Notification Center in V1" true in spirit (per the original architecture) while still giving in-app notifications somewhere to live; a public create endpoint would let any authenticated user spam notifications at other users, which nothing in V1 needs |
 | Push delivery: best-effort, fail-silent | `expo-push.util.ts` wraps the Expo push gateway call in a try/catch with a 5s timeout; `pushToken.ts` wraps every registration step (permission, device check, token fetch) the same way | Expo Go dropped remote push support entirely as of SDK 53 (both platforms) — registration will routinely fail in the current dev environment, and that failure must never surface as a booking/payment error. Matches the Stripe frontend precedent of deferring a "leave Expo Go" decision rather than forcing it |
 | Owner payment verification | `GET /payments/business` (new) returns every payment for the business rather than only `pending_verification` ones | The owner also wants to see settled history for context, not just an action queue; the frontend (`PaymentVerificationScreen`) sorts pending-verification entries first instead of the backend filtering them out |
@@ -538,3 +539,4 @@ flowchart TB
 | 2026-08-01 | v0.15 | Wired booking care details into the mobile booking screen. Closed the refund recovery gap with refund metadata, Stripe refund webhooks, an idempotent owner/admin reconciliation endpoint and UI, provider-status-aware finalization, and atomic manual WeChat finalization. Added a full-test script and isolated PostgreSQL CI workflow | Xiyun Liu |
 | 2026-08-01 | v0.16 | Added account-security lifecycle: `tokenVersion` JWT revocation, hashed/expiring/single-use reset tokens, password change and staff first-password flag, same-business staff activation with self/last-owner protection at Serializable isolation, and password-confirmed in-app account deletion with documented anonymization versus financial-retention behavior | Xiyun Liu |
 | 2026-08-01 | v0.17 | Implemented Resend password-reset delivery with App/web fallback, explicit `ytpaws` deep linking, mandatory first-password access gates, persistent security rate limiting/login lockout/audit events, public legal/deletion pages, and the S3-compatible `media` module with direct uploads and legacy base64 migration | Xiyun Liu |
+| 2026-08-02 | v0.18 | Replaced the deployment placeholder with a production Docker baseline: strict environment validation, platform `PORT`, automatic Prisma migration, liveness/readiness endpoints, shutdown hooks and CI image builds; removed stale Base64-media ADR text | Xiyun Liu |

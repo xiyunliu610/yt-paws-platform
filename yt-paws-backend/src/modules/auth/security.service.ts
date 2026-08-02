@@ -4,6 +4,8 @@ import * as crypto from 'crypto';
 
 @Injectable()
 export class SecurityService {
+  private lastPrunedAt = 0;
+
   constructor(private readonly prisma: PrismaService) {}
 
   emailHash(email: string) {
@@ -24,6 +26,7 @@ export class SecurityService {
   }
 
   async log(type: string, data: { ipAddress?: string; email?: string; userId?: string; metadata?: object } = {}) {
+    await this.pruneExpiredEvents();
     await this.prisma.securityEvent.create({
       data: {
         type,
@@ -32,6 +35,15 @@ export class SecurityService {
         userId: data.userId,
         metadata: data.metadata,
       },
+    });
+  }
+
+  private async pruneExpiredEvents() {
+    const now = Date.now();
+    if (now - this.lastPrunedAt < 60 * 60 * 1000) return;
+    this.lastPrunedAt = now;
+    await this.prisma.securityEvent.deleteMany({
+      where: { createdAt: { lt: new Date(now - 90 * 24 * 60 * 60 * 1000) } },
     });
   }
 }

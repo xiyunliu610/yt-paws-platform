@@ -197,6 +197,14 @@ describe('Account security and deletion (e2e)', () => {
         .expect(400);
     });
 
+    it('rate-limits repeated reset requests without revealing account existence', async () => {
+      const target = `rate-limit-${suffix}@example.com`;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: target }).expect(201);
+      }
+      await request(app.getHttpServer()).post('/auth/forgot-password').send({ email: target }).expect(429);
+    });
+
     it('locks an account after five consecutive invalid passwords', async () => {
       for (let attempt = 0; attempt < 5; attempt++) {
         await request(app.getHttpServer())
@@ -264,6 +272,14 @@ describe('Account security and deletion (e2e)', () => {
       expect(deletedUser.deletedAt).not.toBeNull();
       expect(await prisma.petHealthRecord.count({ where: { petId: pet.id } })).toBe(0);
       expect(await prisma.notification.count({ where: { userId: customerId } })).toBe(0);
+      expect(await prisma.securityEvent.count({
+        where: {
+          OR: [
+            { userId: customerId },
+            { emailHash: crypto.createHash('sha256').update(emails.customer).digest('hex') },
+          ],
+        },
+      })).toBe(0);
       expect(await prisma.pet.findUniqueOrThrow({ where: { id: pet.id } })).toMatchObject({
         name: 'Deleted pet',
         photoUrl: null,

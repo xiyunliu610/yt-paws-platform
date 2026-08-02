@@ -388,6 +388,7 @@ export class AuthService {
       throw new UnauthorizedException('Password is incorrect');
     }
     const anonymizedEmail = `deleted-${user.id}@deleted.invalid`;
+    const originalEmailHash = this.security.emailHash(user.email);
     const replacementPassword = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
     const ownedMedia = [
       ...(await this.prisma.pet.findMany({ where: { ownerId: userId }, select: { photoUrl: true } })).map((pet) => pet.photoUrl),
@@ -406,6 +407,9 @@ export class AuthService {
       const petIds = pets.map((pet) => pet.id);
       await tx.notification.deleteMany({ where: { userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId } });
+      await tx.securityEvent.deleteMany({
+        where: { OR: [{ userId }, { emailHash: originalEmailHash }] },
+      });
       await tx.petHealthRecord.deleteMany({ where: { petId: { in: petIds } } });
       await tx.dailyReport.updateMany({
         where: { booking: { customerId: userId } },

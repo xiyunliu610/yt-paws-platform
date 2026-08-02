@@ -1,3 +1,25 @@
+# Y&T Paws Backend
+
+NestJS API for authentication, bookings, pet care reports, payments and business operations.
+
+## Production container
+
+```bash
+docker build -t yt-paws-backend .
+docker run --env-file .env.production -p 3000:3000 yt-paws-backend
+```
+
+The container runs `prisma migrate deploy` before starting, honors `PORT`, and exposes:
+
+- `GET /health/live` — process liveness
+- `GET /health/ready` — database readiness
+
+Copy `.env.example` and fill every production value. Production startup rejects missing values, a JWT secret shorter than 32 characters, non-HTTPS public URLs, Stripe test keys, or `EXPOSE_PASSWORD_RESET_TOKEN=true`.
+
+Before production rollout, configure the S3/R2 bucket CORS policy to allow `PUT` from the App's upload context and run `npm run media:migrate` once to move legacy Base64 images.
+
+---
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
