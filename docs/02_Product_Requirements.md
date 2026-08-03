@@ -368,6 +368,10 @@ Corresponding backend module: `reports`
 | WeChat Payment Verification SLA | Needs agreement with the business on a reasonable average verification turnaround (e.g. within 24 hours) |
 | Multi-Tenant Data Isolation | Core business-owned tables (Booking, Service, Payment via Booking, etc.) reserve a `business_id` field; in Version 1 all data belongs to Y&T Paws by default, but query logic should filter by `business_id` rather than hard-coding the assumption of "only one business." Pet is intentionally excluded — it belongs to its owning customer, not a business (see `01_Project_Overview.md` §11) |
 
+### V1 Help Center (non-AI)
+
+Profile provides an in-app bilingual Help Center with keyword search, topic filters and curated answers for booking, payment, pet/report and account questions. It performs no paid AI/API calls and does not take business actions. Unmatched or booking-specific questions route to the existing public support page. The App depends on a `HelpProvider` interface so a future authenticated AI assistant can replace or supplement local search without changing navigation or exposing a provider key in the mobile bundle.
+
 ---
 
 ## Change Log
@@ -391,3 +395,4 @@ Corresponding backend module: `reports`
 | 2026-08-01 | v0.15 | Completed password reset delivery and recovery UX (Resend, App deep link, web fallback), enforced the staff first-password gate in App/API, added persistent login/reset abuse controls and security audit events, published linked privacy/terms/external deletion pages, and replaced new base64 media writes with S3-compatible direct uploads | Xiyun Liu |
 | 2026-08-02 | v0.16 | Added production-operability acceptance baseline in code/CI: strict secret/provider validation, Docker packaging, automatic Prisma migration, database readiness and process liveness probes, graceful shutdown and production image build verification | Xiyun Liu |
 | 2026-08-02 | v0.17 | Aligned V1 daily reports with the shipped photo-only implementation (maximum three JPEG/PNG/WebP images, 5 MB each; video deferred), removed unfinished social/profile/favorites/coupon surfaces from the review build, and linked Profile support actions to the public support page | Xiyun Liu |
+| 2026-08-03 | v0.18 | Added the zero-cost V1 bilingual Help Center: local curated FAQ search and category filtering, with specific/unmatched questions routed to human support; paid AI behavior remains outside V1 | Xiyun Liu |

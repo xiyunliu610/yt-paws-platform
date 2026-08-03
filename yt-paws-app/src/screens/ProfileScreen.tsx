@@ -31,6 +31,7 @@ type RootStackParamList = {
   StaffManagement: undefined;
   ServiceManagement: undefined;
   BusinessSettings: undefined;
+  HelpCenter: undefined;
   PetDetail: { pet: Pet };
 };
 
@@ -516,7 +517,7 @@ const ProfileScreen = () => {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/support`)}
+              onPress={() => navigation.navigate('HelpCenter')}
             >
               <Text style={styles.menuText}>{t.profile.helpCenter}</Text>
               <Text style={styles.menuArrow}>›</Text>

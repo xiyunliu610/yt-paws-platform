@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
-import { LanguageProvider } from './src/i18n/LanguageContext';
+import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 import { registerForPushNotificationsAsync } from './src/notifications/pushToken';
 
 // Screens
@@ -29,6 +29,7 @@ import ServiceManagementScreen from './src/screens/ServiceManagementScreen';
 import BusinessSettingsScreen from './src/screens/BusinessSettingsScreen';
 import ResetPasswordScreen from './src/screens/Auth/ResetPasswordScreen';
 import RequiredPasswordChangeScreen from './src/screens/Auth/RequiredPasswordChangeScreen';
+import HelpCenterScreen from './src/screens/HelpCenterScreen';
 
 const Stack = createStackNavigator();
 
@@ -42,6 +43,7 @@ const HomeRouter = () => {
 
 const Navigation = () => {
   const { token, user, isRestoring } = useAuth();
+  const { t } = useLanguage();
 
   // Best-effort push registration once a session exists. No-ops quietly if
   // permission is denied or (as in Expo Go on SDK 53+) remote push simply
@@ -248,6 +250,15 @@ const Navigation = () => {
           component={BusinessSettingsScreen}
           options={{
             title: 'Business Settings',
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="HelpCenter"
+          component={HelpCenterScreen}
+          options={{
+            title: t.profile.helpCenterTitle,
             headerShown: true,
           }}
         />
