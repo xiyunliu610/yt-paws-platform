@@ -22,6 +22,8 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
 
   let businessId: string;
   let bookingId: string;
+  let serviceId: string;
+  let petId: string;
   let allUserIds: string[];
 
   const ownerEmail = `bp_owner_${Date.now()}@example.com`;
@@ -108,14 +110,14 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
       .set('Authorization', `Bearer ${ownerToken}`)
       .send({ name: 'Boarding', price: 50 })
       .expect(201);
-    const serviceId = serviceRes.body.id;
+    serviceId = serviceRes.body.id;
 
     const petRes = await request(app.getHttpServer())
       .post('/pets')
       .set('Authorization', `Bearer ${customerToken}`)
       .send({ name: 'Rex', dietNotes: 'No chicken', personality: 'Shy around strangers' })
       .expect(201);
-    const petId = petRes.body.id;
+    petId = petRes.body.id;
 
     const bookingRes = await request(app.getHttpServer())
       .post('/bookings')
@@ -152,6 +154,7 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
     await prisma.notification.deleteMany({ where: { userId: { in: allUserIds } } });
     await prisma.dailyReport.deleteMany({ where: { bookingId } });
     await prisma.booking.deleteMany({ where: { businessId } });
+    await prisma.petHealthRecord.deleteMany({ where: { pet: { owner: { email: { in: [customerEmail, otherCustomerEmail] } } } } });
     await prisma.pet.deleteMany({
       where: { owner: { email: { in: [customerEmail, otherCustomerEmail] } } },
     });
@@ -240,6 +243,58 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
         .get(`/reports/${bookingId}`)
         .set('Authorization', `Bearer ${otherCustomerToken}`)
         .expect(403);
+    });
+  });
+
+  describe('core service, pet, notification, cancellation and capacity flows', () => {
+    it('updates a service capacity and enforces it for overlapping bookings', async () => {
+      await request(app.getHttpServer()).patch(`/services/${serviceId}`)
+        .set('Authorization', `Bearer ${ownerToken}`).send({ maxConcurrentBookings: 1 }).expect(200);
+      const secondPet = await request(app.getHttpServer()).post('/pets')
+        .set('Authorization', `Bearer ${customerToken}`).send({ name: 'Second pet' }).expect(201);
+      await request(app.getHttpServer()).post('/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ serviceId, petId: secondPet.body.id, startDate: '2027-06-01T12:00:00.000Z', endDate: '2027-06-02T12:00:00.000Z' })
+        .expect(409);
+      await request(app.getHttpServer()).patch(`/services/${serviceId}`)
+        .set('Authorization', `Bearer ${ownerToken}`).send({ maxConcurrentBookings: null }).expect(200);
+      const allowed = await request(app.getHttpServer()).post('/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ serviceId, petId: secondPet.body.id, startDate: '2027-06-01T12:00:00.000Z', endDate: '2027-06-02T12:00:00.000Z' })
+        .expect(201);
+      await request(app.getHttpServer()).patch(`/auth/staff/${allUserIds[1]}/capacity`)
+        .set('Authorization', `Bearer ${ownerToken}`).send({ maxConcurrentBookings: 1 }).expect(200);
+      await request(app.getHttpServer()).patch(`/bookings/${allowed.body.id}/assign`)
+        .set('Authorization', `Bearer ${ownerToken}`).send({ staffId: allUserIds[1] }).expect(409);
+    });
+
+    it('supports pet health records and protects them from unrelated customers', async () => {
+      const record = await request(app.getHttpServer()).post(`/pets/${petId}/health-records`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ type: 'vaccination', date: '2026-01-01T00:00:00.000Z', notes: 'Current' }).expect(201);
+      expect(record.body.petId).toBe(petId);
+      await request(app.getHttpServer()).get(`/pets/${petId}/health-records`)
+        .set('Authorization', `Bearer ${otherCustomerToken}`).expect(403);
+    });
+
+    it('records and marks booking notifications read', async () => {
+      const list = await request(app.getHttpServer()).get('/notifications/mine')
+        .set('Authorization', `Bearer ${customerToken}`).expect(200);
+      expect(list.body.length).toBeGreaterThan(0);
+      const unread = list.body.find((item: { readAt: string | null }) => !item.readAt);
+      await request(app.getHttpServer()).patch(`/notifications/${unread.id}/read`)
+        .set('Authorization', `Bearer ${customerToken}`).expect(200);
+    });
+
+    it('allows cancellation before 24 hours and rejects it inside the window for owner and customer alike', async () => {
+      const create = (startDate: Date, endDate: Date) => request(app.getHttpServer()).post('/bookings')
+        .set('Authorization', `Bearer ${customerToken}`).send({ serviceId, petId, startDate, endDate });
+      const far = await create(new Date(Date.now() + 72 * 3600000), new Date(Date.now() + 73 * 3600000)).expect(201);
+      await request(app.getHttpServer()).patch(`/bookings/${far.body.id}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`).expect(200);
+      const near = await create(new Date(Date.now() + 2 * 3600000), new Date(Date.now() + 3 * 3600000)).expect(201);
+      await request(app.getHttpServer()).patch(`/bookings/${near.body.id}/cancel`)
+        .set('Authorization', `Bearer ${ownerToken}`).expect(400);
     });
   });
 });

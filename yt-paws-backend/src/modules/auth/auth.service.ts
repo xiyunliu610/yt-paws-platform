@@ -237,6 +237,7 @@ export class AuthService {
       role: user.role,
       isActive: user.isActive,
       mustChangePassword: user.mustChangePassword,
+      maxConcurrentBookings: user.maxConcurrentBookings,
     }));
   }
 
@@ -296,6 +297,22 @@ export class AuthService {
       role: user.role,
       isActive: user.isActive,
       mustChangePassword: user.mustChangePassword,
+      maxConcurrentBookings: user.maxConcurrentBookings,
+    };
+  }
+
+  async updateStaffCapacity(requester: RequestingUser, targetId: string, maxConcurrentBookings: number | null) {
+    if (!requester.businessId) throw new BadRequestException('Your account is not associated with a business');
+    const target = await this.prisma.user.findUnique({ where: { id: targetId } });
+    if (!target || target.businessId !== requester.businessId ||
+      (target.role !== Role.staff && target.role !== Role.owner && target.role !== Role.admin)) {
+      throw new ForbiddenException('You do not have access to this staff account');
+    }
+    const user = await this.prisma.user.update({ where: { id: targetId }, data: { maxConcurrentBookings } });
+    return {
+      id: user.id, email: user.email, name: user.name, phone: user.phone, role: user.role,
+      isActive: user.isActive, mustChangePassword: user.mustChangePassword,
+      maxConcurrentBookings: user.maxConcurrentBookings,
     };
   }
 

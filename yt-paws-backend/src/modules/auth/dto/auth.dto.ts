@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsOptional, IsString, MinLength, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsInt, IsOptional, IsString, Max, Min, MinLength, MaxLength } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -79,6 +79,14 @@ export class CreateStaffDto {
 export class UpdateStaffStatusDto {
   @IsBoolean()
   isActive: boolean;
+}
+
+export class UpdateStaffCapacityDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  maxConcurrentBookings: number | null;
 }
 
 export class ForgotPasswordDto {

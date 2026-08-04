@@ -29,6 +29,7 @@ const StaffManagementScreen = () => {
   const [phone, setPhone] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [capacityDrafts, setCapacityDrafts] = useState<Record<string, string>>({});
 
   const loadStaff = useCallback(() => {
     if (!token) return;
@@ -83,6 +84,24 @@ const StaffManagementScreen = () => {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleCapacitySave = async (member: StaffMember) => {
+    if (!token) return;
+    const raw = capacityDrafts[member.id] ?? (member.maxConcurrentBookings ? String(member.maxConcurrentBookings) : '');
+    const value = raw.trim() ? Number(raw) : null;
+    if (value !== null && (!Number.isInteger(value) || value <= 0)) {
+      Alert.alert(t.staffManagement.errorTitle, t.staffManagement.invalidCapacity);
+      return;
+    }
+    setUpdatingId(member.id);
+    try {
+      const updated = await staffApi.updateCapacity(token, member.id, value);
+      setStaff((current) => current?.map((item) => (item.id === member.id ? updated : item)) ?? null);
+      setCapacityDrafts((current) => ({ ...current, [member.id]: value ? String(value) : '' }));
+    } catch (error) {
+      Alert.alert(t.staffManagement.statusFailedTitle, error instanceof ApiError ? error.message : t.staffManagement.statusFailedMessage);
+    } finally { setUpdatingId(null); }
   };
 
   const roleLabel = (role: string) =>
@@ -162,6 +181,7 @@ const StaffManagementScreen = () => {
           ) : (
             staff.map((member) => (
               <View key={member.id} style={styles.staffCard}>
+                <View style={styles.staffTopRow}>
                 <View style={styles.staffIcon}>
                   <Text style={styles.staffIconText}>{(member.name ?? member.email).charAt(0).toUpperCase()}</Text>
                 </View>
@@ -179,6 +199,19 @@ const StaffManagementScreen = () => {
                   disabled={member.id === user?.id || updatingId !== null}
                   trackColor={{ false: '#D0D0D0', true: '#2C4A3E' }}
                 />
+                </View>
+                <View style={styles.capacityRow}>
+                  <TextInput
+                    style={styles.capacityInput}
+                    value={capacityDrafts[member.id] ?? (member.maxConcurrentBookings ? String(member.maxConcurrentBookings) : '')}
+                    onChangeText={(value) => setCapacityDrafts((current) => ({ ...current, [member.id]: value }))}
+                    placeholder={t.staffManagement.unlimited}
+                    keyboardType="number-pad"
+                  />
+                  <TouchableOpacity onPress={() => handleCapacitySave(member)} disabled={updatingId !== null}>
+                    <Text style={styles.capacitySave}>{t.staffManagement.saveCapacity}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           )}
@@ -199,6 +232,9 @@ const styles = StyleSheet.create({
   content: {
     padding: 24,
   },
+  capacityRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  capacityInput: { flex: 1, backgroundColor: '#F7F7F7', borderRadius: 8, padding: 8 },
+  capacitySave: { color: '#2C4A3E', fontWeight: '700' },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -256,8 +292,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -265,6 +299,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  staffTopRow: { flexDirection: 'row', alignItems: 'center' },
   staffIcon: {
     width: 44,
     height: 44,

@@ -15,6 +15,7 @@ import {
   RegisterDto,
   ResetPasswordDto,
   UpdateStaffStatusDto,
+  UpdateStaffCapacityDto,
 } from './dto/auth.dto';
 
 @Controller('auth')
@@ -87,6 +88,17 @@ export class AuthController {
     @Body() body: UpdateStaffStatusDto,
   ) {
     return this.authService.updateStaffStatus(req.user, id, body.isActive);
+  }
+
+  @Patch('staff/:id/capacity')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  updateStaffCapacity(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateStaffCapacityDto,
+  ) {
+    return this.authService.updateStaffCapacity(req.user, id, body.maxConcurrentBookings ?? null);
   }
 
   private clientIp(req: Request) {

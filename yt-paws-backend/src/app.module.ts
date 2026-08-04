@@ -11,6 +11,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PublicModule } from './modules/public/public.module';
 import { MediaModule } from './modules/media/media.module';
+import { OperationsModule } from './modules/operations/operations.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { MediaModule } from './modules/media/media.module';
     NotificationsModule,
     PublicModule,
     MediaModule,
+    OperationsModule,
   ],
 })
 export class AppModule {}

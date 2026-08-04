@@ -12,6 +12,7 @@ const REQUIRED_PRODUCTION_VARIABLES = [
   'OBJECT_STORAGE_PUBLIC_URL',
   'OBJECT_STORAGE_ACCESS_KEY_ID',
   'OBJECT_STORAGE_SECRET_ACCESS_KEY',
+  'ALERT_WEBHOOK_URL',
 ] as const;
 
 export function validateProductionConfig(env: NodeJS.ProcessEnv) {

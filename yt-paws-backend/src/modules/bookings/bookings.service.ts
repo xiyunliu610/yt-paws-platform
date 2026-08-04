@@ -88,7 +88,7 @@ export class BookingsService {
       throw new ForbiddenException('You can only book for your own pet');
     }
 
-    const service = await this.prisma.service.findUnique({ where: { id: data.serviceId } });
+    const service = await this.prisma.service.findUnique({ where: { id: data.serviceId }, include: { business: true } });
     if (!service || !service.isActive) {
       throw new NotFoundException('Service not available');
     }
@@ -114,6 +114,20 @@ export class BookingsService {
           });
           if (conflict) {
             throw new ConflictException('This pet already has a booking during that time');
+          }
+
+          const activeOverlap = {
+            status: { in: [BookingStatus.pending, BookingStatus.confirmed, BookingStatus.in_progress] },
+            startDate: { lt: end },
+            endDate: { gt: start },
+          };
+          if (service.business.maxConcurrentBookings !== null) {
+            const count = await tx.booking.count({ where: { ...activeOverlap, businessId: service.businessId } });
+            if (count >= service.business.maxConcurrentBookings) throw new ConflictException('The business is fully booked during this time');
+          }
+          if (service.maxConcurrentBookings !== null) {
+            const count = await tx.booking.count({ where: { ...activeOverlap, serviceId: service.id } });
+            if (count >= service.maxConcurrentBookings) throw new ConflictException('This service is fully booked during this time');
           }
 
           // Snapshot the service's current price/pricingUnit onto the
@@ -164,6 +178,9 @@ export class BookingsService {
 
     if (booking.status !== BookingStatus.pending && booking.status !== BookingStatus.confirmed) {
       throw new BadRequestException(`Booking cannot be cancelled once it is ${booking.status}`);
+    }
+    if (Date.now() >= booking.startDate.getTime() - 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Bookings cannot be cancelled within 24 hours of the service start time');
     }
 
     const updated = await this.prisma.booking.update({
@@ -272,9 +289,29 @@ export class BookingsService {
       throw new BadRequestException('That user is not a staff member of this business');
     }
 
-    return this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { assignedStaffId: staffId },
-    });
+    const assign = () => this.prisma.$transaction(async (tx) => {
+      if (staff.maxConcurrentBookings !== null) {
+        const overlapping = await tx.booking.count({
+          where: {
+            id: { not: bookingId },
+            assignedStaffId: staffId,
+            status: { in: [BookingStatus.pending, BookingStatus.confirmed, BookingStatus.in_progress] },
+            startDate: { lt: booking.endDate },
+            endDate: { gt: booking.startDate },
+          },
+        });
+        if (overlapping >= staff.maxConcurrentBookings) {
+          throw new ConflictException('This staff member is at capacity during this time');
+        }
+      }
+      return tx.booking.update({ where: { id: bookingId }, data: { assignedStaffId: staffId } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    try {
+      return await assign();
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') return assign();
+      throw error;
+    }
   }
 }

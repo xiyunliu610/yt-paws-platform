@@ -75,6 +75,7 @@ model Business {
   // API integration in V1, so this is just a URL the owner sets, not
   // something the platform generates.
   wechatQrCodeUrl String?
+  maxConcurrentBookings Int?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   staff           User[]
@@ -104,6 +105,7 @@ model User {
   mustChangePassword Boolean      @default(false)
   failedLoginAttempts Int         @default(0)
   lockedUntil       DateTime?
+  maxConcurrentBookings Int?
   deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -189,6 +191,7 @@ model Service {
   // existing booking owes.
   pricingUnit     PricingUnit @default(flat)
   durationMinutes Int?
+  maxConcurrentBookings Int?
   isActive        Boolean     @default(true)
   bookings        Booking[]
   createdAt       DateTime    @default(now())

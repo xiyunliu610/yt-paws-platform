@@ -15,6 +15,7 @@ interface UpdateBusinessInput {
   // through to here.
   region?: string | null;
   wechatQrCodeUrl?: string | null;
+  maxConcurrentBookings?: number | null;
 }
 
 @Injectable()
@@ -44,7 +45,7 @@ export class BusinessesService {
 
     return this.prisma.business.update({
       where: { id: user.businessId },
-      data: { name: data.name, region: data.region, wechatQrCodeUrl: data.wechatQrCodeUrl },
+      data: { name: data.name, region: data.region, wechatQrCodeUrl: data.wechatQrCodeUrl, maxConcurrentBookings: data.maxConcurrentBookings },
     });
   }
 }

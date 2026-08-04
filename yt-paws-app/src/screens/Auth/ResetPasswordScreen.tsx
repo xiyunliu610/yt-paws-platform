@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ApiError, authApi } from '../../api/client';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 export default function ResetPasswordScreen() {
   const navigation = useNavigation();
+  const { t } = useLanguage();
   const route = useRoute<any>();
   const token = typeof route.params?.token === 'string' ? route.params.token : '';
   const [password, setPassword] = useState('');
@@ -12,27 +14,27 @@ export default function ResetPasswordScreen() {
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
-    if (!token) return Alert.alert('Invalid link', 'This password reset link is incomplete.');
-    if (password !== confirm) return Alert.alert('Passwords do not match');
+    if (!token) return Alert.alert(t.resetPassword.invalidTitle, t.resetPassword.invalidMessage);
+    if (password !== confirm) return Alert.alert(t.resetPassword.mismatch);
     setLoading(true);
     try {
       await authApi.resetPassword(token, password);
-      Alert.alert('Password reset', 'Sign in with your new password.', [
-        { text: 'OK', onPress: () => navigation.navigate('Login' as never) },
+      Alert.alert(t.resetPassword.successTitle, t.resetPassword.successMessage, [
+        { text: t.resetPassword.ok, onPress: () => navigation.navigate('Login' as never) },
       ]);
     } catch (error) {
-      Alert.alert('Could not reset password', error instanceof ApiError ? error.message : 'Please request a new link.');
+      Alert.alert(t.resetPassword.errorTitle, error instanceof ApiError ? error.message : t.resetPassword.errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   return <View style={styles.container}>
-    <Text style={styles.title}>Choose a new password</Text>
-    <Text style={styles.help}>Use at least 8 characters with letters and numbers.</Text>
-    <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="New password" autoComplete="new-password" />
-    <TextInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry placeholder="Confirm new password" autoComplete="new-password" />
-    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Reset password</Text>}</TouchableOpacity>
+    <Text style={styles.title}>{t.resetPassword.chooseTitle}</Text>
+    <Text style={styles.help}>{t.resetPassword.help}</Text>
+    <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder={t.resetPassword.newPassword} autoComplete="new-password" />
+    <TextInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry placeholder={t.resetPassword.confirmPassword} autoComplete="new-password" />
+    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t.resetPassword.submit}</Text>}</TouchableOpacity>
   </View>;
 }
 

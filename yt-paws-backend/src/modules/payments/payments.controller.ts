@@ -6,10 +6,11 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import { InitiateStripeDto, RefundPaymentDto } from './dto/payment.dto';
+import { OperationalAlertsService } from '../operations/operational-alerts.service';
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private paymentsService: PaymentsService) {}
+  constructor(private paymentsService: PaymentsService, private alerts: OperationalAlertsService) {}
 
   // Must be declared before 'stripe/:bookingId' — Nest/Express match routes
   // in registration order, so the parameterized route would otherwise treat
@@ -18,11 +19,16 @@ export class PaymentsController {
   // Called directly by Stripe's servers, not the app, so there's no JWT to
   // check here — request authenticity comes from the signature instead.
   @Post('stripe/webhook')
-  handleStripeWebhook(
+  async handleStripeWebhook(
     @Req() req: Request & { rawBody: Buffer },
     @Headers('stripe-signature') signature: string,
   ) {
-    return this.paymentsService.handleStripeWebhook(req.rawBody, signature);
+    try {
+      return await this.paymentsService.handleStripeWebhook(req.rawBody, signature);
+    } catch (error) {
+      await this.alerts.send('stripe_webhook_failed', error instanceof Error ? error.message : 'Unknown Stripe webhook error');
+      throw error;
+    }
   }
 
   @Post('stripe/:bookingId')

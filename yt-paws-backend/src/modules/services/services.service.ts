@@ -14,6 +14,7 @@ interface CreateServiceInput {
   price: number;
   pricingUnit?: PricingUnit;
   durationMinutes?: number;
+  maxConcurrentBookings?: number | null;
 }
 
 interface UpdateServiceInput extends Partial<CreateServiceInput> {
@@ -74,6 +75,7 @@ export class ServicesService {
         price: data.price,
         pricingUnit: data.pricingUnit,
         durationMinutes: data.durationMinutes,
+        maxConcurrentBookings: data.maxConcurrentBookings,
       },
     });
   }

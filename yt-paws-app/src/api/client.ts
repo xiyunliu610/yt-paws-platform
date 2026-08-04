@@ -157,6 +157,7 @@ export interface Service {
   // date range (e.g. boarding).
   pricingUnit: 'flat' | 'per_day';
   durationMinutes: number | null;
+  maxConcurrentBookings: number | null;
   isActive: boolean;
 }
 
@@ -166,6 +167,7 @@ export interface ServiceInput {
   price: number;
   pricingUnit?: 'flat' | 'per_day';
   durationMinutes?: number;
+  maxConcurrentBookings?: number | null;
 }
 
 export interface ServiceUpdateInput extends Partial<ServiceInput> {
@@ -407,6 +409,7 @@ export interface StaffMember {
   role: string;
   isActive: boolean;
   mustChangePassword: boolean;
+  maxConcurrentBookings: number | null;
 }
 
 export interface Business {
@@ -414,6 +417,7 @@ export interface Business {
   name: string;
   region: string | null;
   wechatQrCodeUrl: string | null;
+  maxConcurrentBookings: number | null;
 }
 
 export interface BusinessUpdateInput {
@@ -421,6 +425,7 @@ export interface BusinessUpdateInput {
   // null clears the field; undefined/omitted leaves it unchanged.
   region?: string | null;
   wechatQrCodeUrl?: string | null;
+  maxConcurrentBookings?: number | null;
 }
 
 export const businessesApi = {
@@ -446,6 +451,13 @@ export const staffApi = {
     request<StaffMember>(
       `/auth/staff/${staffId}/status`,
       { method: 'PATCH', body: JSON.stringify({ isActive }) },
+      token,
+    ),
+
+  updateCapacity: (token: string, staffId: string, maxConcurrentBookings: number | null) =>
+    request<StaffMember>(
+      `/auth/staff/${staffId}/capacity`,
+      { method: 'PATCH', body: JSON.stringify({ maxConcurrentBookings }) },
       token,
     ),
 };

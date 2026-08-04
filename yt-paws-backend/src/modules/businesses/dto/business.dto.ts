@@ -1,7 +1,13 @@
-import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { MEDIA_URI_PATTERN, MAX_MEDIA_URI_LENGTH } from '../../../common/validation/media-uri';
 
 export class UpdateBusinessDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  maxConcurrentBookings?: number | null;
+
   @IsOptional()
   @IsString()
   @MinLength(1)

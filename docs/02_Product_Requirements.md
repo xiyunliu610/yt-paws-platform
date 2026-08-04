@@ -173,7 +173,7 @@ Corresponding backend modules: `services`, `bookings`
 - Given the user has no pet profiles, When they attempt to create a booking, Then the system prompts "Please add a pet first" and guides them to do so
 - Given the selected time slot conflicts with an existing booking (e.g. the business's capacity is full), When submitted, Then the system flags the conflict and blocks creation
 
-*Already implemented: `POST /bookings`, wired into `BookingScreen` (including an inline "add a pet" flow when the customer has no pet profiles yet). Conflict detection is scoped to the same pet's own overlapping bookings only — there's no `capacity` field on `Service`/`Business` yet, so business-wide capacity limits aren't enforced.*
+*Implemented: `POST /bookings` is wired into `BookingScreen`, including inline pet creation. Conflict checks run in a Serializable transaction and cover the same pet plus optional business-wide and per-service concurrent limits. `Business.maxConcurrentBookings` and `Service.maxConcurrentBookings` default to null (unlimited) and are owner-configurable. One booking represents one pet, so a service limit covers boarding pet count and grooming time-slot concurrency without hard-coding service names. Staff capacity is checked separately when an owner assigns a booking.*
 
 ### US-03.3 View Booking Status
 > As a logged-in user, I want to view my booking history and current status, so that I understand the progress of my service.
@@ -191,7 +191,7 @@ Corresponding backend modules: `services`, `bookings`
 - Given a booking's status is "Pending Confirmation" or "Confirmed" within the cancellation policy window, When the user taps cancel, Then the system updates the status to "Cancelled" and releases the time slot
 - Given a booking has passed the non-cancellable time window (exact rule to be confirmed with the business), When the user attempts to cancel, Then the system shows that cancellation is not allowed and why
 
-*Already implemented: `PATCH /bookings/:id/cancel` (allowed for the booking's own customer, or the business's owner/admin; only while `pending`/`confirmed`) is wired into `BookingDetailScreen` as a cancel button, shown to customers and to owner/admin (hidden for staff, who have no cancel permission on the backend). The non-cancellable time window is still not implemented, consistent with the AC above marking the exact rule as unconfirmed.*
+*Implemented: `PATCH /bookings/:id/cancel` is available to the booking customer and owner/admin while pending/confirmed. Both customer and business follow the same policy: cancellation is rejected from 24 hours before the service start time onward. Staff cannot cancel.*
 
 ### US-03.5 Business Owner Creates a Staff Account
 > As a Business Owner, I want to create an account for a staff member under my business, so that I can start assigning them bookings.
@@ -396,3 +396,4 @@ Profile provides an in-app bilingual Help Center with keyword search, topic filt
 | 2026-08-02 | v0.16 | Added production-operability acceptance baseline in code/CI: strict secret/provider validation, Docker packaging, automatic Prisma migration, database readiness and process liveness probes, graceful shutdown and production image build verification | Xiyun Liu |
 | 2026-08-02 | v0.17 | Aligned V1 daily reports with the shipped photo-only implementation (maximum three JPEG/PNG/WebP images, 5 MB each; video deferred), removed unfinished social/profile/favorites/coupon surfaces from the review build, and linked Profile support actions to the public support page | Xiyun Liu |
 | 2026-08-03 | v0.18 | Added the zero-cost V1 bilingual Help Center: local curated FAQ search and category filtering, with specific/unmatched questions routed to human support; paid AI behavior remains outside V1 | Xiyun Liu |
+| 2026-08-04 | v0.19 | Finalized booking capacity/cancellation policy: owner-configurable business, service and staff concurrent limits default to unlimited; per-service overlap covers boarding pet count and grooming slots; customers and owners share a 24-hour cancellation cutoff. Added production alerting and expanded service/pet/report/notification/booking e2e coverage | Xiyun Liu |

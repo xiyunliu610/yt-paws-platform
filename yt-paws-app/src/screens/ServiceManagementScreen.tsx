@@ -21,6 +21,7 @@ interface ServiceFormState {
   price: string;
   pricingUnit: 'flat' | 'per_day';
   durationMinutes: string;
+  capacity: string;
 }
 
 const EMPTY_FORM: ServiceFormState = {
@@ -29,6 +30,7 @@ const EMPTY_FORM: ServiceFormState = {
   price: '',
   pricingUnit: 'flat',
   durationMinutes: '',
+  capacity: '',
 };
 
 const ServiceManagementScreen = () => {
@@ -73,12 +75,15 @@ const ServiceManagementScreen = () => {
     if (!form.name.trim() || price === null) return null;
     const durationMinutes = form.durationMinutes.trim() ? Number(form.durationMinutes) : undefined;
     if (durationMinutes !== undefined && (Number.isNaN(durationMinutes) || durationMinutes <= 0)) return null;
+    const maxConcurrentBookings = form.capacity.trim() ? Number(form.capacity) : null;
+    if (maxConcurrentBookings !== null && (!Number.isInteger(maxConcurrentBookings) || maxConcurrentBookings <= 0)) return null;
     return {
       name: form.name.trim(),
       description: form.description.trim() || undefined,
       price,
       pricingUnit: form.pricingUnit,
       durationMinutes,
+      maxConcurrentBookings,
     };
   };
 
@@ -112,6 +117,7 @@ const ServiceManagementScreen = () => {
       price: String(service.price),
       pricingUnit: service.pricingUnit,
       durationMinutes: service.durationMinutes ? String(service.durationMinutes) : '',
+      capacity: service.maxConcurrentBookings ? String(service.maxConcurrentBookings) : '',
     });
   };
 
@@ -162,6 +168,14 @@ const ServiceManagementScreen = () => {
         placeholder={t.serviceManagement.namePlaceholder}
         value={form.name}
         onChangeText={(name) => setForm((prev) => ({ ...prev, name }))}
+        editable={!disabled}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder={t.serviceManagement.capacityPlaceholder}
+        value={form.capacity}
+        onChangeText={(capacity) => setForm((prev) => ({ ...prev, capacity }))}
+        keyboardType="number-pad"
         editable={!disabled}
       />
       <TextInput

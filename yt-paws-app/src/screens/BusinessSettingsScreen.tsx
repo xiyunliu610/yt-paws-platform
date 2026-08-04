@@ -25,6 +25,7 @@ const BusinessSettingsScreen = () => {
   const [name, setName] = useState('');
   const [region, setRegion] = useState('');
   const [wechatQrCodeUrl, setWechatQrCodeUrl] = useState<string | null>(null);
+  const [capacity, setCapacity] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const loadBusiness = useCallback(() => {
@@ -36,6 +37,7 @@ const BusinessSettingsScreen = () => {
         setName(result.name);
         setRegion(result.region ?? '');
         setWechatQrCodeUrl(result.wechatQrCodeUrl);
+        setCapacity(result.maxConcurrentBookings ? String(result.maxConcurrentBookings) : '');
         setFailed(false);
       })
       .catch(() => setFailed(true));
@@ -80,6 +82,11 @@ const BusinessSettingsScreen = () => {
 
     setIsSaving(true);
     try {
+      const parsedCapacity = capacity.trim() ? Number(capacity) : null;
+      if (parsedCapacity !== null && (!Number.isInteger(parsedCapacity) || parsedCapacity <= 0)) {
+        Alert.alert(t.businessSettings.errorTitle, t.businessSettings.invalidCapacity);
+        return;
+      }
       const storedQrCodeUrl = wechatQrCodeUrl && !wechatQrCodeUrl.startsWith('https://')
         ? await mediaApi.upload(token, wechatQrCodeUrl, 'wechat-qr')
         : wechatQrCodeUrl;
@@ -89,6 +96,7 @@ const BusinessSettingsScreen = () => {
         // column instead of the update silently leaving the old value.
         region: region.trim() || null,
         wechatQrCodeUrl: storedQrCodeUrl,
+        maxConcurrentBookings: parsedCapacity,
       });
       setBusiness(updated);
       Alert.alert(t.businessSettings.savedTitle, t.businessSettings.savedMessage);
@@ -132,6 +140,17 @@ const BusinessSettingsScreen = () => {
             editable={!isSaving}
             multiline
           />
+
+          <Text style={styles.label}>{t.businessSettings.capacityLabel}</Text>
+          <TextInput
+            style={styles.input}
+            value={capacity}
+            onChangeText={setCapacity}
+            placeholder={t.businessSettings.capacityPlaceholder}
+            keyboardType="number-pad"
+            editable={!isSaving}
+          />
+          <Text style={styles.helperTextInline}>{t.businessSettings.capacityHint}</Text>
 
           <Text style={styles.label}>{t.businessSettings.qrCodeLabel}</Text>
           <TouchableOpacity style={styles.qrCodePicker} onPress={pickQrCode} disabled={isSaving}>
@@ -185,6 +204,7 @@ const styles = StyleSheet.create({
     color: '#666',
     padding: 24,
   },
+  helperTextInline: { marginTop: 6, color: '#667', fontSize: 13 },
   label: {
     fontSize: 14,
     fontWeight: '600',

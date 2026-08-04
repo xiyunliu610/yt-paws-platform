@@ -111,12 +111,12 @@ const Navigation = () => {
           name="Register"
           component={RegisterScreen}
           options={{
-            title: 'Create Account',
+            title: t.register.title,
             headerShown: true,
           }}
         />
 
-        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ title: 'Reset Password' }} />
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ title: t.resetPassword.title }} />
 
         <Stack.Screen
           name="Home"
@@ -132,7 +132,7 @@ const Navigation = () => {
           name="Booking"
           component={BookingScreen}
           options={{
-            title: 'Book a Service',
+            title: t.booking.headerTitle,
             headerShown: true,
           }}
         />
@@ -141,7 +141,7 @@ const Navigation = () => {
           name="Profile"
           component={ProfileScreen}
           options={{
-            title: 'Profile',
+            title: t.home.navProfile,
             headerShown: true,
           }}
         />
@@ -150,7 +150,7 @@ const Navigation = () => {
           name="Report"
           component={ReportScreen}
           options={{
-            title: 'My Reports',
+            title: t.report.headerTitle,
             headerShown: true,
           }}
         />
@@ -159,7 +159,7 @@ const Navigation = () => {
           name="MyBookings"
           component={MyBookingsScreen}
           options={{
-            title: 'My Bookings',
+            title: t.myBookings.headerTitle,
             headerShown: true,
           }}
         />
@@ -168,7 +168,7 @@ const Navigation = () => {
           name="BookingDetail"
           component={BookingDetailScreen}
           options={{
-            title: 'Booking Details',
+            title: t.myBookings.detailTitle,
             headerShown: true,
           }}
         />
@@ -177,7 +177,7 @@ const Navigation = () => {
           name="PetDetail"
           component={PetDetailScreen}
           options={{
-            title: 'Pet Details',
+            title: t.petDetail.headerTitle,
             headerShown: true,
           }}
         />
@@ -186,7 +186,7 @@ const Navigation = () => {
           name="Payment"
           component={PaymentScreen}
           options={{
-            title: 'Payment',
+            title: t.payment.headerTitle,
             headerShown: true,
           }}
         />
@@ -195,7 +195,7 @@ const Navigation = () => {
           name="PaymentHistory"
           component={PaymentHistoryScreen}
           options={{
-            title: 'Payment History',
+            title: t.paymentHistory.headerTitle,
             headerShown: true,
           }}
         />
@@ -204,7 +204,7 @@ const Navigation = () => {
           name="ReportCompose"
           component={ReportComposeScreen}
           options={{
-            title: 'Add Daily Report',
+            title: t.reportCompose.headerTitle,
             headerShown: true,
           }}
         />
@@ -213,7 +213,7 @@ const Navigation = () => {
           name="StaffManagement"
           component={StaffManagementScreen}
           options={{
-            title: 'Manage Staff',
+            title: t.staffManagement.headerTitle,
             headerShown: true,
           }}
         />
@@ -222,7 +222,7 @@ const Navigation = () => {
           name="Notifications"
           component={NotificationsScreen}
           options={{
-            title: 'Notifications',
+            title: t.notifications.headerTitle,
             headerShown: true,
           }}
         />
@@ -231,7 +231,7 @@ const Navigation = () => {
           name="PaymentVerification"
           component={PaymentVerificationScreen}
           options={{
-            title: 'Payment Verification',
+            title: t.paymentVerification.headerTitle,
             headerShown: true,
           }}
         />
@@ -240,7 +240,7 @@ const Navigation = () => {
           name="ServiceManagement"
           component={ServiceManagementScreen}
           options={{
-            title: 'Manage Services',
+            title: t.serviceManagement.headerTitle,
             headerShown: true,
           }}
         />
@@ -249,7 +249,7 @@ const Navigation = () => {
           name="BusinessSettings"
           component={BusinessSettingsScreen}
           options={{
-            title: 'Business Settings',
+            title: t.businessSettings.headerTitle,
             headerShown: true,
           }}
         />

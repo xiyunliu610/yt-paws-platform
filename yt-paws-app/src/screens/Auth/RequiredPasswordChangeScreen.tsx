@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ApiError, useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../i18n/LanguageContext';
 
 export default function RequiredPasswordChangeScreen() {
   const { changePassword, logout } = useAuth();
+  const { t } = useLanguage();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,17 +15,17 @@ export default function RequiredPasswordChangeScreen() {
     try {
       await changePassword(currentPassword, newPassword);
     } catch (error) {
-      Alert.alert('Could not change password', error instanceof ApiError ? error.message : 'Please try again.');
+      Alert.alert(t.requiredPasswordChange.errorTitle, error instanceof ApiError ? error.message : t.requiredPasswordChange.errorMessage);
     } finally { setLoading(false); }
   };
 
   return <View style={styles.container}>
-    <Text style={styles.title}>Change your temporary password</Text>
-    <Text style={styles.help}>You must choose your own password before accessing business information.</Text>
-    <TextInput style={styles.input} value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry placeholder="Temporary password" />
-    <TextInput style={styles.input} value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password" autoComplete="new-password" />
-    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Change password</Text>}</TouchableOpacity>
-    <TouchableOpacity onPress={logout} disabled={loading}><Text style={styles.logout}>Sign out</Text></TouchableOpacity>
+    <Text style={styles.title}>{t.requiredPasswordChange.title}</Text>
+    <Text style={styles.help}>{t.requiredPasswordChange.help}</Text>
+    <TextInput style={styles.input} value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry placeholder={t.requiredPasswordChange.temporaryPassword} />
+    <TextInput style={styles.input} value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder={t.requiredPasswordChange.newPassword} autoComplete="new-password" />
+    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t.requiredPasswordChange.submit}</Text>}</TouchableOpacity>
+    <TouchableOpacity onPress={logout} disabled={loading}><Text style={styles.logout}>{t.requiredPasswordChange.signOut}</Text></TouchableOpacity>
   </View>;
 }
 
