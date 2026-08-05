@@ -12,6 +12,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { bookingsApi, Booking } from '../api/client';
+import { formatLocalizedDate } from '../i18n/dateFormat';
 
 type RootStackParamList = {
   BookingDetail: { booking: Booking };
@@ -30,7 +31,7 @@ const STATUS_COLORS: Record<string, string> = {
 const MyBookingsScreen = () => {
   const navigation = useNavigation<Navigation>();
   const { token } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [bookings, setBookings] = useState<Booking[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -65,14 +66,6 @@ const MyBookingsScreen = () => {
     }
   };
 
-  const formatDate = (isoDate: string) => {
-    const date = new Date(isoDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -98,7 +91,7 @@ const MyBookingsScreen = () => {
                 </View>
                 <Text style={styles.petName}>{booking.pet?.name}</Text>
                 <Text style={styles.dateRange}>
-                  {formatDate(booking.startDate)} → {formatDate(booking.endDate)}
+                  {formatLocalizedDate(booking.startDate, language)} → {formatLocalizedDate(booking.endDate, language)}
                 </Text>
               </TouchableOpacity>
             ))

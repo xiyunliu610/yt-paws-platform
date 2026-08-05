@@ -160,9 +160,8 @@ export class BookingsService {
   }
 
   // US-03.4: the customer who made the booking, or the business managing it,
-  // can cancel while it's still pending/confirmed. The exact non-cancellable
-  // time window is still TBD with the business (see PRD US-03.4 note), so
-  // only the status check is enforced for now.
+  // can cancel while it is pending/confirmed and at least 24 hours remain
+  // before the service starts. The same cutoff applies to managers.
   async cancel(user: RequestingUser, bookingId: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) {

@@ -5,6 +5,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { bookingsApi, notificationsApi, Booking } from '../api/client';
+import { formatLocalizedDateTime } from '../i18n/dateFormat';
 
 type RootStackParamList = {
   BookingDetail: { booking: Booking };
@@ -18,7 +19,7 @@ type Navigation = StackNavigationProp<RootStackParamList>;
 const BusinessHomeScreen = () => {
   const navigation = useNavigation<Navigation>();
   const { user, token } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const userName = user?.name ?? 'there';
 
   const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
@@ -46,15 +47,7 @@ const BusinessHomeScreen = () => {
     }, [token]),
   );
 
-  const formatDateTime = (isoDate: string) => {
-    const date = new Date(isoDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} · ${hours}:${minutes}`;
-  };
+  const formatDateTime = (isoDate: string) => formatLocalizedDateTime(isoDate, language);
 
   const goToBooking = (booking: Booking) => navigation.navigate('BookingDetail', { booking });
 

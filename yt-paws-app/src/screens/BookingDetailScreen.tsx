@@ -14,6 +14,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
+import { formatLocalizedDateTime } from '../i18n/dateFormat';
 import {
   ApiError,
   bookingsApi,
@@ -47,7 +48,7 @@ const BookingDetailScreen = () => {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<BookingDetailRouteProp>();
   const { token, user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [booking, setBooking] = useState(route.params.booking);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -109,15 +110,7 @@ const BookingDetailScreen = () => {
     staffApi.list(token).then(setStaffList).catch(() => {});
   }, [token, isManager]);
 
-  const formatDate = (isoDate: string) => {
-    const date = new Date(isoDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  };
+  const formatDate = (isoDate: string) => formatLocalizedDateTime(isoDate, language);
 
   const statusLabel = (status: string) => {
     switch (status) {

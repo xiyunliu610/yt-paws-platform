@@ -4,10 +4,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { notificationsApi, AppNotification } from '../api/client';
+import { formatLocalizedDateTime } from '../i18n/dateFormat';
 
 const NotificationsScreen = () => {
   const { token } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [notifications, setNotifications] = useState<AppNotification[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -24,16 +25,6 @@ const NotificationsScreen = () => {
         .catch(() => setFailed(true));
     }, [token]),
   );
-
-  const formatDate = (isoDate: string) => {
-    const date = new Date(isoDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  };
 
   const handlePress = async (notification: AppNotification) => {
     if (!token || notification.readAt) return;
@@ -70,7 +61,7 @@ const NotificationsScreen = () => {
                   <Text style={styles.title}>{notification.title}</Text>
                 </View>
                 <Text style={styles.body}>{notification.body}</Text>
-                <Text style={styles.date}>{formatDate(notification.createdAt)}</Text>
+                <Text style={styles.date}>{formatLocalizedDateTime(notification.createdAt, language)}</Text>
               </TouchableOpacity>
             ))
           )}

@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, paymentsApi, Payment } from '../api/client';
+import { formatLocalizedDate } from '../i18n/dateFormat';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#C9A227',
@@ -26,7 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const PaymentVerificationScreen = () => {
   const { token } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [payments, setPayments] = useState<Payment[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -78,14 +79,6 @@ const PaymentVerificationScreen = () => {
       default:
         return status;
     }
-  };
-
-  const formatDate = (isoDate: string) => {
-    const date = new Date(isoDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
   };
 
   const handleVerify = (payment: Payment) => {
@@ -204,7 +197,7 @@ const PaymentVerificationScreen = () => {
                 </View>
                 <Text style={styles.meta}>
                   {payment.booking?.service?.name}
-                  {payment.booking ? ` · ${formatDate(payment.booking.startDate)}` : ''}
+                  {payment.booking ? ` · ${formatLocalizedDate(payment.booking.startDate, language)}` : ''}
                 </Text>
                 <View style={styles.amountRow}>
                   <Text style={styles.amount}>NZD {payment.amount.toFixed(2)}</Text>
