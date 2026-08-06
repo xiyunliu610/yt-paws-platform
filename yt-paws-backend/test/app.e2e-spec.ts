@@ -27,6 +27,11 @@ describe('Application bootstrap (e2e)', () => {
     expect(response.text).toContain('Y&amp;T Paws Support');
   });
 
+  it('exposes liveness and database readiness probes', async () => {
+    await request(app.getHttpServer()).get('/health/live').expect(200, { status: 'ok' });
+    await request(app.getHttpServer()).get('/health/ready').expect(200, { status: 'ok', database: 'reachable' });
+  });
+
   afterEach(async () => {
     await app.close();
   });

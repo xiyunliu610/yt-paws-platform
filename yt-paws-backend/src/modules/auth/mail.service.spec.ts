@@ -22,11 +22,13 @@ describe('MailService', () => {
   });
 
   it('fails closed in production when mail is unconfigured or rejected', async () => {
+    alerts.send.mockClear();
     const missing = new MailService({ get: (key: string) => key === 'NODE_ENV' ? 'production' : undefined } as ConfigService, alerts as any);
     await expect(missing.sendPasswordReset('a@example.com', 'https://example.com')).rejects.toBeInstanceOf(ServiceUnavailableException);
 
-    global.fetch = jest.fn().mockResolvedValue({ ok: false }) as typeof fetch;
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 503 }) as typeof fetch;
     const rejected = new MailService({ get: (key: string) => ({ RESEND_API_KEY: 're_test', MAIL_FROM: 'from@example.com', NODE_ENV: 'production' })[key] } as ConfigService, alerts as any);
     await expect(rejected.sendPasswordReset('a@example.com', 'https://example.com')).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(alerts.send).toHaveBeenCalledWith('email_delivery_failed', expect.any(String), { status: 503 });
   });
 });

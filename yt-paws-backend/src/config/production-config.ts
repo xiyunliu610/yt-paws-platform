@@ -26,6 +26,9 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv) {
   if (!env.OBJECT_STORAGE_PUBLIC_URL!.startsWith('https://')) {
     throw new Error('OBJECT_STORAGE_PUBLIC_URL must use HTTPS in production');
   }
+  if (!env.ALERT_WEBHOOK_URL!.startsWith('https://')) {
+    throw new Error('ALERT_WEBHOOK_URL must use HTTPS in production');
+  }
   if (env.JWT_SECRET!.length < 32) throw new Error('JWT_SECRET must be at least 32 characters in production');
   if (env.STRIPE_SECRET_KEY!.startsWith('sk_test_')) {
     throw new Error('Production must not use a Stripe test secret key');

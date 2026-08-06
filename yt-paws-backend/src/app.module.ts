@@ -12,6 +12,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PublicModule } from './modules/public/public.module';
 import { MediaModule } from './modules/media/media.module';
 import { OperationsModule } from './modules/operations/operations.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
   imports: [
@@ -29,5 +31,7 @@ import { OperationsModule } from './modules/operations/operations.module';
     MediaModule,
     OperationsModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

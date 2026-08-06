@@ -32,6 +32,7 @@ describe('validateProductionConfig', () => {
     expect(() => validateProductionConfig({ ...validProduction(), EXPOSE_PASSWORD_RESET_TOKEN: 'true' })).toThrow();
     expect(() => validateProductionConfig({ ...validProduction(), JWT_SECRET: 'weak' })).toThrow();
     expect(() => validateProductionConfig({ ...validProduction(), PUBLIC_WEB_URL: 'http://example.com' })).toThrow();
+    expect(() => validateProductionConfig({ ...validProduction(), ALERT_WEBHOOK_URL: 'http://alerts.example.com' })).toThrow();
     expect(() => validateProductionConfig({ ...validProduction(), STRIPE_SECRET_KEY: 'sk_test_example' })).toThrow();
   });
 
