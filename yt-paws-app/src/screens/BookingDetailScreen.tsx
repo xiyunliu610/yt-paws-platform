@@ -204,7 +204,13 @@ const BookingDetailScreen = () => {
     }
   };
 
-  const canCancel = CANCELLABLE_STATUSES.includes(booking.status) && (user?.role === 'customer' || isManager);
+  const hasCancellationRole = user?.role === 'customer' || isManager;
+  const isCancellationStatus = CANCELLABLE_STATUSES.includes(booking.status);
+  const isBeforeCancellationCutoff =
+    Date.now() < new Date(booking.startDate).getTime() - 24 * 60 * 60 * 1000;
+  const canCancel = hasCancellationRole && isCancellationStatus && isBeforeCancellationCutoff;
+  const showCancellationCutoff =
+    hasCancellationRole && isCancellationStatus && !isBeforeCancellationCutoff;
   const canAdvance = isManager && !!NEXT_STATUS[booking.status];
   const canAddReport = booking.status === 'in_progress' && (isAssignedStaff || isManager);
   const assignedStaffMember = staffList?.find((s) => s.id === booking.assignedStaffId);
@@ -370,6 +376,12 @@ const BookingDetailScreen = () => {
             </TouchableOpacity>
           )}
 
+          {showCancellationCutoff && (
+            <Text style={styles.cancellationPolicyText}>
+              {t.myBookings.cancellationUnavailable}
+            </Text>
+          )}
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t.myBookings.dailyReportsTitle}</Text>
             {reports === null ? (
@@ -499,6 +511,13 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  cancellationPolicyText: {
+    color: '#8A4B2A',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   helperText: {
     fontSize: 14,

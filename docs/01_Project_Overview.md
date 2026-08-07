@@ -230,8 +230,8 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 01 | Project Overview | ✅ Completed (this document) |
 | 02 | Product Requirements | ✅ Completed |
 | 03 | System Architecture | ✅ Completed |
-| 04 | Database Design | ⏳ Not started |
-| 05 | API Design | ⏳ Not started |
+| 04 | Database Design | ✅ Completed |
+| 05 | API Design | ✅ Completed |
 | 06 | AI Agent Design | ⏳ Not started |
 | 07 | Camera System Design | ⏳ Not started |
 | 08 | Payment Design | ⏳ Not started |
@@ -266,3 +266,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-08-04 | v0.13 | Added production operations and booking-control baseline: configurable unlimited-by-default business/service/staff concurrent capacities, a uniform 24-hour cancellation cutoff, proactive Stripe/email/stuck-refund webhook alerts, expanded core-flow e2e coverage, and removal of remaining auth/navigation English-only surfaces | Xiyun Liu |
 | 2026-08-05 | v0.14 | Completed locale-aware date presentation across booking, business dashboard, payment and notification screens (`en-NZ` / `zh-CN`) without changing ISO API payloads | Xiyun Liu |
 | 2026-08-06 | v0.15 | Verified production observability paths end-to-end: registered the previously orphaned health controller so liveness/readiness routes are actually reachable, required HTTPS for the alert webhook, and added alert/refund-monitor plus health-probe regression tests | Xiyun Liu |
+| 2026-08-07 | v0.16 | Completed `04_Database_Design.md` and `05_API_Design.md`; added production-oriented booking overlap indexes and documented/tested the exact capacity, 24-hour cancellation and payment-retention boundaries | Xiyun Liu |

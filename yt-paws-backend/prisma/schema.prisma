@@ -67,65 +67,65 @@ enum CheckoutAttemptStatus {
 /// actually create a second row here.
 /// See docs/01_Project_Overview.md §11 and docs/03_System_Architecture.md §4.
 model Business {
-  id              String    @id @default(uuid()) @db.Uuid
-  name            String
-  region          String?
+  id                    String    @id @default(uuid()) @db.Uuid
+  name                  String
+  region                String?
   // Static image of the business's personal WeChat QR code, shown to
   // customers during WeChat payment (US-04.2). There's no official merchant
   // API integration in V1, so this is just a URL the owner sets, not
   // something the platform generates.
-  wechatQrCodeUrl String?
+  wechatQrCodeUrl       String?
   maxConcurrentBookings Int?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  staff           User[]
-  services        Service[]
-  bookings        Booking[]
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  staff                 User[]
+  services              Service[]
+  bookings              Booking[]
 }
 
 model User {
-  id               String         @id @default(uuid()) @db.Uuid
-  businessId       String?        @db.Uuid
-  business         Business?      @relation(fields: [businessId], references: [id])
-  email            String         @unique
-  password         String
-  name             String?
-  phone            String?
-  role             Role           @default(customer)
+  id                    String               @id @default(uuid()) @db.Uuid
+  businessId            String?              @db.Uuid
+  business              Business?            @relation(fields: [businessId], references: [id])
+  email                 String               @unique
+  password              String
+  name                  String?
+  phone                 String?
+  role                  Role                 @default(customer)
   // Expo push token, registered client-side after the user grants
   // notification permission. Null until then, or if they never grant it
   // (or are running in an environment where remote push isn't available,
   // e.g. Expo Go on SDK 53+) — in-app notifications work regardless.
-  pushToken        String?
-  isActive         Boolean        @default(true)
+  pushToken             String?
+  isActive              Boolean              @default(true)
   // Every JWT carries the value current at issuance. Password changes,
   // resets and account deletion increment it, invalidating all older JWTs
   // on their very next authenticated request.
-  tokenVersion     Int            @default(0)
-  mustChangePassword Boolean      @default(false)
-  failedLoginAttempts Int         @default(0)
-  lockedUntil       DateTime?
+  tokenVersion          Int                  @default(0)
+  mustChangePassword    Boolean              @default(false)
+  failedLoginAttempts   Int                  @default(0)
+  lockedUntil           DateTime?
   maxConcurrentBookings Int?
-  deletedAt        DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  pets             Pet[]
-  bookings         Booking[]      @relation("CustomerBookings")
-  assignedBookings Booking[]      @relation("StaffAssignedBookings")
-  notifications    Notification[]
-  refundsIssued    Payment[]      @relation("PaymentRefundedBy")
-  passwordResetTokens PasswordResetToken[]
-  securityEvents    SecurityEvent[]
+  deletedAt             DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  pets                  Pet[]
+  bookings              Booking[]            @relation("CustomerBookings")
+  assignedBookings      Booking[]            @relation("StaffAssignedBookings")
+  notifications         Notification[]
+  refundsIssued         Payment[]            @relation("PaymentRefundedBy")
+  passwordResetTokens   PasswordResetToken[]
+  securityEvents        SecurityEvent[]
 }
 
 model PasswordResetToken {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId, expiresAt])
 }
@@ -178,24 +178,24 @@ model PetHealthRecord {
 }
 
 model Service {
-  id              String      @id @default(uuid()) @db.Uuid
-  businessId      String      @db.Uuid
-  business        Business    @relation(fields: [businessId], references: [id])
-  name            String
-  description     String?
-  price           Decimal     @db.Decimal(10, 2)
+  id                    String      @id @default(uuid()) @db.Uuid
+  businessId            String      @db.Uuid
+  business              Business    @relation(fields: [businessId], references: [id])
+  name                  String
+  description           String?
+  price                 Decimal     @db.Decimal(10, 2)
   // Whether `price` is charged once per booking (e.g. grooming) or per
   // calendar day of the booking's date range (e.g. boarding). Booking
   // snapshots both of these onto itself at creation time (see
   // Booking.unitPrice) so a later price change here doesn't alter what an
   // existing booking owes.
-  pricingUnit     PricingUnit @default(flat)
-  durationMinutes Int?
+  pricingUnit           PricingUnit @default(flat)
+  durationMinutes       Int?
   maxConcurrentBookings Int?
-  isActive        Boolean     @default(true)
-  bookings        Booking[]
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  isActive              Boolean     @default(true)
+  bookings              Booking[]
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
 }
 
 model Booking {
@@ -225,6 +225,15 @@ model Booking {
   dailyReports    DailyReport[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  // Capacity checks filter active bookings by one resource and then apply
+  // the overlap predicate startDate < requestedEnd AND endDate > requestedStart.
+  // These indexes keep that hot path bounded as booking history grows.
+  @@index([petId, status, startDate, endDate])
+  @@index([businessId, status, startDate, endDate])
+  @@index([serviceId, status, startDate, endDate])
+  @@index([assignedStaffId, status, startDate, endDate])
+  @@index([customerId, createdAt])
 }
 
 // At most one "active" Payment per booking per method, and at most one
