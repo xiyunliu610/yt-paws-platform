@@ -1,6 +1,6 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.23
+**Document Status:** Draft v0.24
 **Related Document:** `01_Project_Overview.md`
 **Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -401,3 +401,4 @@ Profile provides an in-app bilingual Help Center with keyword search, topic filt
 | 2026-08-06 | v0.21 | Added regression coverage for operational alerts, stale-refund detection and real HTTP health probes; fixed `AppModule` registration so the documented `/health/live` and `/health/ready` endpoints are now reachable rather than controller-only dead code | Xiyun Liu |
 | 2026-08-07 | v0.22 | Made the cancellation contract explicit in the App: the action disappears at the exact 24-hour cutoff, an in-window contact message replaces it, and confirmation warns that cancelling never automatically refunds a paid booking. Added e2e boundaries for unlimited/capped/non-overlapping/released capacity, staff reassignment, exact cutoff and retained payment state | Xiyun Liu |
 | 2026-08-07 | v0.23 | Completed the AI-agent design baseline without activating paid AI: V1 remains a local bilingual Help Center, while any future assistant is gated by explicit read-only-first scope, human escalation, privacy disclosures, evaluation and spend controls | Xiyun Liu |
+| 2026-08-07 | v0.24 | Published implementation-derived Payment and Notification designs and separated implemented application behavior from remaining live-provider/EAS device verification; Camera and paid AI code remain explicitly deferred | Xiyun Liu |

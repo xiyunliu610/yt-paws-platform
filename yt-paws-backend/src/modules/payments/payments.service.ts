@@ -8,7 +8,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Prisma, PaymentMethod, PaymentStatus, CheckoutAttemptStatus, Booking } from '@prisma/client';
+import {
+  Prisma,
+  PaymentMethod,
+  PaymentStatus,
+  CheckoutAttemptStatus,
+  Booking,
+} from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
 // Postgres unique_violation, thrown by Prisma as P2002 — expected when two
@@ -16,6 +22,31 @@ import { NotificationsService } from '../notifications/notifications.service';
 // to create one; the partial unique indexes on Payment (see schema.prisma)
 // let only one of them win.
 const UNIQUE_CONSTRAINT_VIOLATION = 'P2002';
+
+export function isAllowedPaymentReturnUrl(
+  returnUrl: string,
+  nodeEnv?: string,
+  publicWebUrl?: string,
+) {
+  let url: URL;
+  try {
+    url = new URL(returnUrl);
+  } catch {
+    return false;
+  }
+
+  if (url.protocol === 'ytpaws:') return true;
+  if (nodeEnv !== 'production' && url.protocol === 'exp:') return true;
+  if (publicWebUrl) {
+    try {
+      const publicUrl = new URL(publicWebUrl);
+      return url.protocol === 'https:' && url.origin === publicUrl.origin;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 interface RequestingUser {
   userId: string;
@@ -35,7 +66,10 @@ export class PaymentsService {
     // Falls back to a placeholder so an unconfigured dev environment can
     // still boot; any actual Stripe call will fail with an auth error from
     // Stripe rather than crashing the app at startup.
-    this.stripe = new Stripe(this.configService.get<string>('STRIPE_SECRET_KEY') || 'sk_test_unconfigured');
+    this.stripe = new Stripe(
+      this.configService.get<string>('STRIPE_SECRET_KEY') ||
+        'sk_test_unconfigured',
+    );
   }
 
   // Booking has no stored total; it's derived from the price/pricingUnit
@@ -47,7 +81,10 @@ export class PaymentsService {
     if (booking.pricingUnit === 'per_day') {
       const days = Math.max(
         1,
-        Math.ceil((booking.endDate.getTime() - booking.startDate.getTime()) / (24 * 60 * 60 * 1000)),
+        Math.ceil(
+          (booking.endDate.getTime() - booking.startDate.getTime()) /
+            (24 * 60 * 60 * 1000),
+        ),
       );
       return unitPrice * days;
     }
@@ -67,7 +104,10 @@ export class PaymentsService {
     }
 
     const alreadyPaid = await this.prisma.payment.findFirst({
-      where: { bookingId, status: { in: [PaymentStatus.paid, PaymentStatus.refund_pending] } },
+      where: {
+        bookingId,
+        status: { in: [PaymentStatus.paid, PaymentStatus.refund_pending] },
+      },
     });
     if (alreadyPaid) {
       throw new BadRequestException('This booking has already been paid for');
@@ -114,10 +154,19 @@ export class PaymentsService {
   // a fallback for the case where this call doesn't win the race (the
   // customer pays in the gap before the expire request lands, or the
   // Stripe API call itself fails).
-  private async cancelOtherPendingMethodPayments(bookingId: string, keepMethod: PaymentMethod) {
+  private async cancelOtherPendingMethodPayments(
+    bookingId: string,
+    keepMethod: PaymentMethod,
+  ) {
     const toCancel = await this.prisma.payment.findMany({
-      where: { bookingId, method: { not: keepMethod }, status: PaymentStatus.pending },
-      include: { checkoutAttempts: { where: { status: CheckoutAttemptStatus.pending } } },
+      where: {
+        bookingId,
+        method: { not: keepMethod },
+        status: PaymentStatus.pending,
+      },
+      include: {
+        checkoutAttempts: { where: { status: CheckoutAttemptStatus.pending } },
+      },
     });
     if (toCancel.length === 0) {
       return;
@@ -131,9 +180,13 @@ export class PaymentsService {
     // Best-effort: a session that's already expired/completed on Stripe's
     // side (or an unconfigured/invalid API key in dev) throws here — that
     // must not block the method switch itself.
-    const sessionIds = toCancel.flatMap((p) => p.checkoutAttempts.map((a) => a.sessionId));
+    const sessionIds = toCancel.flatMap((p) =>
+      p.checkoutAttempts.map((a) => a.sessionId),
+    );
     await Promise.all(
-      sessionIds.map((sessionId) => this.stripe.checkout.sessions.expire(sessionId).catch(() => undefined)),
+      sessionIds.map((sessionId) =>
+        this.stripe.checkout.sessions.expire(sessionId).catch(() => undefined),
+      ),
     );
   }
 
@@ -160,9 +213,14 @@ export class PaymentsService {
     }
 
     try {
-      return await this.prisma.payment.create({ data: { bookingId, method, amount, referenceNote } });
+      return await this.prisma.payment.create({
+        data: { bookingId, method, amount, referenceNote },
+      });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === UNIQUE_CONSTRAINT_VIOLATION
+      ) {
         const winner = await this.prisma.payment.findFirst({
           where: { bookingId, method, status: { in: activeStatuses } },
           orderBy: { createdAt: 'desc' },
@@ -185,14 +243,20 @@ export class PaymentsService {
   // the payment `cancelled` (a no-op if it already was) rather than `paid`,
   // to keep revenue reporting correct, and notifies the business to refund
   // it manually.
-  private async handleDuplicatePaymentRace(payment: {
-    id: string;
-    bookingId: string;
-    method: PaymentMethod;
-    amount: Prisma.Decimal;
-    referenceNote: string | null;
-  }, businessId: string) {
-    await this.prisma.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.cancelled } });
+  private async handleDuplicatePaymentRace(
+    payment: {
+      id: string;
+      bookingId: string;
+      method: PaymentMethod;
+      amount: Prisma.Decimal;
+      referenceNote: string | null;
+    },
+    businessId: string,
+  ) {
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.cancelled },
+    });
     await this.notifications.notifyBusinessManagers(
       businessId,
       'Duplicate Payment Received — Refund Needed',
@@ -218,9 +282,25 @@ export class PaymentsService {
   // because the old session stays payable until it expires: if it were
   // overwritten, a customer completing payment on an old tab would produce
   // a webhook event this service could no longer resolve back to a Payment.
-  async initiateStripe(user: RequestingUser, bookingId: string, returnUrl: string) {
+  async initiateStripe(
+    user: RequestingUser,
+    bookingId: string,
+    returnUrl: string,
+  ) {
+    if (
+      !isAllowedPaymentReturnUrl(
+        returnUrl,
+        this.configService.get<string>('NODE_ENV'),
+        this.configService.get<string>('PUBLIC_WEB_URL'),
+      )
+    ) {
+      throw new BadRequestException('Payment return URL is not allowed');
+    }
     const booking = await this.loadPayableBooking(user, bookingId);
-    await this.cancelOtherPendingMethodPayments(bookingId, PaymentMethod.stripe);
+    await this.cancelOtherPendingMethodPayments(
+      bookingId,
+      PaymentMethod.stripe,
+    );
 
     const payment = await this.getOrCreateActivePayment({
       bookingId,
@@ -255,15 +335,24 @@ export class PaymentsService {
   }
 
   async handleStripeWebhook(rawBody: Buffer, signature: string) {
-    const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET') ?? '';
+    const webhookSecret =
+      this.configService.get<string>('STRIPE_WEBHOOK_SECRET') ?? '';
     let event: Stripe.Event;
     try {
-      event = this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+      event = this.stripe.webhooks.constructEvent(
+        rawBody,
+        signature,
+        webhookSecret,
+      );
     } catch {
       throw new BadRequestException('Invalid Stripe webhook signature');
     }
 
-    if (event.type === 'refund.updated' || event.type === 'refund.created' || event.type === 'refund.failed') {
+    if (
+      event.type === 'refund.updated' ||
+      event.type === 'refund.created' ||
+      event.type === 'refund.failed'
+    ) {
       const refund = event.data.object as Stripe.Refund;
       const paymentId = refund.metadata?.paymentId;
       if (paymentId) {
@@ -278,7 +367,10 @@ export class PaymentsService {
     // `checkout.session.expired` fires if the customer abandons it (24h
     // default) without ever completing, which is the closest Checkout
     // equivalent to a PaymentIntent "failed" event.
-    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.expired') {
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.expired'
+    ) {
       const session = event.data.object as Stripe.Checkout.Session;
       const succeeded = event.type === 'checkout.session.completed';
 
@@ -300,7 +392,9 @@ export class PaymentsService {
       const claimed = await this.prisma.stripeCheckoutAttempt.updateMany({
         where: { sessionId: session.id, status: CheckoutAttemptStatus.pending },
         data: {
-          status: succeeded ? CheckoutAttemptStatus.succeeded : CheckoutAttemptStatus.expired,
+          status: succeeded
+            ? CheckoutAttemptStatus.succeeded
+            : CheckoutAttemptStatus.expired,
           ...(paymentIntentId ? { paymentIntentId } : {}),
         },
       });
@@ -336,14 +430,23 @@ export class PaymentsService {
                 // cancelOtherPendingMethodPayments's Stripe-side expire
                 // call could land) rather than a same-booking race caught
                 // by the unique index below. Money moved either way.
-                await this.handleDuplicatePaymentRace(attempt.payment, attempt.payment.booking.businessId);
+                await this.handleDuplicatePaymentRace(
+                  attempt.payment,
+                  attempt.payment.booking.businessId,
+                );
               }
             } catch (err) {
-              if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION) {
+              if (
+                err instanceof Prisma.PrismaClientKnownRequestError &&
+                err.code === UNIQUE_CONSTRAINT_VIOLATION
+              ) {
                 // payment_booking_paid_unique: a WeChat payment for this
                 // booking was already confirmed paid. Stripe has already
                 // captured the charge — this needs a manual refund.
-                await this.handleDuplicatePaymentRace(attempt.payment, attempt.payment.booking.businessId);
+                await this.handleDuplicatePaymentRace(
+                  attempt.payment,
+                  attempt.payment.booking.businessId,
+                );
               } else {
                 throw err;
               }
@@ -353,7 +456,10 @@ export class PaymentsService {
             // on it is still open — a retried initiateStripe call may have
             // handed the customer a fresh, still-payable Checkout link.
             const stillOpen = await this.prisma.stripeCheckoutAttempt.count({
-              where: { paymentId: attempt.paymentId, status: CheckoutAttemptStatus.pending },
+              where: {
+                paymentId: attempt.paymentId,
+                status: CheckoutAttemptStatus.pending,
+              },
             });
             if (stillOpen === 0) {
               const advanced = await this.prisma.payment.updateMany({
@@ -386,13 +492,21 @@ export class PaymentsService {
   // wechat_qr payment is reused instead of creating a new one each call.
   async initiateWechat(user: RequestingUser, bookingId: string) {
     const booking = await this.loadPayableBooking(user, bookingId);
-    await this.cancelOtherPendingMethodPayments(bookingId, PaymentMethod.wechat_qr);
-    const business = await this.prisma.business.findUnique({ where: { id: booking.businessId } });
+    await this.cancelOtherPendingMethodPayments(
+      bookingId,
+      PaymentMethod.wechat_qr,
+    );
+    const business = await this.prisma.business.findUnique({
+      where: { id: booking.businessId },
+    });
 
     const payment = await this.getOrCreateActivePayment({
       bookingId,
       method: PaymentMethod.wechat_qr,
-      activeStatuses: [PaymentStatus.pending, PaymentStatus.pending_verification],
+      activeStatuses: [
+        PaymentStatus.pending,
+        PaymentStatus.pending_verification,
+      ],
       amount: this.computeAmount(booking),
       referenceNote: `PAWS-${bookingId.slice(0, 8).toUpperCase()}`,
     });
@@ -418,8 +532,13 @@ export class PaymentsService {
     if (payment.booking.customerId !== user.userId) {
       throw new ForbiddenException('You do not have access to this payment');
     }
-    if (payment.method !== PaymentMethod.wechat_qr || payment.status !== PaymentStatus.pending) {
-      throw new BadRequestException('This payment is not awaiting a WeChat transfer confirmation');
+    if (
+      payment.method !== PaymentMethod.wechat_qr ||
+      payment.status !== PaymentStatus.pending
+    ) {
+      throw new BadRequestException(
+        'This payment is not awaiting a WeChat transfer confirmation',
+      );
     }
 
     // Atomic guard against a double-tap of "I've Paid" both passing the
@@ -429,7 +548,9 @@ export class PaymentsService {
       data: { status: PaymentStatus.pending_verification },
     });
     if (advanced.count === 0) {
-      throw new BadRequestException('This payment is not awaiting a WeChat transfer confirmation');
+      throw new BadRequestException(
+        'This payment is not awaiting a WeChat transfer confirmation',
+      );
     }
 
     // US-05.2: confirms to the customer their "I've paid" tap registered,
@@ -439,7 +560,7 @@ export class PaymentsService {
     await this.notifications.notify(
       user.userId,
       'Payment Submitted',
-      'Thanks — we\'ve recorded your WeChat transfer. The business will confirm receipt shortly.',
+      "Thanks — we've recorded your WeChat transfer. The business will confirm receipt shortly.",
     );
     await this.notifications.notifyBusinessManagers(
       payment.booking.businessId,
@@ -466,7 +587,9 @@ export class PaymentsService {
       throw new ForbiddenException('You do not have access to this payment');
     }
     if (payment.status !== PaymentStatus.pending_verification) {
-      throw new BadRequestException('This payment is not awaiting verification');
+      throw new BadRequestException(
+        'This payment is not awaiting verification',
+      );
     }
 
     const verifiedAt = new Date();
@@ -476,17 +599,25 @@ export class PaymentsService {
         data: { status: PaymentStatus.paid, verifiedAt },
       });
       if (advanced.count === 0) {
-        throw new BadRequestException('This payment is not awaiting verification');
+        throw new BadRequestException(
+          'This payment is not awaiting verification',
+        );
       }
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === UNIQUE_CONSTRAINT_VIOLATION
+      ) {
         // payment_booking_paid_unique: a Stripe payment for this booking
         // was already confirmed paid (e.g. its webhook landed between this
         // payment reaching pending_verification and the owner clicking
         // verify — loadPayableBooking only blocks *starting* a second
         // method, not this). The owner is asserting a real WeChat transfer
         // was received, so it can't be silently dropped either.
-        await this.handleDuplicatePaymentRace(payment, payment.booking.businessId);
+        await this.handleDuplicatePaymentRace(
+          payment,
+          payment.booking.businessId,
+        );
         throw new BadRequestException(
           'Another payment method for this booking was already confirmed paid. This WeChat payment was recorded as cancelled — refund it manually.',
         );
@@ -518,9 +649,14 @@ export class PaymentsService {
     );
   }
 
-  private async applyStripeRefundState(paymentId: string, refund: Stripe.Refund) {
+  private async applyStripeRefundState(
+    paymentId: string,
+    refund: Stripe.Refund,
+  ) {
     const paymentIntentId =
-      typeof refund.payment_intent === 'string' ? refund.payment_intent : refund.payment_intent?.id;
+      typeof refund.payment_intent === 'string'
+        ? refund.payment_intent
+        : refund.payment_intent?.id;
     const payment = await this.prisma.payment.findFirst({
       where: {
         id: paymentId,
@@ -537,10 +673,17 @@ export class PaymentsService {
     if (refund.status === 'succeeded') {
       const advanced = await this.prisma.payment.updateMany({
         where: { id: paymentId, status: PaymentStatus.refund_pending },
-        data: { status: PaymentStatus.refunded, refundedAt: new Date(), stripeRefundId: refund.id },
+        data: {
+          status: PaymentStatus.refunded,
+          refundedAt: new Date(),
+          stripeRefundId: refund.id,
+        },
       });
       if (advanced.count === 1) {
-        await this.notifyRefundedPayment(paymentId, payment.refundReason ?? 'Refund approved');
+        await this.notifyRefundedPayment(
+          paymentId,
+          payment.refundReason ?? 'Refund approved',
+        );
       }
     } else if (refund.status === 'failed' || refund.status === 'canceled') {
       await this.prisma.payment.updateMany({
@@ -562,7 +705,10 @@ export class PaymentsService {
   }
 
   private isAmbiguousStripeError(error: unknown) {
-    return error instanceof Stripe.errors.StripeConnectionError || error instanceof Stripe.errors.StripeAPIError;
+    return (
+      error instanceof Stripe.errors.StripeConnectionError ||
+      error instanceof Stripe.errors.StripeAPIError
+    );
   }
 
   // Owner/admin initiates a refund. V1 only supports refunding a Payment in
@@ -612,7 +758,9 @@ export class PaymentsService {
         },
       });
       if (changed.count === 0) {
-        throw new BadRequestException('Only a paid payment can be refunded (it may already be refunded)');
+        throw new BadRequestException(
+          'Only a paid payment can be refunded (it may already be refunded)',
+        );
       }
       await this.notifyRefundedPayment(paymentId, reason);
       return this.prisma.payment.findUnique({ where: { id: paymentId } });
@@ -628,16 +776,25 @@ export class PaymentsService {
 
     const claimed = await this.prisma.payment.updateMany({
       where: { id: paymentId, status: PaymentStatus.paid },
-      data: { status: PaymentStatus.refund_pending, refundReason: reason, refundedById: user.userId },
+      data: {
+        status: PaymentStatus.refund_pending,
+        refundReason: reason,
+        refundedById: user.userId,
+      },
     });
     if (claimed.count === 0) {
-      throw new BadRequestException('Only a paid payment can be refunded (it may already be refunded)');
+      throw new BadRequestException(
+        'Only a paid payment can be refunded (it may already be refunded)',
+      );
     }
 
     let refund: Stripe.Refund;
     try {
       refund = await this.stripe.refunds.create(
-        { payment_intent: succeededAttempt.paymentIntentId, metadata: { paymentId: payment.id } },
+        {
+          payment_intent: succeededAttempt.paymentIntentId,
+          metadata: { paymentId: payment.id },
+        },
         { idempotencyKey: `refund_${payment.id}` },
       );
     } catch (err) {
@@ -648,7 +805,11 @@ export class PaymentsService {
       }
       await this.prisma.payment.update({
         where: { id: paymentId },
-        data: { status: PaymentStatus.paid, refundReason: null, refundedById: null },
+        data: {
+          status: PaymentStatus.paid,
+          refundReason: null,
+          refundedById: null,
+        },
       });
       const message = err instanceof Error ? err.message : 'unknown error';
       throw new BadRequestException(`Stripe refund failed: ${message}`);
@@ -666,8 +827,13 @@ export class PaymentsService {
     if (!user.businessId || payment.booking.businessId !== user.businessId) {
       throw new ForbiddenException('You do not have access to this payment');
     }
-    if (payment.method !== PaymentMethod.stripe || payment.status !== PaymentStatus.refund_pending) {
-      throw new BadRequestException('Only a pending Stripe refund can be reconciled');
+    if (
+      payment.method !== PaymentMethod.stripe ||
+      payment.status !== PaymentStatus.refund_pending
+    ) {
+      throw new BadRequestException(
+        'Only a pending Stripe refund can be reconciled',
+      );
     }
 
     let refund: Stripe.Refund | undefined;
@@ -678,7 +844,10 @@ export class PaymentsService {
         where: { paymentId, status: CheckoutAttemptStatus.succeeded },
         orderBy: { createdAt: 'desc' },
       });
-      if (!attempt?.paymentIntentId) throw new BadRequestException('No Stripe charge found for this payment');
+      if (!attempt?.paymentIntentId)
+        throw new BadRequestException(
+          'No Stripe charge found for this payment',
+        );
       try {
         // Reusing the original idempotency key is the authoritative recovery
         // operation: Stripe returns the first request's result if it landed,
@@ -689,13 +858,20 @@ export class PaymentsService {
         );
       } catch (error) {
         if (this.isAmbiguousStripeError(error)) {
-          throw new ServiceUnavailableException('Stripe refund status is still unavailable; it remains pending');
+          throw new ServiceUnavailableException(
+            'Stripe refund status is still unavailable; it remains pending',
+          );
         }
         await this.prisma.payment.update({
           where: { id: paymentId },
-          data: { status: PaymentStatus.paid, refundReason: null, refundedById: null },
+          data: {
+            status: PaymentStatus.paid,
+            refundReason: null,
+            refundedById: null,
+          },
         });
-        const message = error instanceof Error ? error.message : 'unknown error';
+        const message =
+          error instanceof Error ? error.message : 'unknown error';
         throw new BadRequestException(`Stripe refund failed: ${message}`);
       }
     }
@@ -730,11 +906,15 @@ export class PaymentsService {
   // of payment (only the webhook is), so the app re-checks this instead of
   // trusting the `?status=success` query param.
   async findOne(user: RequestingUser, paymentId: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
     if (!payment) {
       throw new NotFoundException('Payment not found');
     }
-    const booking = await this.prisma.booking.findUnique({ where: { id: payment.bookingId } });
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: payment.bookingId },
+    });
     if (booking?.customerId !== user.userId) {
       throw new ForbiddenException('You do not have access to this payment');
     }
@@ -747,7 +927,13 @@ export class PaymentsService {
       where: { booking: { customerId: user.userId } },
       orderBy: { createdAt: 'desc' },
       include: {
-        booking: { select: { id: true, startDate: true, service: { select: { name: true } } } },
+        booking: {
+          select: {
+            id: true,
+            startDate: true,
+            service: { select: { name: true } },
+          },
+        },
       },
     });
   }

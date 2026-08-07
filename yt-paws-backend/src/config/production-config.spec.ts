@@ -29,14 +29,59 @@ describe('validateProductionConfig', () => {
   });
 
   it('rejects token exposure, weak secrets, HTTP URLs and Stripe test mode', () => {
-    expect(() => validateProductionConfig({ ...validProduction(), EXPOSE_PASSWORD_RESET_TOKEN: 'true' })).toThrow();
-    expect(() => validateProductionConfig({ ...validProduction(), JWT_SECRET: 'weak' })).toThrow();
-    expect(() => validateProductionConfig({ ...validProduction(), PUBLIC_WEB_URL: 'http://example.com' })).toThrow();
-    expect(() => validateProductionConfig({ ...validProduction(), ALERT_WEBHOOK_URL: 'http://alerts.example.com' })).toThrow();
-    expect(() => validateProductionConfig({ ...validProduction(), STRIPE_SECRET_KEY: 'sk_test_example' })).toThrow();
+    expect(() =>
+      validateProductionConfig({
+        ...validProduction(),
+        EXPOSE_PASSWORD_RESET_TOKEN: 'true',
+      }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({ ...validProduction(), JWT_SECRET: 'weak' }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({
+        ...validProduction(),
+        PUBLIC_WEB_URL: 'http://example.com',
+      }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({
+        ...validProduction(),
+        ALERT_WEBHOOK_URL: 'http://alerts.example.com',
+      }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({
+        ...validProduction(),
+        STRIPE_SECRET_KEY: 'sk_test_example',
+      }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({
+        ...validProduction(),
+        STRIPE_SECRET_KEY: 'not-a-stripe-key',
+      }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({
+        ...validProduction(),
+        STRIPE_WEBHOOK_SECRET: 'not-a-webhook-secret',
+      }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({ ...validProduction(), CORS_ORIGINS: '*' }),
+    ).toThrow();
+    expect(() =>
+      validateProductionConfig({
+        ...validProduction(),
+        CORS_ORIGINS: 'http://example.com',
+      }),
+    ).toThrow();
   });
 
   it('reports missing variables together', () => {
-    expect(() => validateProductionConfig({ NODE_ENV: 'production' })).toThrow(/DATABASE_URL.*JWT_SECRET.*PUBLIC_WEB_URL/);
+    expect(() => validateProductionConfig({ NODE_ENV: 'production' })).toThrow(
+      /DATABASE_URL.*JWT_SECRET.*PUBLIC_WEB_URL/,
+    );
   });
 });
