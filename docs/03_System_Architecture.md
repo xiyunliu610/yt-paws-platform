@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.19
+**Document Status:** Draft v0.25
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-08-02
+**Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -549,3 +549,4 @@ flowchart TB
 | 2026-08-05 | v0.22 | Centralized mobile display-date formatting by selected language (`en-NZ`/`zh-CN`); kept booking/payment API contracts and database timestamps in ISO format | Xiyun Liu |
 | 2026-08-06 | v0.23 | Closed a health-probe wiring gap discovered by e2e: `AppController` existed but was absent from `AppModule`, making both documented probes return 404. Registered it and added live/database-ready HTTP tests. Added alert delivery/dedup/failure tests and enforced HTTPS for `ALERT_WEBHOOK_URL` | Xiyun Liu |
 | 2026-08-07 | v0.24 | Added composite PostgreSQL indexes for booking overlap/capacity queries, verified capacity and cancellation concurrency boundaries through e2e, and published the implementation-derived Database and API design documents | Xiyun Liu |
+| 2026-08-07 | v0.25 | Completed the AI-agent design around the existing `HelpProvider` seam and fixed application shutdown ownership: `PrismaService` now closes its PostgreSQL adapter pool through Nest lifecycle hooks, preventing E2E/production shutdown handle leaks | Xiyun Liu |

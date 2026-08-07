@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.11
-**Last Updated:** 2026-08-02
+**Document Status:** Draft v0.17
+**Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---
@@ -232,7 +232,7 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 03 | System Architecture | ✅ Completed |
 | 04 | Database Design | ✅ Completed |
 | 05 | API Design | ✅ Completed |
-| 06 | AI Agent Design | ⏳ Not started |
+| 06 | AI Agent Design | ✅ Completed (V1 non-AI Help Center; paid AI deferred) |
 | 07 | Camera System Design | ⏳ Not started |
 | 08 | Payment Design | ⏳ Not started |
 | 09 | Notification Design | ⏳ Not started |
@@ -267,3 +267,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-08-05 | v0.14 | Completed locale-aware date presentation across booking, business dashboard, payment and notification screens (`en-NZ` / `zh-CN`) without changing ISO API payloads | Xiyun Liu |
 | 2026-08-06 | v0.15 | Verified production observability paths end-to-end: registered the previously orphaned health controller so liveness/readiness routes are actually reachable, required HTTPS for the alert webhook, and added alert/refund-monitor plus health-probe regression tests | Xiyun Liu |
 | 2026-08-07 | v0.16 | Completed `04_Database_Design.md` and `05_API_Design.md`; added production-oriented booking overlap indexes and documented/tested the exact capacity, 24-hour cancellation and payment-retention boundaries | Xiyun Liu |
+| 2026-08-07 | v0.17 | Completed `06_AI_Agent_Design.md`: documented the shipped zero-cost bilingual Help Center and defined backend-only security, privacy, tool authorization, human-handoff and cost gates for any future paid AI agent | Xiyun Liu |

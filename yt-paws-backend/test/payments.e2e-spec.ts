@@ -137,9 +137,6 @@ describe('Payments correctness (e2e)', () => {
     await prisma.service.deleteMany({ where: { businessId } });
     await prisma.user.deleteMany({ where: { email: { in: [ownerEmail, customerEmail] } } });
     await prisma.business.delete({ where: { id: businessId } });
-    // PrismaService has no onModuleDestroy hook to close its pg Pool
-    // adapter, so app.close() alone leaves an open handle behind.
-    await prisma.$disconnect();
     await app.close();
   });
 

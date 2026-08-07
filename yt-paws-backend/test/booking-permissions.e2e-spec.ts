@@ -169,7 +169,6 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
       where: { email: { in: [ownerEmail, staff1Email, staff2Email, customerEmail, otherCustomerEmail] } },
     });
     await prisma.business.delete({ where: { id: businessId } });
-    await prisma.$disconnect();
     await app.close();
   });
 

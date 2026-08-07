@@ -88,7 +88,6 @@ describe('Account security and deletion (e2e)', () => {
     await prisma.service.deleteMany({ where: { businessId } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     await prisma.business.delete({ where: { id: businessId } });
-    await prisma.$disconnect();
     await app.close();
   });
 
