@@ -1,6 +1,6 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.18
+**Document Status:** Draft v0.19
 **Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
@@ -146,7 +146,7 @@ Expand PetHome into a comprehensive pet care platform: pet store, membership sys
 ## 10. Scope
 
 ### Version 1 (Current)
-User registration, login, pet profiles, booking, Stripe payment, WeChat QR payment, daily reports, push notifications, admin dashboard
+User registration, login, pet profiles, booking, Stripe payment, WeChat QR payment, daily reports, push notifications, and role-scoped owner/admin management screens
 
 ### Version 1.5 (Planned)
 AI daily report generation, AI customer assistant, private chat
@@ -269,3 +269,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-08-07 | v0.16 | Completed `04_Database_Design.md` and `05_API_Design.md`; added production-oriented booking overlap indexes and documented/tested the exact capacity, 24-hour cancellation and payment-retention boundaries | Xiyun Liu |
 | 2026-08-07 | v0.17 | Completed `06_AI_Agent_Design.md`: documented the shipped zero-cost bilingual Help Center and defined backend-only security, privacy, tool authorization, human-handoff and cost gates for any future paid AI agent | Xiyun Liu |
 | 2026-08-07 | v0.18 | Completed Payment, Notification, Deployment and Security design documents from the implemented code; deferred Camera until after core launch and tightened production validation for Stripe credentials and explicit HTTPS CORS origins | Xiyun Liu |
+| 2026-08-08 | v0.19 | Reconciled V1 scope with the shipped role-scoped management screens and added release configuration/document-drift safeguards to CI | Xiyun Liu |

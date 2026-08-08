@@ -1,6 +1,6 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.26
+**Document Status:** Draft v0.27
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
 **Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -69,7 +69,7 @@ flowchart TB
         PaymentNZ["Payment Service · New Zealand<br/>(Current: Stripe)"]
         PaymentCN["Payment Service · China<br/>(Current: WeChat personal QR, manual verification)"]
         Storage["Cloud Object Storage<br/>(Candidates: Cloudflare R2 / AWS S3 / other OSS)"]
-        Push["Push Notification Provider<br/>(Candidates: Expo Push / FCM)"]
+        Push["Expo Push Notification Provider<br/>(V1 remote delivery)"]
         LLM["LLM Provider<br/>(Candidates: OpenAI / Anthropic / Gemini)"]
         Camera["IP Camera<br/>(Currently planned: TP-Link Tapo)"]
     end
@@ -479,7 +479,7 @@ flowchart TB
 | Authentication | JWT |
 | Payment Services | Payment providers (Current: Stripe [NZ], WeChat personal QR [China, manual verification]) |
 | Media Storage | S3-compatible object storage (AWS S3 or Cloudflare R2 configuration supported) |
-| Push Notifications | Push notification provider (Candidates: Expo Push / Firebase Cloud Messaging, TBD) |
+| Push Notifications | Expo Push service for V1 remote delivery; in-app notifications remain provider-independent |
 | AI (from v1.5) | LLM provider (Candidates: OpenAI / Anthropic / Google Gemini) |
 | Camera (from v2) | IP camera (Currently planned: TP-Link Tapo) |
 | Deployment | OCI/Docker image; compatible with AWS, Railway, Render and similar managed container platforms |
@@ -505,6 +505,7 @@ flowchart TB
 | Business profile updates (revised 2026-07-31) | Minimal `businesses` module: `GET`/`PATCH /businesses/me` (owner/admin only) covering name, region, and WeChat QR code — still not a general business-settings module | Originally just `PATCH` for the WeChat QR code URL, with no UI at all (owners had to call the API directly). Added `GET` and the name/region fields once `BusinessSettingsScreen` needed something to actually load and edit; still deliberately narrow — hours, logo, etc. can be added when actually needed, not spec'd out in advance |
 | Refund flow (added 2026-07-31) | `PATCH /payments/:id/refund`, full-amount only, no Refund entity — refund metadata lives directly on `Payment` (`refundedAt`/`refundReason`/`refundedById`) | Partial refunds would need a running-total and a one-to-many Payment→Refund relationship; V1 doesn't need that complexity yet, and extending `Payment` directly avoids a join for the common case (a booking has at most one refund) |
 | Care-details endpoint (added 2026-08-01) | New `GET /bookings/:id/care-details` (customer / that booking's assigned staff / owner-admin) returns the pet's full profile — `dietNotes`, `personality`, health records — plus the customer's contact info, rather than opening `GET /pets/:id` to staff generally | `PetsService` only ever let a pet's *owner* read it; the staff member actually carrying out a booking had no way to see the pet's care information at all, which worked against the "centralized care info" goal in `01_Project_Overview.md`. Scoping this to the booking (not "any pet at my business") keeps a staff member from browsing every customer's pet just by knowing an id |
+| Care-details UI policy (added 2026-08-08) | `BookingDetailScreen` only requests and renders care information for the booking customer, assigned staff, owner or admin; the policy mirrors backend authorization and is unit-tested. Failed loads expose an explicit retry action | Prevents an unassigned staff member from seeing a misleading generic load error for a section they are not authorized to access, while preserving the backend as the security boundary |
 | Daily report read permission (tightened 2026-08-01) | `ReportsService.loadBookingForRead` now requires the same access as writing (customer, that booking's *assigned* staff, or owner/admin) — previously any user with a matching `businessId` could read any booking's reports | The write path (`loadBookingForWrite`) already required assigned staff; read was looser than write for no reason, so an unassigned staff member who knew a `bookingId` could read another customer's report photos and notes just by being employed by the same business |
 | Booking status progression | `PATCH /bookings/:id/status`, forward-only through `pending → confirmed → in_progress → completed`, one step at a time (owner/admin only) | Daily reports (US-06.1) require a booking to be `in_progress`, and no endpoint could produce that transition before this was added; forward-only, single-step validation keeps the state machine simple and prevents skipping steps or reviving a cancelled booking |
 | Staff directory endpoint | `GET /auth/staff` (owner/admin only) added to the `auth` module rather than creating a `users` module | The only two frontend consumers (the booking-assignment picker and `StaffManagementScreen`) both need "everyone assignable in my business," which is exactly `auth.service.createStaff`'s counterpart; a separate `users` module would be premature for a single read endpoint |
@@ -551,3 +552,4 @@ flowchart TB
 | 2026-08-07 | v0.24 | Added composite PostgreSQL indexes for booking overlap/capacity queries, verified capacity and cancellation concurrency boundaries through e2e, and published the implementation-derived Database and API design documents | Xiyun Liu |
 | 2026-08-07 | v0.25 | Completed the AI-agent design around the existing `HelpProvider` seam and fixed application shutdown ownership: `PrismaService` now closes its PostgreSQL adapter pool through Nest lifecycle hooks, preventing E2E/production shutdown handle leaks | Xiyun Liu |
 | 2026-08-07 | v0.26 | Completed detailed Payment, Notification, Deployment and Security designs, including explicit implemented-vs-provisioning boundaries; production startup now rejects wildcard/insecure CORS, non-live Stripe keys and malformed Stripe webhook secrets | Xiyun Liu |
+| 2026-08-08 | v0.27 | Recorded Expo Push as the selected V1 provider, aligned the booking care-information UI with backend authorization, and added fail-fast EAS release URL validation plus CI drift checks | Xiyun Liu |

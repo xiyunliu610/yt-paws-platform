@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Deployment
 
-**Version:** 1.0  
-**Updated:** 2026-08-07  
+**Version:** 1.1
+**Updated:** 2026-08-08
 **Status:** Deployment code baseline implemented; hosting, domains and production credentials are not yet provisioned.
 
 ## 1. Target topology
@@ -28,7 +28,7 @@ Recommended low-operations setup: Cloudflare DNS, Railway or Render container ho
 | Preview/Staging | EAS preview and real-device regression | Separate managed DB/bucket, Stripe test mode, verified test email domain. |
 | Production | Store release | Dedicated DB/bucket, live Stripe, production email/push and monitored alerts. |
 
-Never share databases, buckets, Stripe mode or secrets between staging and production. `eas.json` currently contains placeholder staging/production domains and must be updated after hosting is provisioned.
+Never share databases, buckets, Stripe mode or secrets between staging and production. `eas.json` currently contains placeholder staging/production domains and must be updated after hosting is provisioned. The EAS pre-install hook rejects preview/production builds while either public URL is missing, malformed, non-HTTPS or still a placeholder.
 
 ## 3. Backend container
 
@@ -83,7 +83,7 @@ Pipeline: deploy staging backend → apply migrations → preview EAS build → 
 
 ## 10. CI/CD
 
-GitHub Actions currently installs locked dependencies, generates Prisma Client, migrates an isolated PostgreSQL service, builds/tests backend, builds the production Docker image and type-checks the App.
+GitHub Actions currently installs locked dependencies, generates Prisma Client, migrates an isolated PostgreSQL service, builds/tests backend, builds the production Docker image, type-checks the App, runs App policy/configuration tests and rejects known core-document/configuration drift.
 
 CI does not currently deploy automatically. Initial production deployment should use an approved manual promotion from a passing commit. Add environment protection, immutable image tags, deployment logs and rollback procedures before enabling automatic production releases.
 
@@ -110,3 +110,4 @@ Rollback the container to the previous immutable image only when its code is com
 | Date | Version | Change |
 |---|---|---|
 | 2026-08-07 | 1.0 | Documented the implemented container/migration/health/CI baseline and the remaining production provisioning, release and rollback process. |
+| 2026-08-08 | 1.1 | Added fail-fast EAS release URL validation and CI checks for App policies plus core-document/configuration drift. |

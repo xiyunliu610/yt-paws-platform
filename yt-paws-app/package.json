@@ -4,6 +4,10 @@
   "main": "index.ts",
   "scripts": {
     "postinstall": "node scripts/fix-expo-metro-empty-module.js",
+    "eas-build-pre-install": "node scripts/validate-release-config.js",
+    "test": "node --test scripts/*.test.js",
+    "validate:release-config": "node scripts/validate-release-config.js",
+    "validate:drift": "node scripts/check-project-drift.js",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",

@@ -15,6 +15,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { formatLocalizedDateTime } from '../i18n/dateFormat';
+import { canViewCareDetails } from './careDetailsPolicy';
 import {
   ApiError,
   bookingsApi,
@@ -63,6 +64,17 @@ const BookingDetailScreen = () => {
 
   const isManager = user?.role === 'owner' || user?.role === 'admin';
   const isAssignedStaff = user?.role === 'staff' && booking.assignedStaffId === user.id;
+  const showCareDetails = canViewCareDetails(user, booking);
+
+  const loadCareDetails = useCallback(() => {
+    if (!token || !showCareDetails) return;
+    setCareDetailsFailed(false);
+    setCareDetails(null);
+    bookingsApi
+      .careDetails(token, booking.id)
+      .then((details) => setCareDetails(details))
+      .catch(() => setCareDetailsFailed(true));
+  }, [token, showCareDetails, booking.id]);
 
   // Refetch reports whenever the screen regains focus, so returning from
   // ReportComposeScreen shows the just-published entry without a manual pull.
@@ -81,15 +93,8 @@ const BookingDetailScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
-      if (!token) return;
-      bookingsApi
-        .careDetails(token, booking.id)
-        .then((details) => {
-          setCareDetails(details);
-          setCareDetailsFailed(false);
-        })
-        .catch(() => setCareDetailsFailed(true));
-    }, [token, booking.id]),
+      loadCareDetails();
+    }, [loadCareDetails]),
   );
 
   useEffect(() => {
@@ -269,12 +274,17 @@ const BookingDetailScreen = () => {
             )}
           </View>
 
-          <View style={styles.section}>
+          {showCareDetails && <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t.myBookings.careDetailsTitle}</Text>
             {careDetails === null && !careDetailsFailed ? (
               <ActivityIndicator color="#2C4A3E" />
             ) : careDetailsFailed ? (
-              <Text style={styles.helperText}>{t.myBookings.loadCareDetailsFailed}</Text>
+              <View style={styles.retryRow}>
+                <Text style={styles.helperText}>{t.myBookings.loadCareDetailsFailed}</Text>
+                <TouchableOpacity onPress={loadCareDetails} style={styles.retryButton}>
+                  <Text style={styles.retryButtonText}>{t.myBookings.retryButton}</Text>
+                </TouchableOpacity>
+              </View>
             ) : careDetails ? (
               <View style={styles.card}>
                 {!!careDetails.pet.photoUrl && (
@@ -292,7 +302,7 @@ const BookingDetailScreen = () => {
                 <Text style={styles.careText}>
                   {[careDetails.customer.name, careDetails.customer.phone, careDetails.customer.email]
                     .filter(Boolean)
-                    .join(' · ')}
+                    .join(' · ') || t.myBookings.notProvided}
                 </Text>
                 <Text style={styles.careLabel}>{t.myBookings.healthRecordsLabel}</Text>
                 {careDetails.pet.healthRecords.length === 0 ? (
@@ -306,7 +316,7 @@ const BookingDetailScreen = () => {
                 )}
               </View>
             ) : null}
-          </View>
+          </View>}
 
           {isManager && staffList && staffList.length > 0 && (
             <View style={styles.section}>
@@ -522,6 +532,22 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 14,
     color: '#666',
+  },
+  retryRow: {
+    alignItems: 'flex-start',
+  },
+  retryButton: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#2C4A3E',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  retryButtonText: {
+    color: '#2C4A3E',
+    fontSize: 14,
+    fontWeight: '600',
   },
   reportCard: {
     backgroundColor: 'white',

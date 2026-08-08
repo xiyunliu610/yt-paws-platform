@@ -56,3 +56,6 @@ jobs:
       - name: Type-check app
         working-directory: yt-paws-app
         run: npx tsc --noEmit
+      - name: Verify app policies and release safeguards
+        working-directory: yt-paws-app
+        run: npm test && npm run validate:drift
