@@ -81,6 +81,10 @@ Set real `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_WEB_URL` for preview and product
 
 Pipeline: deploy staging backend → apply migrations → preview EAS build → physical-device regression → deploy production backend → production EAS build → store submission. A mobile release must stay compatible with the deployed API while older store versions remain installed.
 
+Production promotion uses the manual `Production release readiness` workflow and its protected `production` environment. It runs `npm run release:check` and builds an immutable commit-SHA image candidate. Each required environment value is a dated evidence link/identifier for live Stripe/WeChat, physical push, private media, monitoring, penetration testing, backup restore and rollback—not a boolean assertion. Repository administrators must enable required reviewers on the GitHub environment; workflow YAML cannot enforce that repository setting.
+
+Before applying `20260808000000_business_singleton` to an existing environment, run `npm run business:audit`. More than one Business blocks the migration intentionally. Select the canonical record and review/reassign all users, services, bookings and dependent financial rows under an approved data-remediation plan; never auto-delete a duplicate tenant.
+
 ## 10. CI/CD
 
 GitHub Actions currently installs locked dependencies, generates Prisma Client, migrates an isolated PostgreSQL service, builds/tests backend, builds the production Docker image, type-checks the App, runs App policy/configuration tests and rejects known core-document/configuration drift.

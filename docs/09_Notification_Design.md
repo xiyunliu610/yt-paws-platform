@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Notification Design
 
-**Version:** 1.0  
-**Updated:** 2026-08-07  
+**Version:** 1.1
+**Updated:** 2026-08-08
 **Status:** In-app notifications implemented; remote push implemented but awaits EAS physical-device verification.
 
 ## 1. Scope
@@ -78,10 +78,11 @@ Production metrics should track durable rows, push attempts, accepted tickets, r
 
 ## 9. Deferred
 
-Multiple devices per user, user notification preferences, quiet hours, bulk campaigns, scheduled reminders, localized server payloads, push deep-link routing and guaranteed/retried remote delivery are outside V1.
+User notification preferences, quiet hours, bulk campaigns, scheduled reminders, per-user single-language server payloads, push deep-link routing and guaranteed/retried remote delivery are outside V1. Multiple devices are supported through one `PushDevice` row per Expo token; logout removes only the current device token. Current event payloads carry both English and Chinese.
 
 ## Change Log
 
 | Date | Version | Change |
 |---|---|---|
 | 2026-08-07 | 1.0 | Documented durable in-app notifications, best-effort Expo push, event producers, permissions, credentials and known V1 limits. |
+| 2026-08-08 | 1.1 | Added multi-device token storage/targeted unregister and bilingual system-event payloads; retained physical-device delivery as a release evidence gate. |

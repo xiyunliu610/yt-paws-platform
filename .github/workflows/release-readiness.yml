@@ -1,0 +1,35 @@
+name: Production release readiness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  evidence-gate:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      STRIPE_LIVE_E2E_VERIFIED_AT: ${{ vars.STRIPE_LIVE_E2E_VERIFIED_AT }}
+      WECHAT_LIVE_E2E_VERIFIED_AT: ${{ vars.WECHAT_LIVE_E2E_VERIFIED_AT }}
+      PUSH_DEVICE_E2E_VERIFIED_AT: ${{ vars.PUSH_DEVICE_E2E_VERIFIED_AT }}
+      SESSION_SECURITY_REVIEW: ${{ vars.SESSION_SECURITY_REVIEW }}
+      PRIVATE_MEDIA_VERIFIED_AT: ${{ vars.PRIVATE_MEDIA_VERIFIED_AT }}
+      ERROR_MONITORING_VERIFIED_AT: ${{ vars.ERROR_MONITORING_VERIFIED_AT }}
+      PEN_TEST_REPORT: ${{ vars.PEN_TEST_REPORT }}
+      BACKUP_RESTORE_VERIFIED_AT: ${{ vars.BACKUP_RESTORE_VERIFIED_AT }}
+      ROLLBACK_DRILL_VERIFIED_AT: ${{ vars.ROLLBACK_DRILL_VERIFIED_AT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: yt-paws-backend/package-lock.json
+      - name: Install locked backend dependencies
+        working-directory: yt-paws-backend
+        run: npm ci
+      - name: Require traceable production evidence
+        working-directory: yt-paws-backend
+        run: npm run release:check
+      - name: Build immutable candidate image
+        working-directory: yt-paws-backend
+        run: docker build -t yt-paws-backend:${{ github.sha }} .

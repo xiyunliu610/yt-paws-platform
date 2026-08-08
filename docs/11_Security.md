@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Security
 
-**Version:** 1.0  
-**Updated:** 2026-08-07  
+**Version:** 1.1
+**Updated:** 2026-08-08
 **Status:** V1 application baseline implemented; production infrastructure and independent review remain launch gates.
 
 ## 1. Security objectives
@@ -52,11 +52,11 @@ Stripe live/test separation, dashboard access control, webhook rotation and reco
 - Public, object-storage and alert URLs require HTTPS.
 - Trust proxy is fixed to one hop for hosting-proxy client IP handling.
 
-CORS is not authentication, and native mobile requests may have no browser Origin. All endpoints still require normal JWT/ownership controls. Hosting must terminate modern TLS, redirect HTTP and add standard response security headers at the edge. A dedicated Helmet/CSP layer is not currently installed in Nest and should be evaluated if richer public web pages are added.
+CORS is not authentication, and native mobile requests may have no browser Origin. All endpoints still require normal JWT/ownership controls. Nest applies Helmet headers and a restrictive CSP (with inline allowances required by the small reset page); hosting must still terminate modern TLS, redirect HTTP and add/verify edge headers.
 
 ## 8. Media and secrets
 
-Presigned uploads use random object keys, allow-listed image MIME types, size limits and short expiry. Database rows store URLs, not base64 bytes. Buckets should use least-privilege credentials, restrictive CORS and lifecycle cleanup. Public URLs mean anyone possessing a URL may fetch it; highly sensitive/private media would require private objects plus signed GET URLs in a later hardening phase.
+Presigned uploads use random object keys, allow-listed image MIME types, size limits and short expiry. Database rows store URLs, not base64 bytes. Buckets should use least-privilege credentials, restrictive CORS and lifecycle cleanup. Current public URLs are bearer-like: anyone possessing one may fetch it. Production promotion is blocked until private objects plus authenticated/signed reads are implemented and verified; this is not deferred post-launch hardening.
 
 Provider keys and JWT secrets exist only in backend/hosting secret storage. `EXPO_PUBLIC_*` values are public by design and must contain URLs/IDs only. Never commit `.env`, service-account JSON, signing keys or production exports. Rotate any secret suspected of exposure.
 
@@ -88,10 +88,11 @@ Before public use, choose centralized error/log monitoring, define severity/on-c
 
 ## 12. Known limits and future hardening
 
-No refresh-token rotation, multi-device session list, platform-superadmin, private signed media downloads, centralized SIEM/error tracker, push receipt processing, edge WAF configuration or independent penetration test is included in V1. These are documented limits, not claims of production protection.
+Helmet security headers, a CSP for the small public web surface, metadata-only request logging, global application throttling and stricter persistent auth limits are implemented. No refresh-token rotation, per-device session revocation, platform-superadmin, private signed media downloads, centralized SIEM/error tracker, push receipt processing, edge WAF configuration or independent penetration test is included. Private media, monitoring, penetration testing and provider/device certification are production release gates checked by `npm run release:check`, not optional post-launch hardening.
 
 ## Change Log
 
 | Date | Version | Change |
 |---|---|---|
 | 2026-08-07 | 1.0 | Documented implemented authentication, authorization, payment, media, deletion and configuration controls plus production responsibilities and known limits. |
+| 2026-08-08 | 1.1 | Added Helmet/CSP, global throttling and privacy-safe request logging; elevated private media, monitoring, provider verification and penetration testing to explicit release evidence gates. |

@@ -15,10 +15,8 @@ export class NotificationsService {
       data: { userId, title, body },
     });
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (user?.pushToken) {
-      void sendExpoPushBestEffort(user.pushToken, title, body);
-    }
+    const devices = await this.prisma.pushDevice.findMany({ where: { userId }, select: { token: true } });
+    for (const device of devices) void sendExpoPushBestEffort(device.token, title, body);
 
     return notification;
   }
@@ -58,12 +56,16 @@ export class NotificationsService {
   }
 
   async registerDevice(userId: string, pushToken: string) {
-    await this.prisma.user.update({ where: { id: userId }, data: { pushToken } });
+    await this.prisma.pushDevice.upsert({
+      where: { token: pushToken },
+      create: { userId, token: pushToken },
+      update: { userId },
+    });
     return { registered: true };
   }
 
-  async unregisterDevice(userId: string) {
-    await this.prisma.user.update({ where: { id: userId }, data: { pushToken: null } });
+  async unregisterDevice(userId: string, pushToken: string) {
+    await this.prisma.pushDevice.deleteMany({ where: { userId, token: pushToken } });
     return { registered: false };
   }
 }

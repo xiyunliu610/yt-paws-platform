@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.19
-**Last Updated:** 2026-08-07
+**Document Status:** Draft v0.20
+**Last Updated:** 2026-08-08
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---
@@ -166,8 +166,10 @@ Multi-business support, AI business analytics, AI Vision, open APIs
 
 - **Multi-tenant extensibility is reflected in the data model starting from Version 1:** core business-owned tables (Booking, Service) reserve a `business_id` field, so that even though only Y&T Paws currently uses the platform, onboarding future businesses will not require a destructive schema migration. **Pet is deliberately not one of these tables** — a pet profile belongs to its owner (a platform customer), not to a business, so it has no `business_id` and can be booked with any business. The Cross-Module NFR table in `02_Product_Requirements.md` already reflects this (updated 2026-07-29)
 - **Version 1's business logic and permission scope still serve Y&T Paws exclusively.** Multi-business capability is a "reserved structure," not a "fully implemented multi-business operation" (e.g. business-level dashboard switching or full cross-business data isolation belongs to Version 4)
+- **The reserved fields reduce schema churn but do not make multi-business or platform admin cheap.** Version 4 must remove the singleton index, introduce customer business discovery/selection, audit every service-layer tenant filter, separate business `admin` from a new platform-level authorization model, add cross-tenant tests and migrate existing roles. This is a substantial product/security project, not an enum switch.
 - **Business onboarding is bootstrap-only, not an ongoing self-service surface (decided 2026-07-30, reversing the original plan below).** `POST /auth/register-business` (US-01.4 in `02_Product_Requirements.md`) can only ever create the platform's one `Business` row — `AuthService.registerBusiness` rejects the call once a `Business` already exists. The original design let anyone self-register a new tenant at any time; in practice this meant a customer's service list (which has no `businessId` filter — see `03_System_Architecture.md` §4.2) would start mixing services from every registered business, which is exactly the marketplace behavior this section says PetHome is not. V1 genuinely serves only Y&T Paws, so the registration surface now enforces that instead of just reserving the data model for it. A real multi-business platform (customer-facing business discovery/selection, per-business verification, actual data isolation) is Version 4 scope, done properly then — not something to half-build now via an onboarding form nobody else can safely use yet
 - Detailed table structures will be defined in `04_Database_Design.md`
+- **Camera is roadmap intent only.** V1 has no `CameraDevice`, stream-session, credential, authorization or retention schema. Version 2 starts with threat modelling and data-model/provider design; the current dashed architecture box is not implemented scaffolding.
 
 ---
 
@@ -238,8 +240,8 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 09 | Notification Design | ✅ Completed |
 | 10 | Deployment | ✅ Completed (external provisioning pending) |
 | 11 | Security | ✅ Completed (production controls pending) |
-| 12 | UI Design | ⏳ Not started |
-| 13 | Testing | ⏳ Not started |
+| 12 | UI Design | ✅ Completed |
+| 13 | Testing | ✅ Completed |
 | 14 | Roadmap | ⏳ Not started |
 | 15 | Development Handbook | ⏳ Not started |
 
@@ -270,3 +272,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-08-07 | v0.17 | Completed `06_AI_Agent_Design.md`: documented the shipped zero-cost bilingual Help Center and defined backend-only security, privacy, tool authorization, human-handoff and cost gates for any future paid AI agent | Xiyun Liu |
 | 2026-08-07 | v0.18 | Completed Payment, Notification, Deployment and Security design documents from the implemented code; deferred Camera until after core launch and tightened production validation for Stripe credentials and explicit HTTPS CORS origins | Xiyun Liu |
 | 2026-08-08 | v0.19 | Reconciled V1 scope with the shipped role-scoped management screens and added release configuration/document-drift safeguards to CI | Xiyun Liu |
+| 2026-08-08 | v0.20 | Closed the bootstrap Business race at the database layer, completed UI/testing strategy documents and promoted live-provider, private-media, monitoring, penetration-test, restore and rollback evidence to production release gates | Xiyun Liu |

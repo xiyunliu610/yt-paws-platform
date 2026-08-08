@@ -254,6 +254,7 @@ describe('Account security and deletion (e2e)', () => {
         data: { bookingId: booking.id, text: 'private report', mediaUrls: ['data:image/png;base64,AA=='] },
       });
       await prisma.notification.create({ data: { userId: customerId, title: 'Private', body: 'Private' } });
+      await prisma.pushDevice.create({ data: { userId: customerId, token: 'ExponentPushToken[delete-me]' } });
 
       await request(app.getHttpServer())
         .delete('/auth/account')
@@ -266,11 +267,12 @@ describe('Account security and deletion (e2e)', () => {
         .expect(401);
 
       const deletedUser = await prisma.user.findUniqueOrThrow({ where: { id: customerId } });
-      expect(deletedUser).toMatchObject({ isActive: false, name: null, phone: null, pushToken: null });
+      expect(deletedUser).toMatchObject({ isActive: false, name: null, phone: null });
       expect(deletedUser.email).toBe(`deleted-${customerId}@deleted.invalid`);
       expect(deletedUser.deletedAt).not.toBeNull();
       expect(await prisma.petHealthRecord.count({ where: { petId: pet.id } })).toBe(0);
       expect(await prisma.notification.count({ where: { userId: customerId } })).toBe(0);
+      expect(await prisma.pushDevice.count({ where: { userId: customerId } })).toBe(0);
       expect(await prisma.securityEvent.count({
         where: {
           OR: [

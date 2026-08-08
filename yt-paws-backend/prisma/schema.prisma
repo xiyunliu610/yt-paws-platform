@@ -59,7 +59,9 @@ enum CheckoutAttemptStatus {
 }
 
 /// A pet care business onboarded to the platform. Version 1 has exactly one
-/// row (Y&T Paws) and AuthService.registerBusiness enforces that — it's a
+/// row (Y&T Paws). The business_singleton_unique expression index enforces
+/// that invariant in PostgreSQL, while AuthService provides an early friendly
+/// rejection — it's a
 /// bootstrap step, not an ongoing self-service signup surface (decided
 /// 2026-07-30, see docs/01_Project_Overview.md §11). business_id is still
 /// carried on core tables from Version 1 onward so a real multi-business
@@ -92,11 +94,6 @@ model User {
   name                  String?
   phone                 String?
   role                  Role                 @default(customer)
-  // Expo push token, registered client-side after the user grants
-  // notification permission. Null until then, or if they never grant it
-  // (or are running in an environment where remote push isn't available,
-  // e.g. Expo Go on SDK 53+) — in-app notifications work regardless.
-  pushToken             String?
   isActive              Boolean              @default(true)
   // Every JWT carries the value current at issuance. Password changes,
   // resets and account deletion increment it, invalidating all older JWTs
@@ -116,6 +113,18 @@ model User {
   refundsIssued         Payment[]            @relation("PaymentRefundedBy")
   passwordResetTokens   PasswordResetToken[]
   securityEvents        SecurityEvent[]
+  pushDevices           PushDevice[]
+}
+
+model PushDevice {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model PasswordResetToken {

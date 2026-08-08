@@ -27,6 +27,7 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
   let allUserIds: string[];
   let staff1Id: string;
   let staff2Id: string;
+  let customerId: string;
 
   const ownerEmail = `bp_owner_${Date.now()}@example.com`;
   const staff1Email = `bp_staff1_${Date.now()}@example.com`;
@@ -100,6 +101,7 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
       .send({ email: customerEmail, password: 'password123', name: 'Customer' })
       .expect(201);
     customerToken = customerRes.body.token;
+    customerId = customerRes.body.user.id;
 
     const otherCustomerRes = await request(app.getHttpServer())
       .post('/auth/register')
@@ -326,6 +328,20 @@ describe('Booking-scoped care-details and report read permissions (e2e)', () => 
       const unread = list.body.find((item: { readAt: string | null }) => !item.readAt);
       await request(app.getHttpServer()).patch(`/notifications/${unread.id}/read`)
         .set('Authorization', `Bearer ${customerToken}`).expect(200);
+    });
+
+    it('registers multiple push devices and unregisters only the current device', async () => {
+      const first = 'ExponentPushToken[e2e-device-one]';
+      const second = 'ExponentPushToken[e2e-device-two]';
+      for (const pushToken of [first, second]) {
+        await request(app.getHttpServer()).patch('/notifications/register-device')
+          .set('Authorization', `Bearer ${customerToken}`).send({ pushToken }).expect(200);
+      }
+      await expect(prisma.pushDevice.count({ where: { userId: customerId } })).resolves.toBe(2);
+      await request(app.getHttpServer()).patch('/notifications/unregister-device')
+        .set('Authorization', `Bearer ${customerToken}`).send({ pushToken: first }).expect(200);
+      await expect(prisma.pushDevice.findMany({ where: { userId: customerId }, select: { token: true } }))
+        .resolves.toEqual([{ token: second }]);
     });
 
     it('allows cancellation before 24 hours and rejects it inside the window for owner and customer alike', async () => {

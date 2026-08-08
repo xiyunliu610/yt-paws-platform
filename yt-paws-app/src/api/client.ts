@@ -484,6 +484,10 @@ export const notificationsApi = {
       token,
     ),
 
-  unregisterDevice: (token: string) =>
-    request<{ registered: boolean }>('/notifications/unregister-device', { method: 'PATCH' }, token),
+  unregisterDevice: (token: string, pushToken: string) =>
+    request<{ registered: boolean }>(
+      '/notifications/unregister-device',
+      { method: 'PATCH', body: JSON.stringify({ pushToken }) },
+      token,
+    ),
 };

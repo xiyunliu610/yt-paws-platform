@@ -25,7 +25,7 @@ export class NotificationsController {
   }
 
   @Patch('unregister-device')
-  unregisterDevice(@Req() req: AuthenticatedRequest) {
-    return this.notificationsService.unregisterDevice(req.user.userId);
+  unregisterDevice(@Req() req: AuthenticatedRequest, @Body() body: RegisterDeviceDto) {
+    return this.notificationsService.unregisterDevice(req.user.userId, body.pushToken);
   }
 }

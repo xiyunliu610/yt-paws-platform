@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.27
+**Document Status:** Draft v0.28
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-08-07
+**Last Updated:** 2026-08-08
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -20,7 +20,7 @@ PetHome v1.0 uses a **Modular Monolith** architecture rather than microservices:
 - NestJS's Module mechanism already supports clear boundary separation; if a module (e.g. AI Agent or Camera) genuinely needs to scale independently in the future, it can be extracted from the monolith at relatively low cost
 - Aligns with the "Simplicity Before Complexity" design principle from `01_Project_Overview.md`
 
-**Unified entry point (Gateway Layer):** All client requests pass through the same NestJS application first, rather than being spread across multiple independent services. This layer handles JWT authentication, rate limiting, request logging, and validation. This "Gateway Layer" is **not** an independently deployed gateway component (unlike, say, Kong, Nginx, or AWS API Gateway) — it is an architectural concept expressing "a single unified request entry point with cross-cutting concerns handled centrally." Concretely, it is implemented via NestJS's Middleware / Guard / Interceptor mechanisms sitting in front of Controllers and Services:
+**Unified entry point (Gateway Layer):** All client requests pass through the same NestJS application first. Validation, structured metadata-only request logging and a broad per-process rate limit are global; JWT/role guards apply to protected controllers. Auth additionally has stricter persistent login/reset limits. The application-level limiter is not a replacement for an edge/WAF limit and its counters are not shared across replicas. This "Gateway Layer" is **not** an independently deployed gateway component (unlike Kong, Nginx or AWS API Gateway); it is the NestJS middleware/guard/interceptor boundary:
 
 ```
 HTTP
@@ -44,7 +44,6 @@ flowchart TB
         Gateway["API Entry Point (Gateway Layer)<br/>(JWT / Rate Limit / Logging / Validation)"]
         subgraph V1["Version 1 · Current Development"]
             Auth["auth module"]
-            Users["users module"]
             Pets["pets module"]
             Services["services module"]
             Bookings["bookings module"]
@@ -88,6 +87,7 @@ flowchart TB
 - Solid lines = connections implemented in Version 1
 - Dashed lines = connections only enabled in future versions; currently just reserved in the architecture
 - The "Reserved · Future Versions" dashed box = not implemented now, only placeholder in the diagram, so readers can immediately see the gap between the system's eventual shape and current progress
+- "Reserved" means roadmap placement, not code/schema readiness. Camera has no module, device/session tables or credential/stream authorization design; platform-superadmin likewise requires a new authorization model and broad service-layer changes.
 
 ---
 
@@ -160,6 +160,7 @@ erDiagram
     USER ||--o{ BOOKING : makes
     USER ||--o{ BOOKING : "is assigned (staff)"
     USER ||--o{ NOTIFICATION : receives
+    USER ||--o{ PUSH_DEVICE : registers
     PET ||--o{ BOOKING : "is subject of"
     SERVICE ||--o{ BOOKING : "ordered as"
     BOOKING ||--o{ PAYMENT : "paid via"
@@ -177,13 +178,17 @@ erDiagram
         uuid business_id FK "nullable, only set for owner/staff"
         string email
         enum role "customer/staff/owner/admin"
-        string push_token "nullable, Expo push token registered client-side"
         boolean is_active "default true; JwtStrategy re-checks this on every request, see §8"
+    }
+    PUSH_DEVICE {
+        uuid id PK
+        uuid user_id FK
+        string token UK "one row per Expo device token"
     }
     PET {
         uuid id PK
         uuid owner_id FK
-        string photo_url "nullable, interim base64 data URI — see §5.3"
+        string photo_url "nullable, object-storage URL"
     }
     SERVICE {
         uuid id PK
@@ -246,7 +251,7 @@ Written down explicitly to avoid scope creep during development:
 - ❌ No customer-facing staff selection (customers don't see or choose `assigned_staff_id`; only the Owner sets it) — deferred until staff headcount justifies the extra UI (profiles, availability, etc.)
 - ✅ Only: core tables carry a `business_id` field, and owner/staff-facing queries consistently apply this filter
 - ✅ Owner-to-staff booking assignment via `assigned_staff_id`
-- ⚠️ Exception: `GET /services` for a customer applies no `business_id` filter at all — it relies on `AuthService.registerBusiness` enforcing that only one `Business` row can ever exist (§13's ADR), not on a query-level filter. This is correct only as long as that stays true; see the comment on `ServicesService.findAll`
+- ⚠️ Exception: `GET /services` for a customer applies no `business_id` filter. V1 therefore has a PostgreSQL `business_singleton_unique` expression index that atomically permits at most one `Business`; the application count check only provides an early friendly error. Removing the index requires the complete multi-business discovery/isolation launch, never a standalone migration.
 
 ---
 
@@ -553,3 +558,4 @@ flowchart TB
 | 2026-08-07 | v0.25 | Completed the AI-agent design around the existing `HelpProvider` seam and fixed application shutdown ownership: `PrismaService` now closes its PostgreSQL adapter pool through Nest lifecycle hooks, preventing E2E/production shutdown handle leaks | Xiyun Liu |
 | 2026-08-07 | v0.26 | Completed detailed Payment, Notification, Deployment and Security designs, including explicit implemented-vs-provisioning boundaries; production startup now rejects wildcard/insecure CORS, non-live Stripe keys and malformed Stripe webhook secrets | Xiyun Liu |
 | 2026-08-08 | v0.27 | Recorded Expo Push as the selected V1 provider, aligned the booking care-information UI with backend authorization, and added fail-fast EAS release URL validation plus CI drift checks | Xiyun Liu |
+| 2026-08-08 | v0.28 | Added a database-enforced single-Business invariant, Helmet/CSP, global throttling, privacy-safe request logging, multi-device push tokens and bilingual notification payloads; corrected the nonexistent users-module diagram and made external security/provider checks release gates | Xiyun Liu |

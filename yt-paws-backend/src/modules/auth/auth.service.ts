@@ -169,19 +169,30 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await this.prisma.$transaction(async (tx) => {
-      const business = await tx.business.create({ data: { name: businessName } });
-      return tx.user.create({
-        data: {
-          email,
-          password: hashedPassword,
-          name,
-          phone,
-          role: Role.owner,
-          businessId: business.id,
-        },
+    let user: User;
+    try {
+      user = await this.prisma.$transaction(async (tx) => {
+        const business = await tx.business.create({ data: { name: businessName } });
+        return tx.user.create({
+          data: {
+            email,
+            password: hashedPassword,
+            name,
+            phone,
+            role: Role.owner,
+            businessId: business.id,
+          },
+        });
       });
-    });
+    } catch (error) {
+      // business_singleton_unique is the concurrency-safe backstop for two
+      // bootstrap requests that both observed count() === 0. PostgreSQL, not
+      // the check above, decides which request wins.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ForbiddenException('This platform already has a registered business');
+      }
+      throw error;
+    }
 
     return this.toAuthResponse(user, this.signToken(user));
   }
@@ -272,10 +283,12 @@ export class AuthService {
               throw new BadRequestException('The last active owner cannot be deactivated');
             }
           }
-          return tx.user.update({
+          const updated = await tx.user.update({
             where: { id: targetId },
-            data: { isActive, tokenVersion: { increment: 1 }, pushToken: isActive ? undefined : null },
+            data: { isActive, tokenVersion: { increment: 1 } },
           });
+          if (!isActive) await tx.pushDevice.deleteMany({ where: { userId: targetId } });
+          return updated;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
@@ -423,6 +436,7 @@ export class AuthService {
       const pets = await tx.pet.findMany({ where: { ownerId: userId }, select: { id: true } });
       const petIds = pets.map((pet) => pet.id);
       await tx.notification.deleteMany({ where: { userId } });
+      await tx.pushDevice.deleteMany({ where: { userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId } });
       await tx.securityEvent.deleteMany({
         where: { OR: [{ userId }, { emailHash: originalEmailHash }] },
@@ -455,7 +469,6 @@ export class AuthService {
           password: replacementPassword,
           name: null,
           phone: null,
-          pushToken: null,
           isActive: false,
           tokenVersion: { increment: 1 },
           mustChangePassword: false,

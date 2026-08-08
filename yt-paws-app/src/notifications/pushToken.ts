@@ -2,7 +2,10 @@ import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { notificationsApi } from '../api/client';
+
+const PUSH_TOKEN_STORAGE_KEY = 'registered_expo_push_token';
 
 // Best-effort only, by design: as of SDK 53+, Expo Go no longer supports
 // remote push delivery on either platform (only a standalone/dev-client
@@ -40,6 +43,7 @@ export async function registerForPushNotificationsAsync(token: string): Promise<
     }
     const pushToken = await Notifications.getExpoPushTokenAsync({ projectId });
     await notificationsApi.registerDevice(token, pushToken.data);
+    await AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, pushToken.data);
     return true;
   } catch (error) {
     console.log('Push notification registration skipped:', error);
@@ -49,7 +53,9 @@ export async function registerForPushNotificationsAsync(token: string): Promise<
 
 export async function unregisterPushNotifications(token: string): Promise<void> {
   try {
-    await notificationsApi.unregisterDevice(token);
+    const pushToken = await AsyncStorage.getItem(PUSH_TOKEN_STORAGE_KEY);
+    if (pushToken) await notificationsApi.unregisterDevice(token, pushToken);
+    await AsyncStorage.removeItem(PUSH_TOKEN_STORAGE_KEY);
   } catch {
     // Best-effort; nothing actionable if this fails.
   }

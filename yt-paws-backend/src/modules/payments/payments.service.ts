@@ -259,8 +259,8 @@ export class PaymentsService {
     });
     await this.notifications.notifyBusinessManagers(
       businessId,
-      'Duplicate Payment Received — Refund Needed',
-      `A ${payment.method} payment of NZD ${Number(payment.amount).toFixed(2)}${payment.referenceNote ? ` (ref ${payment.referenceNote})` : ''} for booking ${payment.bookingId} was received after another payment method had already been confirmed for the same booking. It was NOT recorded as paid, to avoid double-counting revenue — please refund it manually.`,
+      'Duplicate Payment — Refund Needed / 重复付款—需要退款',
+      `A ${payment.method} payment of NZD ${Number(payment.amount).toFixed(2)}${payment.referenceNote ? ` (ref ${payment.referenceNote})` : ''} for booking ${payment.bookingId} arrived after another payment was confirmed; refund it manually. / 预约 ${payment.bookingId} 在另一笔付款确认后又收到 NZD ${Number(payment.amount).toFixed(2)}，请人工退款。`,
     );
   }
 
@@ -419,8 +419,8 @@ export class PaymentsService {
               if (advanced.count === 1) {
                 await this.notifications.notify(
                   attempt.payment.booking.customerId,
-                  'Payment Successful',
-                  `Your payment of NZD ${amount.toFixed(2)} was successful.`,
+                  'Payment Successful / 支付成功',
+                  `Your payment of NZD ${amount.toFixed(2)} was successful. / 您的 NZD ${amount.toFixed(2)} 付款已成功。`,
                 );
               } else {
                 // Stripe confirmed a real charge, but the Payment wasn't
@@ -469,8 +469,8 @@ export class PaymentsService {
               if (advanced.count === 1) {
                 await this.notifications.notify(
                   attempt.payment.booking.customerId,
-                  'Payment Failed',
-                  `Your payment of NZD ${amount.toFixed(2)} could not be processed. Please try again.`,
+                  'Payment Failed / 支付失败',
+                  `Your payment of NZD ${amount.toFixed(2)} could not be processed. Please try again. / 您的 NZD ${amount.toFixed(2)} 付款处理失败，请重试。`,
                 );
               }
             }
@@ -559,13 +559,13 @@ export class PaymentsService {
     // waiting on GET /payments/business (see verifyWechatPayment below).
     await this.notifications.notify(
       user.userId,
-      'Payment Submitted',
-      "Thanks — we've recorded your WeChat transfer. The business will confirm receipt shortly.",
+      'Payment Submitted / 付款已提交',
+      "We've recorded your WeChat transfer; the business will confirm it shortly. / 已记录您的微信转账，商家将尽快确认。",
     );
     await this.notifications.notifyBusinessManagers(
       payment.booking.businessId,
-      'WeChat Payment Awaiting Verification',
-      `A customer marked a NZD ${Number(payment.amount).toFixed(2)} WeChat transfer (ref ${payment.referenceNote}) as paid. Please verify it in Payment Verification.`,
+      'WeChat Payment Awaiting Verification / 微信付款待核实',
+      `A customer submitted a NZD ${Number(payment.amount).toFixed(2)} WeChat transfer (ref ${payment.referenceNote}). / 客户提交了 NZD ${Number(payment.amount).toFixed(2)} 微信转账（编号 ${payment.referenceNote}），请核实。`,
     );
 
     const { booking: _booking, ...paymentFields } = payment;
@@ -628,8 +628,8 @@ export class PaymentsService {
     // US-05.2
     await this.notifications.notify(
       payment.booking.customerId,
-      'Payment Confirmed',
-      `Your WeChat payment of NZD ${Number(payment.amount).toFixed(2)} has been confirmed. Thank you!`,
+      'Payment Confirmed / 付款已确认',
+      `Your WeChat payment of NZD ${Number(payment.amount).toFixed(2)} has been confirmed. / 您的 NZD ${Number(payment.amount).toFixed(2)} 微信付款已确认。`,
     );
 
     const { booking: _booking, ...paymentFields } = payment;
@@ -644,8 +644,8 @@ export class PaymentsService {
     if (!payment) return;
     await this.notifications.notify(
       payment.booking.customerId,
-      'Payment Refunded',
-      `Your payment of NZD ${Number(payment.amount).toFixed(2)} has been refunded. Reason: ${reason}`,
+      'Payment Refunded / 付款已退款',
+      `Your payment of NZD ${Number(payment.amount).toFixed(2)} was refunded. Reason: ${reason} / 您的 NZD ${Number(payment.amount).toFixed(2)} 付款已退款。原因：${reason}`,
     );
   }
 

@@ -1,7 +1,7 @@
 # Y&T Paws Platform — API Design
 
-**Version:** 1.0  
-**Updated:** 2026-08-07  
+**Version:** 1.1
+**Updated:** 2026-08-08
 **Status:** Implemented REST API inventory for the current NestJS backend.
 
 ## 1. Conventions
@@ -11,7 +11,8 @@
 - UUID path parameters are validated. Unknown body fields are rejected by the global validation pipe.
 - Dates are ISO 8601 strings in UTC. Money is stored as PostgreSQL decimal and serialized as JSON numbers by the global interceptor.
 - Success uses the natural HTTP status (`200`, `201`); validation/authorization/conflict failures use NestJS JSON errors with `statusCode`, `message`, and `error` where applicable.
-- There is no `/api/v1` prefix in V1. Breaking changes require a versioned prefix or coordinated App release.
+- There is no `/api/v1` prefix in the shipped V1 contract. Migration path: first add `/api/v1` aliases without removing existing routes; ship an App using only the aliases; measure/support the minimum old App version through a published sunset window; then freeze unprefixed routes and put the first breaking contract under `/api/v2`. A prefix must never be introduced by breaking installed store clients in place.
+- OpenAPI generation is not installed. CI instead performs a minimum route-inventory drift check: every controller method/path must appear in this document. DTO/schema and response-shape drift still requires review and is a tracked limitation; OpenAPI generation should replace the hand-maintained schema layer before external API consumers exist.
 
 Roles are `customer`, `staff`, `owner`, and business-scoped `admin`. JWT validation also checks `isActive`, `deletedAt`, `tokenVersion`, and the temporary-password gate. Staff with `mustChangePassword=true` may only complete the password-change flow before accessing business endpoints.
 
@@ -110,10 +111,10 @@ Amounts come from the Booking snapshot, never from App input. Stripe webhook aut
 |---|---|---|---|
 | GET | `/notifications/mine` | JWT | List caller notifications. |
 | PATCH | `/notifications/:id/read` | notification owner | Mark one row read. |
-| PATCH | `/notifications/register-device` | JWT | Store Expo push token. |
-| PATCH | `/notifications/unregister-device` | JWT | Remove push token on logout/device change. |
+| PATCH | `/notifications/register-device` | JWT | Upsert one Expo device token; a user may own multiple device rows. |
+| PATCH | `/notifications/unregister-device` | JWT | Remove only the supplied current-device token on logout. |
 
-In-app notification rows are authoritative. Remote push is best-effort and must be verified on EAS-built physical devices with APNs/FCM credentials.
+In-app notification rows are authoritative. Current system-event payloads include English and Chinese text. Remote push fans out to every registered device, remains best-effort and must be verified on EAS-built physical devices with APNs/FCM credentials.
 
 ## 9. Security and operational behavior
 
@@ -129,3 +130,4 @@ In-app notification rows are authoritative. Remote push is best-effort and must 
 | Date | Version | Change |
 |---|---|---|
 | 2026-08-07 | 1.0 | Recorded the implemented endpoint inventory, access rules, state transitions, media flow and payment guarantees. |
+| 2026-08-08 | 1.1 | Added a backward-compatible API-version migration path, multi-device notification contract and CI controller-route drift detection; explicitly recorded the remaining lack of generated OpenAPI schemas. |

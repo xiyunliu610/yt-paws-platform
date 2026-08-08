@@ -192,8 +192,8 @@ export class BookingsService {
     // them about their booking.
     await this.notifications.notify(
       booking.customerId,
-      'Booking Cancelled',
-      `Your booking has been cancelled.`,
+      'Booking Cancelled / 预约已取消',
+      'Your booking has been cancelled. / 您的预约已取消。',
     );
 
     return updated;
@@ -207,6 +207,11 @@ export class BookingsService {
     [BookingStatus.pending]: BookingStatus.confirmed,
     [BookingStatus.confirmed]: BookingStatus.in_progress,
     [BookingStatus.in_progress]: BookingStatus.completed,
+  };
+  private static readonly STATUS_LABEL_ZH: Partial<Record<BookingStatus, string>> = {
+    [BookingStatus.confirmed]: '已确认',
+    [BookingStatus.in_progress]: '服务中',
+    [BookingStatus.completed]: '已完成',
   };
 
   async updateStatus(requester: RequestingUser, bookingId: string, nextStatus: string) {
@@ -233,8 +238,8 @@ export class BookingsService {
     // US-05.1
     await this.notifications.notify(
       booking.customerId,
-      'Booking Update',
-      `Your booking is now ${BookingsService.STATUS_LABEL[expectedNext]}.`,
+      'Booking Update / 预约更新',
+      `Your booking is now ${BookingsService.STATUS_LABEL[expectedNext]}. / 您的预约状态现为${BookingsService.STATUS_LABEL_ZH[expectedNext]}。`,
     );
 
     return updated;

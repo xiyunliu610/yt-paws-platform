@@ -19,7 +19,10 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:all": "npm test -- --runInBand && npm run test:e2e -- --runInBand",
-    "media:migrate": "ts-node scripts/migrate-media.ts"
+    "media:migrate": "ts-node scripts/migrate-media.ts",
+    "business:audit": "ts-node scripts/audit-business-singleton.ts",
+    "api:drift": "node scripts/check-api-doc-drift.js",
+    "release:check": "node scripts/check-release-readiness.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
@@ -30,6 +33,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/throttler": "^6.5.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "bcryptjs": "^3.0.3",
@@ -38,6 +42,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

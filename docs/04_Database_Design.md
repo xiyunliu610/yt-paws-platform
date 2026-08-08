@@ -88,7 +88,7 @@ Stripe refund requests use the Payment ID as the provider idempotency key. `refu
 
 ## 5. Index strategy
 
-Primary keys are UUIDs and user email, reset-token hash, and Stripe Session ID are unique. Booking capacity queries use composite indexes on `(resourceId, status, startDate, endDate)` for pet, business, service and assigned staff. Customer history uses `(customerId, createdAt)`. Security-event and reset-token indexes support persistent rate limits and expiry cleanup.
+Primary keys are UUIDs and user email, push-device token, reset-token hash, and Stripe Session ID are unique. `business_singleton_unique` is a PostgreSQL expression index over a constant and atomically permits at most one V1 `Business`; it must only be dropped as part of the complete multi-business launch. Booking capacity queries use composite indexes on `(resourceId, status, startDate, endDate)` for pet, business, service and assigned staff. Customer history uses `(customerId, createdAt)`. Security-event, push-device and reset-token indexes support delivery, persistent rate limits and expiry cleanup.
 
 The overlap checks run in serializable transactions. PostgreSQL indexes reduce the candidate set; the transaction isolation prevents two simultaneous requests from both observing spare capacity and committing beyond the configured cap.
 

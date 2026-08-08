@@ -1,6 +1,6 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.25
+**Document Status:** Draft v0.26
 **Related Document:** `01_Project_Overview.md`
 **Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -79,7 +79,7 @@ Corresponding backend module: `auth`
 - Given the email is already registered, When they submit, Then the system rejects it with "email already exists" (same rule as US-01.1)
 - Out of scope for Version 1: business verification/approval workflow, billing/subscription for the business itself, and (now) any UI for this at all — a customer-facing "Register Business" entry point would only ever be able to fail, so it was removed from the app rather than left as a dead end
 
-*Already implemented: `POST /auth/register-business`, now bootstrap-only (`AuthService.registerBusiness` checks `Business` row count). The `RegisterBusinessScreen` and its "Register Business" link on the login screen were removed from the app (2026-07-30) along with the now-dead `authApi.registerBusiness` client call — none of the three had a reachable path to success once a `Business` already exists.*
+*Already implemented: `POST /auth/register-business`, now bootstrap-only. `AuthService.registerBusiness` provides an early count check and PostgreSQL's `business_singleton_unique` expression index is the atomic concurrency backstop. The `RegisterBusinessScreen` and its login link/client call were removed from the app.*
 
 ### US-01.5 Password and Session Security
 > As a user, I want to reset or change my password and have older sessions revoked, so that a lost credential does not keep granting access.
@@ -403,3 +403,4 @@ Profile provides an in-app bilingual Help Center with keyword search, topic filt
 | 2026-08-07 | v0.23 | Completed the AI-agent design baseline without activating paid AI: V1 remains a local bilingual Help Center, while any future assistant is gated by explicit read-only-first scope, human escalation, privacy disclosures, evaluation and spend controls | Xiyun Liu |
 | 2026-08-07 | v0.24 | Published implementation-derived Payment and Notification designs and separated implemented application behavior from remaining live-provider/EAS device verification; Camera and paid AI code remain explicitly deferred | Xiyun Liu |
 | 2026-08-08 | v0.25 | Synced the shipped booking care-information UI: customer, assigned staff and owner/admin visibility now mirrors backend authorization; failures provide an explicit retry action and the access policy has automated tests. Added fail-fast preview/production URL validation | Xiyun Liu |
+| 2026-08-08 | v0.26 | Made the single-Business bootstrap invariant concurrency-safe in PostgreSQL, added multi-device push registration and bilingual system notifications, and formalized external provider/security evidence as production release gates | Xiyun Liu |
