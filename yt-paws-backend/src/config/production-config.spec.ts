@@ -12,7 +12,6 @@ const validProduction = (): NodeJS.ProcessEnv => ({
   STRIPE_SECRET_KEY: 'sk_live_example',
   STRIPE_WEBHOOK_SECRET: 'whsec_example',
   OBJECT_STORAGE_BUCKET: 'media',
-  OBJECT_STORAGE_PUBLIC_URL: 'https://media.example.com',
   OBJECT_STORAGE_ACCESS_KEY_ID: 'key',
   OBJECT_STORAGE_SECRET_ACCESS_KEY: 'secret',
   ALERT_WEBHOOK_URL: 'https://alerts.example.com/hook',

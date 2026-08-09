@@ -1,10 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { sendExpoPushBestEffort } from './expo-push.util';
 
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit, OnModuleDestroy {
+  private receiptTimer?: NodeJS.Timeout;
   constructor(private prisma: PrismaService) {}
+
+  onModuleInit() {
+    if (process.env.NODE_ENV === 'test') return;
+    this.receiptTimer = setInterval(() => void this.reconcilePushReceipts(), 60_000);
+    this.receiptTimer.unref();
+  }
+  onModuleDestroy() { if (this.receiptTimer) clearInterval(this.receiptTimer); }
 
   // Called as a side effect from bookings/payments (US-05.1/US-05.2), per
   // the Version 1 simplified notification architecture (see
@@ -15,10 +23,49 @@ export class NotificationsService {
       data: { userId, title, body },
     });
 
-    const devices = await this.prisma.pushDevice.findMany({ where: { userId }, select: { token: true } });
-    for (const device of devices) void sendExpoPushBestEffort(device.token, title, body);
+    const devices = await this.prisma.pushDevice.findMany({ where: { userId }, select: { id: true, token: true } });
+    for (const device of devices) void this.deliver(device, title, body);
 
     return notification;
+  }
+
+  private async deliver(device: { id: string; token: string }, title: string, body: string) {
+    const expoTicketId = await sendExpoPushBestEffort(device.token, title, body);
+    if (expoTicketId) await this.prisma.pushTicket.create({
+      data: { deviceId: device.id, expoTicketId, nextCheckAt: new Date(Date.now() + 60_000) },
+    }).catch(() => undefined);
+  }
+
+  async reconcilePushReceipts() {
+    const tickets = await this.prisma.pushTicket.findMany({
+      where: { status: 'pending', nextCheckAt: { lte: new Date() }, attempts: { lt: 4 } },
+      take: 100,
+    });
+    if (!tickets.length) return;
+    try {
+      const response = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ ids: tickets.map((ticket) => ticket.expoTicketId) }),
+      });
+      const payload = await response.json() as { data?: Record<string, { status: string; message?: string; details?: { error?: string } }> };
+      for (const ticket of tickets) {
+        const receipt = payload.data?.[ticket.expoTicketId];
+        if (!receipt) continue;
+        if (receipt.status === 'ok') {
+          await this.prisma.pushTicket.update({ where: { id: ticket.id }, data: { status: 'delivered', attempts: { increment: 1 } } });
+        } else if (receipt.details?.error === 'DeviceNotRegistered') {
+          await this.prisma.pushDevice.delete({ where: { id: ticket.deviceId } });
+        } else {
+          const attempts = ticket.attempts + 1;
+          await this.prisma.pushTicket.update({ where: { id: ticket.id }, data: {
+            attempts, status: attempts >= 4 ? 'failed' : 'pending', error: receipt.details?.error ?? receipt.message,
+            nextCheckAt: new Date(Date.now() + 2 ** attempts * 60_000),
+          } });
+        }
+      }
+    } catch {
+      await this.prisma.pushTicket.updateMany({ where: { id: { in: tickets.map((ticket) => ticket.id) } }, data: { nextCheckAt: new Date(Date.now() + 120_000) } });
+    }
   }
 
   // Same as notify(), but for every owner/admin of a business at once —

@@ -26,11 +26,11 @@ Tests are grouped by risk domain rather than one file per Nest module. File coun
 | E2E suite | Covered behavior |
 |---|---|
 | `app.e2e-spec.ts` | Auth protection, public support, health/readiness and database-enforced single-Business invariant |
-| `auth-security.e2e-spec.ts` | Staff status, JWT revocation, password/reset security, rate limits, account deletion and retention |
+| `auth-security.e2e-spec.ts` | Staff status, JWT/refresh rotation, per-device revocation, password/reset security, rate limits, account deletion and retention |
 | `booking-permissions.e2e-spec.ts` | Pets, health records, care details, reports permissions, notifications, multi-device tokens, capacities, assignment and cancellation |
 | `payments.e2e-spec.ts` | Services/business settings, price snapshots, Stripe/WeChat concurrency, webhooks, refunds and duplicate-payment recovery |
 
-Media purpose/role validation has focused controller tests. Gaps that remain release-relevant are real object-storage upload/read/delete behavior, push receipts on physical devices, and live-provider timing; mocks cannot certify those.
+Media upload roles and protected read authorization have focused unit tests. Push receipt success/error cleanup has unit coverage. Gaps that remain release-relevant are real private object-storage behavior, receipts on physical devices and live-provider timing; mocks cannot certify those.
 
 ## 4. Required regression boundaries
 

@@ -16,6 +16,7 @@ import * as Linking from 'expo-linking';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, paymentsApi, Booking, WechatPaymentIntent, Payment } from '../api/client';
+import { authenticatedMediaSource } from '../api/mediaSource';
 
 type RootStackParamList = {
   Payment: { booking: Booking };
@@ -251,7 +252,7 @@ const PaymentScreen = () => {
 
               <View style={styles.qrCard}>
                 {wechatIntent.qrCodeUrl ? (
-                  <Image source={{ uri: wechatIntent.qrCodeUrl }} style={styles.qrImage} resizeMode="contain" />
+                  <Image source={authenticatedMediaSource(wechatIntent.qrCodeUrl, token)} style={styles.qrImage} resizeMode="contain" />
                 ) : (
                   <Text style={styles.helperText}>{t.payment.noQrCodeMessage}</Text>
                 )}

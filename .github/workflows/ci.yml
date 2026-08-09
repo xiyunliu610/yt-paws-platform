@@ -46,7 +46,7 @@ jobs:
         run: npx prisma migrate deploy
       - name: Verify backend
         working-directory: yt-paws-backend
-        run: npm run build && test -f dist/src/main.js && npm run api:drift && npm run test:all
+        run: npm run build && test -f dist/src/main.js && npm run api:drift && bash -n scripts/*.sh && npm run test:all
       - name: Verify production container
         working-directory: yt-paws-backend
         run: docker build -t yt-paws-backend:ci .

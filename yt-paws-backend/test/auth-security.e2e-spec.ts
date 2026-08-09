@@ -134,6 +134,23 @@ describe('Account security and deletion (e2e)', () => {
   });
 
   describe('password sessions and reset tokens', () => {
+    it('rotates refresh tokens and revokes one selected device session', async () => {
+      const loggedIn = await request(app.getHttpServer()).post('/auth/login')
+        .send({ email: emails.customer, password, deviceName: 'Second phone' }).expect(201);
+      const refreshed = await request(app.getHttpServer()).post('/auth/refresh')
+        .send({ refreshToken: loggedIn.body.refreshToken }).expect(201);
+      await request(app.getHttpServer()).get('/auth/sessions')
+        .set('Authorization', `Bearer ${refreshed.body.token}`).expect(200)
+        .expect((response) => expect(response.body.some((item: { deviceName: string }) => item.deviceName === 'Second phone')).toBe(true));
+      const payload = JSON.parse(Buffer.from(refreshed.body.token.split('.')[1], 'base64url').toString()) as { sid: string };
+      await request(app.getHttpServer()).delete(`/auth/sessions/${payload.sid}`)
+        .set('Authorization', `Bearer ${customerToken}`).expect(200);
+      await request(app.getHttpServer()).get('/bookings/mine')
+        .set('Authorization', `Bearer ${refreshed.body.token}`).expect(401);
+      await request(app.getHttpServer()).post('/auth/refresh')
+        .send({ refreshToken: refreshed.body.refreshToken }).expect(401);
+      customerToken = await login(emails.customer);
+    });
     it('changes password, revokes the old JWT, and returns a replacement JWT', async () => {
       const response = await request(app.getHttpServer())
         .patch('/auth/change-password')

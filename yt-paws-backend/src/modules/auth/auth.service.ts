@@ -25,6 +25,7 @@ const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23
 const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 const LOGIN_LOCK_THRESHOLD = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface RequestingUser {
   userId: string;
@@ -70,19 +71,21 @@ export class AuthService {
     }
   }
 
-  private signToken(user: Pick<User, 'id' | 'email' | 'role' | 'businessId' | 'tokenVersion'>) {
+  private signToken(user: Pick<User, 'id' | 'email' | 'role' | 'businessId' | 'tokenVersion'>, sessionId: string) {
     return this.jwtService.sign({
       sub: user.id,
       email: user.email,
       role: user.role,
       businessId: user.businessId,
       tokenVersion: user.tokenVersion,
+      sid: sessionId,
     });
   }
 
-  private toAuthResponse(user: User, token: string) {
+  private toAuthResponse(user: User, token: string, refreshToken: string) {
     return {
       token,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -93,7 +96,21 @@ export class AuthService {
     };
   }
 
-  async register(email: string, password: string, name: string, phone?: string) {
+  private async createSession(user: User, deviceName?: string) {
+    const refreshToken = crypto.randomBytes(48).toString('base64url');
+    const session = await this.prisma.authSession.create({
+      data: {
+        userId: user.id,
+        refreshTokenHash: hashResetToken(refreshToken),
+        tokenVersion: user.tokenVersion,
+        deviceName: deviceName?.trim() || null,
+        expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      },
+    });
+    return this.toAuthResponse(user, this.signToken(user, session.id), refreshToken);
+  }
+
+  async register(email: string, password: string, name: string, phone?: string, deviceName?: string) {
     this.validatePasswordStrength(password);
     await this.assertEmailAvailable(email);
 
@@ -104,10 +121,10 @@ export class AuthService {
       data: { email, password: hashedPassword, name, phone },
     });
 
-    return this.toAuthResponse(user, this.signToken(user));
+    return this.createSession(user, deviceName);
   }
 
-  async login(email: string, password: string, ipAddress = 'unknown') {
+  async login(email: string, password: string, ipAddress = 'unknown', deviceName?: string) {
     await this.security.enforceRateLimit('login_attempt', ipAddress, email, 100, 20, 15 * 60 * 1000);
     await this.security.log('login_attempt', { ipAddress, email });
     const user = await this.prisma.user.findUnique({ where: { email } });
@@ -141,7 +158,7 @@ export class AuthService {
     });
     await this.security.log('login_succeeded', { ipAddress, email, userId: user.id });
 
-    return this.toAuthResponse(user, this.signToken(user));
+    return this.createSession(user, deviceName);
   }
 
   // PRD US-01.4 (bootstrap-only as of 2026-07-30): creates the platform's one
@@ -194,7 +211,7 @@ export class AuthService {
       throw error;
     }
 
-    return this.toAuthResponse(user, this.signToken(user));
+    return this.createSession(user, 'Business bootstrap');
   }
 
   // PRD US-03.5: the owner creates a staff account under their own business.
@@ -288,6 +305,7 @@ export class AuthService {
             data: { isActive, tokenVersion: { increment: 1 } },
           });
           if (!isActive) await tx.pushDevice.deleteMany({ where: { userId: targetId } });
+          if (!isActive) await tx.authSession.deleteMany({ where: { userId: targetId } });
           return updated;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -365,6 +383,61 @@ export class AuthService {
     };
   }
 
+  async refreshSession(rawRefreshToken: string) {
+    const tokenHash = hashResetToken(rawRefreshToken);
+    const current = await this.prisma.authSession.findUnique({
+      where: { refreshTokenHash: tokenHash }, include: { user: true },
+    });
+    if (!current || current.revokedAt || current.expiresAt <= new Date() || !current.user.isActive || current.user.deletedAt || current.tokenVersion !== current.user.tokenVersion) {
+      if (current) await this.prisma.authSession.updateMany({ where: { userId: current.userId }, data: { revokedAt: new Date() } });
+      throw new UnauthorizedException('Refresh token is invalid or expired');
+    }
+    const nextToken = crypto.randomBytes(48).toString('base64url');
+    let next;
+    try {
+      next = await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.authSession.updateMany({
+          where: { id: current.id, revokedAt: null, refreshTokenHash: tokenHash },
+          data: { revokedAt: new Date(), lastUsedAt: new Date() },
+        });
+        if (claimed.count !== 1) throw new UnauthorizedException('Refresh token reuse detected');
+        return tx.authSession.create({
+          data: {
+            userId: current.userId,
+            refreshTokenHash: hashResetToken(nextToken),
+            tokenVersion: current.user.tokenVersion,
+            deviceName: current.deviceName,
+            expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        await this.prisma.authSession.updateMany({ where: { userId: current.userId }, data: { revokedAt: new Date() } });
+      }
+      throw error;
+    }
+    return this.toAuthResponse(current.user, this.signToken(current.user, next.id), nextToken);
+  }
+
+  async logout(userId: string, sessionId: string) {
+    await this.prisma.authSession.updateMany({ where: { id: sessionId, userId }, data: { revokedAt: new Date() } });
+    return { loggedOut: true };
+  }
+
+  listSessions(userId: string) {
+    return this.prisma.authSession.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      select: { id: true, deviceName: true, createdAt: true, lastUsedAt: true, expiresAt: true },
+      orderBy: { lastUsedAt: 'desc' },
+    });
+  }
+
+  async revokeSession(userId: string, sessionId: string) {
+    await this.prisma.authSession.updateMany({ where: { id: sessionId, userId }, data: { revokedAt: new Date() } });
+    return { revoked: true };
+  }
+
   async resetPassword(rawToken: string, newPassword: string) {
     this.validatePasswordStrength(newPassword);
     const token = await this.prisma.passwordResetToken.findUnique({
@@ -385,6 +458,7 @@ export class AuthService {
         where: { id: token.userId },
         data: { password, tokenVersion: { increment: 1 }, mustChangePassword: false },
       });
+      await tx.authSession.deleteMany({ where: { userId: token.userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId: token.userId, id: { not: token.id } } });
     });
     await this.security.log('password_reset_succeeded', { userId: token.userId });
@@ -400,16 +474,15 @@ export class AuthService {
     if (await bcrypt.compare(newPassword, user.password)) {
       throw new BadRequestException('New password must be different from the current password');
     }
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        password: await bcrypt.hash(newPassword, 10),
-        tokenVersion: { increment: 1 },
-        mustChangePassword: false,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.user.update({ where: { id: userId }, data: {
+        password: await bcrypt.hash(newPassword, 10), tokenVersion: { increment: 1 }, mustChangePassword: false,
+      } });
+      await tx.authSession.deleteMany({ where: { userId } });
+      return changed;
     });
     await this.security.log('password_changed', { userId });
-    return this.toAuthResponse(updated, this.signToken(updated));
+    return this.createSession(updated, 'Password change');
   }
 
   async deleteAccount(userId: string, password: string) {
@@ -437,6 +510,7 @@ export class AuthService {
       const petIds = pets.map((pet) => pet.id);
       await tx.notification.deleteMany({ where: { userId } });
       await tx.pushDevice.deleteMany({ where: { userId } });
+      await tx.authSession.deleteMany({ where: { userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId } });
       await tx.securityEvent.deleteMany({
         where: { OR: [{ userId }, { emailHash: originalEmailHash }] },
@@ -492,10 +566,16 @@ export class AuthService {
   private async deleteStoredMedia(urls: string[]) {
     const bucket = this.config.get<string>('OBJECT_STORAGE_BUCKET');
     const publicUrl = this.config.get<string>('OBJECT_STORAGE_PUBLIC_URL')?.replace(/\/$/, '');
+    const protectedPrefix = `${this.config.get<string>('PUBLIC_WEB_URL')?.replace(/\/$/, '')}/media/files/`;
     const accessKeyId = this.config.get<string>('OBJECT_STORAGE_ACCESS_KEY_ID');
     const secretAccessKey = this.config.get<string>('OBJECT_STORAGE_SECRET_ACCESS_KEY');
-    if (!bucket || !publicUrl || !accessKeyId || !secretAccessKey) return;
-    const keys = urls.filter((url) => url.startsWith(`${publicUrl}/`)).map((url) => decodeURIComponent(url.slice(publicUrl.length + 1)));
+    if (!bucket || !accessKeyId || !secretAccessKey) return;
+    const keys = urls.flatMap((url) => {
+      if (url.startsWith(protectedPrefix)) {
+        try { return [Buffer.from(url.slice(protectedPrefix.length), 'base64url').toString('utf8')]; } catch { return []; }
+      }
+      return publicUrl && url.startsWith(`${publicUrl}/`) ? [decodeURIComponent(url.slice(publicUrl.length + 1))] : [];
+    });
     if (!keys.length) return;
     const client = new S3Client({
       region: this.config.get<string>('OBJECT_STORAGE_REGION') ?? 'auto',

@@ -1,6 +1,6 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.28
+**Document Status:** Draft v0.29
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
 **Last Updated:** 2026-08-08
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -289,7 +289,7 @@ sequenceDiagram
 
 ### 5.3 Implemented S3-Compatible Uploads (2026-08-01)
 
-The `media` module now issues five-minute presigned PUT URLs for JPEG/PNG/WebP objects up to 5 MB. Pet photos, daily-report photos and the WeChat QR image upload directly from the App to an S3-compatible service (AWS S3 or Cloudflare R2), then persist only the public HTTPS URL in PostgreSQL. Write DTOs no longer accept data URIs. Existing base64 rows are migrated with `npm run media:migrate` after storage environment variables are configured. Account deletion removes the relevant object keys on a best-effort basis after the database anonymization transaction; failed storage deletion is recorded as a security event for operational follow-up. Video selection, upload, playback and storage policies are deliberately outside V1.
+The `media` module issues five-minute presigned PUT URLs into a private S3-compatible bucket. PostgreSQL stores an authenticated API locator, not an object URL. `GET /media/files/:encodedKey` checks pet ownership, booking assignment/business scope or QR visibility, then redirects to a 60-second signed GET. The App attaches JWT headers to protected image requests. Legacy public/base64 values require migration. Account deletion decodes protected locators and deletes objects best-effort.
 
 ---
 
@@ -407,7 +407,7 @@ Detailed plans are in `11_Security.md`; the Version 1 baseline is listed here:
 | Access Control | Access control based on the `role` field (Customers can only access their own data; Owners can access their business's data) |
 | Secret Management | Third-party secrets (payment providers, cloud storage, LLM services) live only in backend environment variables and are never sent to the client |
 
-**Session freshness and revocation (updated 2026-08-01).** JWTs remain valid for at most 24h, but now carry `tokenVersion`. `JwtStrategy.validate` loads the User on every request and rejects a missing, inactive/deleted user or a version mismatch. Password change/reset, staff activation changes and account deletion increment `tokenVersion`, so all older JWTs fail on their next request; a successful password change returns one replacement JWT. A refresh-token/session-device model and explicit logout revocation remain future hardening, but password/offboarding revocation no longer waits for expiry.
+**Session freshness and revocation (updated 2026-08-09).** Each JWT carries `tokenVersion` and an `AuthSession` ID. Refresh tokens are random, stored only as hashes, rotate atomically and expire after 30 days; reuse revokes active sessions. JWT validation reloads both User and Session. Logout and the session list support targeted device revocation, while password reset/change, staff deactivation and account deletion remove every session and increment `tokenVersion`.
 
 **Password reset.** `POST /auth/forgot-password` returns the same generic payload for known and unknown email addresses. For an active account it creates 32 random bytes, persists only their SHA-256 hash, expires it after 30 minutes and invalidates other unused tokens. Resend sends a public HTTPS landing-page URL. That page offers `ytpaws://reset-password` for an installed App and a web form when the App is absent. Token validation remains server-side, atomic and single-use. Production startup rejects the raw-token test switch.
 
@@ -559,3 +559,4 @@ flowchart TB
 | 2026-08-07 | v0.26 | Completed detailed Payment, Notification, Deployment and Security designs, including explicit implemented-vs-provisioning boundaries; production startup now rejects wildcard/insecure CORS, non-live Stripe keys and malformed Stripe webhook secrets | Xiyun Liu |
 | 2026-08-08 | v0.27 | Recorded Expo Push as the selected V1 provider, aligned the booking care-information UI with backend authorization, and added fail-fast EAS release URL validation plus CI drift checks | Xiyun Liu |
 | 2026-08-08 | v0.28 | Added a database-enforced single-Business invariant, Helmet/CSP, global throttling, privacy-safe request logging, multi-device push tokens and bilingual notification payloads; corrected the nonexistent users-module diagram and made external security/provider checks release gates | Xiyun Liu |
+| 2026-08-09 | v0.29 | Added private authenticated media reads, rotating per-device sessions, Expo receipt reconciliation, and backup/restore/immutable-rollback verification tooling | Xiyun Liu |

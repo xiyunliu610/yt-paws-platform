@@ -21,6 +21,9 @@
     "test:all": "npm test -- --runInBand && npm run test:e2e -- --runInBand",
     "media:migrate": "ts-node scripts/migrate-media.ts",
     "business:audit": "ts-node scripts/audit-business-singleton.ts",
+    "ops:backup": "bash scripts/backup-database.sh",
+    "ops:restore-verify": "bash scripts/verify-restore.sh",
+    "ops:rollback-verify": "bash scripts/verify-rollback-image.sh",
     "api:drift": "node scripts/check-api-doc-drift.js",
     "release:check": "node scripts/check-release-readiness.js"
   },

@@ -9,7 +9,6 @@ const REQUIRED_PRODUCTION_VARIABLES = [
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
   'OBJECT_STORAGE_BUCKET',
-  'OBJECT_STORAGE_PUBLIC_URL',
   'OBJECT_STORAGE_ACCESS_KEY_ID',
   'OBJECT_STORAGE_SECRET_ACCESS_KEY',
   'ALERT_WEBHOOK_URL',
@@ -31,9 +30,6 @@ export function validateProductionConfig(env: NodeJS.ProcessEnv) {
     );
   if (!env.PUBLIC_WEB_URL!.startsWith('https://'))
     throw new Error('PUBLIC_WEB_URL must use HTTPS in production');
-  if (!env.OBJECT_STORAGE_PUBLIC_URL!.startsWith('https://')) {
-    throw new Error('OBJECT_STORAGE_PUBLIC_URL must use HTTPS in production');
-  }
   if (!env.ALERT_WEBHOOK_URL!.startsWith('https://')) {
     throw new Error('ALERT_WEBHOOK_URL must use HTTPS in production');
   }

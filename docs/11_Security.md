@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Security
 
-**Version:** 1.1
-**Updated:** 2026-08-08
+**Version:** 1.2
+**Updated:** 2026-08-09
 **Status:** V1 application baseline implemented; production infrastructure and independent review remain launch gates.
 
 ## 1. Security objectives
@@ -22,7 +22,7 @@ The mobile App and all request bodies are untrusted. Authorization occurs in the
 - Reset tokens use cryptographic randomness, store only hashes, expire and are single-use.
 - Production cannot expose raw reset tokens.
 
-V1 has no refresh-token store or server-side logout revocation endpoint. App logout removes local credentials and unregisters the push token; security-sensitive global revocation uses `tokenVersion`.
+Access JWTs carry an `AuthSession` ID. Random refresh tokens are stored only as hashes, rotate atomically and expire after 30 days. Logout revokes the current session; users can list/revoke individual devices; detected reuse revokes active sessions. Password/security changes still increment `tokenVersion` and remove every session.
 
 ## 4. Abuse prevention
 
@@ -56,7 +56,7 @@ CORS is not authentication, and native mobile requests may have no browser Origi
 
 ## 8. Media and secrets
 
-Presigned uploads use random object keys, allow-listed image MIME types, size limits and short expiry. Database rows store URLs, not base64 bytes. Buckets should use least-privilege credentials, restrictive CORS and lifecycle cleanup. Current public URLs are bearer-like: anyone possessing one may fetch it. Production promotion is blocked until private objects plus authenticated/signed reads are implemented and verified; this is not deferred post-launch hardening.
+Presigned uploads use random keys in a private bucket. New database values are authenticated `/media/files/:encodedKey` locators. The API verifies pet/report/business access and redirects to a 60-second signed GET. Legacy public URLs must be migrated; real-provider private-access verification remains a release gate.
 
 Provider keys and JWT secrets exist only in backend/hosting secret storage. `EXPO_PUBLIC_*` values are public by design and must contain URLs/IDs only. Never commit `.env`, service-account JSON, signing keys or production exports. Rotate any secret suspected of exposure.
 
@@ -88,7 +88,7 @@ Before public use, choose centralized error/log monitoring, define severity/on-c
 
 ## 12. Known limits and future hardening
 
-Helmet security headers, a CSP for the small public web surface, metadata-only request logging, global application throttling and stricter persistent auth limits are implemented. No refresh-token rotation, per-device session revocation, platform-superadmin, private signed media downloads, centralized SIEM/error tracker, push receipt processing, edge WAF configuration or independent penetration test is included. Private media, monitoring, penetration testing and provider/device certification are production release gates checked by `npm run release:check`, not optional post-launch hardening.
+Helmet/CSP, metadata-only request logging, global throttling, rotating per-device sessions, private signed media reads and push receipt processing are implemented. Platform-superadmin, centralized SIEM/error tracking, edge WAF configuration and independent penetration testing remain external gaps. Real private-bucket/provider/device verification, monitoring and penetration testing remain production evidence gates.
 
 ## Change Log
 
@@ -96,3 +96,4 @@ Helmet security headers, a CSP for the small public web surface, metadata-only r
 |---|---|---|
 | 2026-08-07 | 1.0 | Documented implemented authentication, authorization, payment, media, deletion and configuration controls plus production responsibilities and known limits. |
 | 2026-08-08 | 1.1 | Added Helmet/CSP, global throttling and privacy-safe request logging; elevated private media, monitoring, provider verification and penetration testing to explicit release evidence gates. |
+| 2026-08-09 | 1.2 | Added rotating per-device refresh sessions and resource-authorized private media reads; retained real-provider verification as a release gate. |

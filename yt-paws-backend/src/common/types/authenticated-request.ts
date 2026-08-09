@@ -7,5 +7,6 @@ export interface AuthenticatedRequest extends Request {
     role: string;
     businessId: string | null;
     mustChangePassword: boolean;
+    sessionId: string;
   };
 }

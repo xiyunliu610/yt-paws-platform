@@ -15,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, businessesApi, mediaApi, Business } from '../api/client';
+import { authenticatedMediaSource } from '../api/mediaSource';
 
 const BusinessSettingsScreen = () => {
   const { token } = useAuth();
@@ -155,7 +156,7 @@ const BusinessSettingsScreen = () => {
           <Text style={styles.label}>{t.businessSettings.qrCodeLabel}</Text>
           <TouchableOpacity style={styles.qrCodePicker} onPress={pickQrCode} disabled={isSaving}>
             {wechatQrCodeUrl ? (
-              <Image source={{ uri: wechatQrCodeUrl }} style={styles.qrCodeImage} />
+              <Image source={authenticatedMediaSource(wechatQrCodeUrl, token)} style={styles.qrCodeImage} />
             ) : (
               <Text style={styles.qrCodePlaceholderText}>{t.businessSettings.qrCodePlaceholder}</Text>
             )}

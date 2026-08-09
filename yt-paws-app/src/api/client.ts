@@ -80,6 +80,7 @@ export interface AuthUser {
 
 export interface AuthResponse {
   token: string;
+  refreshToken: string;
   user: AuthUser;
 }
 
@@ -87,14 +88,20 @@ export const authApi = {
   register: (email: string, password: string, name: string, phone?: string) =>
     request<AuthResponse>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name, phone }),
+      body: JSON.stringify({ email, password, name, phone, deviceName: 'Expo mobile' }),
     }),
 
   login: (email: string, password: string) =>
     request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, deviceName: 'Expo mobile' }),
     }),
+
+  refresh: (refreshToken: string) => request<AuthResponse>('/auth/refresh', {
+    method: 'POST', body: JSON.stringify({ refreshToken }),
+  }),
+
+  logout: (token: string) => request<{ loggedOut: true }>('/auth/logout', { method: 'POST' }, token),
 
   forgotPassword: (email: string) =>
     request<{ accepted: true }>('/auth/forgot-password', {

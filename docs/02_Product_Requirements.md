@@ -1,6 +1,6 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.26
+**Document Status:** Draft v0.27
 **Related Document:** `01_Project_Overview.md`
 **Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
@@ -404,3 +404,4 @@ Profile provides an in-app bilingual Help Center with keyword search, topic filt
 | 2026-08-07 | v0.24 | Published implementation-derived Payment and Notification designs and separated implemented application behavior from remaining live-provider/EAS device verification; Camera and paid AI code remain explicitly deferred | Xiyun Liu |
 | 2026-08-08 | v0.25 | Synced the shipped booking care-information UI: customer, assigned staff and owner/admin visibility now mirrors backend authorization; failures provide an explicit retry action and the access policy has automated tests. Added fail-fast preview/production URL validation | Xiyun Liu |
 | 2026-08-08 | v0.26 | Made the single-Business bootstrap invariant concurrency-safe in PostgreSQL, added multi-device push registration and bilingual system notifications, and formalized external provider/security evidence as production release gates | Xiyun Liu |
+| 2026-08-09 | v0.27 | Added rotating hashed refresh sessions with per-device revocation, authenticated private media reads and Expo receipt reconciliation; added provider-neutral backup/restore/rollback verification commands | Xiyun Liu |

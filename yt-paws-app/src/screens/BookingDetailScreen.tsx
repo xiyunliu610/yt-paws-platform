@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { formatLocalizedDateTime } from '../i18n/dateFormat';
 import { canViewCareDetails } from './careDetailsPolicy';
+import { authenticatedMediaSource } from '../api/mediaSource';
 import {
   ApiError,
   bookingsApi,
@@ -288,7 +289,7 @@ const BookingDetailScreen = () => {
             ) : careDetails ? (
               <View style={styles.card}>
                 {!!careDetails.pet.photoUrl && (
-                  <Image source={{ uri: careDetails.pet.photoUrl }} style={styles.petPhoto} />
+                  <Image source={authenticatedMediaSource(careDetails.pet.photoUrl, token)} style={styles.petPhoto} />
                 )}
                 <Text style={styles.careName}>{careDetails.pet.name}</Text>
                 <Text style={styles.careText}>
@@ -408,7 +409,7 @@ const BookingDetailScreen = () => {
                   {report.mediaUrls.length > 0 && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaRow}>
                       {report.mediaUrls.map((url) => (
-                        <Image key={url} source={{ uri: url }} style={styles.mediaThumb} />
+                        <Image key={url} source={authenticatedMediaSource(url, token)} style={styles.mediaThumb} />
                       ))}
                     </ScrollView>
                   )}

@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, petsApi, mediaApi, Pet, PetHealthRecord } from '../api/client';
+import { authenticatedMediaSource } from '../api/mediaSource';
 
 type RootStackParamList = {
   PetDetail: { pet: Pet };
@@ -158,7 +159,7 @@ const PetDetailScreen = () => {
           <View style={styles.photoSection}>
             <TouchableOpacity onPress={pickPhoto} disabled={isSaving}>
               {photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.photo} />
+                <Image source={authenticatedMediaSource(photoUrl, token)} style={styles.photo} />
               ) : (
                 <View style={styles.photoPlaceholder}>
                   <Text style={styles.photoPlaceholderText}>{name.charAt(0).toUpperCase()}</Text>

@@ -21,6 +21,11 @@ export class RegisterDto {
   @IsString()
   @MaxLength(30)
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deviceName?: string;
 }
 
 export class LoginDto {
@@ -32,6 +37,18 @@ export class LoginDto {
   @MinLength(1)
   @MaxLength(72)
   password: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deviceName?: string;
+}
+
+export class RefreshSessionDto {
+  @IsString()
+  @MinLength(32)
+  @MaxLength(200)
+  refreshToken: string;
 }
 
 export class RegisterBusinessDto {

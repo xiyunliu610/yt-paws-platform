@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.20
-**Last Updated:** 2026-08-08
+**Document Status:** Draft v0.21
+**Last Updated:** 2026-08-09
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---
@@ -273,3 +273,4 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-08-07 | v0.18 | Completed Payment, Notification, Deployment and Security design documents from the implemented code; deferred Camera until after core launch and tightened production validation for Stripe credentials and explicit HTTPS CORS origins | Xiyun Liu |
 | 2026-08-08 | v0.19 | Reconciled V1 scope with the shipped role-scoped management screens and added release configuration/document-drift safeguards to CI | Xiyun Liu |
 | 2026-08-08 | v0.20 | Closed the bootstrap Business race at the database layer, completed UI/testing strategy documents and promoted live-provider, private-media, monitoring, penetration-test, restore and rollback evidence to production release gates | Xiyun Liu |
+| 2026-08-09 | v0.21 | Implemented private signed media reads, rotating per-device sessions, Expo receipt reconciliation, and backup/restore/immutable-image verification tools; real-provider evidence remains gated | Xiyun Liu |

@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Notification Design
 
-**Version:** 1.1
-**Updated:** 2026-08-08
+**Version:** 1.2
+**Updated:** 2026-08-09
 **Status:** In-app notifications implemented; remote push implemented but awaits EAS physical-device verification.
 
 ## 1. Scope
@@ -68,7 +68,7 @@ V1 push payloads contain title/body only and open the App normally. Booking/paym
 - A stale token must never fail the business transaction.
 - Account deletion removes notifications and push tokens.
 
-Expo ticket/receipt polling and automatic invalid-token removal are not implemented in V1. Before large-scale use, add delivery receipts, token cleanup, retry/backoff and provider metrics rather than retrying blindly inside booking/payment requests.
+Expo ticket IDs are persisted. A background reconciler polls receipts, removes `DeviceNotRegistered` tokens, retries transient receipt errors with exponential backoff and marks terminal failures after four attempts. Physical-device delivery and provider metrics still require provisioned EAS credentials.
 
 ## 8. Monitoring and tests
 
@@ -86,3 +86,4 @@ User notification preferences, quiet hours, bulk campaigns, scheduled reminders,
 |---|---|---|
 | 2026-08-07 | 1.0 | Documented durable in-app notifications, best-effort Expo push, event producers, permissions, credentials and known V1 limits. |
 | 2026-08-08 | 1.1 | Added multi-device token storage/targeted unregister and bilingual system-event payloads; retained physical-device delivery as a release evidence gate. |
+| 2026-08-09 | 1.2 | Persisted Expo tickets and added receipt polling, invalid-token removal, exponential retry and terminal failure tracking. |

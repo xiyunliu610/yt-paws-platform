@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, authApi, petsApi, Pet, PUBLIC_WEB_URL } from '../api/client';
 import { registerForPushNotificationsAsync, unregisterPushNotifications } from '../notifications/pushToken';
+import { authenticatedMediaSource } from '../api/mediaSource';
 
 type PetTypeKey = 'dog' | 'cat' | 'other';
 
@@ -279,7 +280,7 @@ const ProfileScreen = () => {
                     onPress={() => navigation.navigate('PetDetail', { pet })}
                   >
                     {pet.photoUrl ? (
-                      <Image source={{ uri: pet.photoUrl }} style={styles.petPhoto} />
+                      <Image source={authenticatedMediaSource(pet.photoUrl, token)} style={styles.petPhoto} />
                     ) : (
                       <View style={styles.petIcon}>
                         <Text style={styles.petIconText}>{pet.name.charAt(0)}</Text>

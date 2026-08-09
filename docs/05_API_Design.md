@@ -1,7 +1,7 @@
 # Y&T Paws Platform — API Design
 
-**Version:** 1.1
-**Updated:** 2026-08-08
+**Version:** 1.2
+**Updated:** 2026-08-09
 **Status:** Implemented REST API inventory for the current NestJS backend.
 
 ## 1. Conventions
@@ -35,6 +35,10 @@ Roles are `customer`, `staff`, `owner`, and business-scoped `admin`. JWT validat
 |---|---|---|---|
 | POST | `/auth/register` | Public | Customer email/password/profile → user and JWT. |
 | POST | `/auth/login` | Public | Credentials → user and JWT; persistent lockout/rate-limit checks apply. |
+| POST | `/auth/refresh` | Refresh token | Atomically rotate the hashed refresh token and return a new access/refresh pair. |
+| POST | `/auth/logout` | JWT | Revoke the caller's current device session. |
+| GET | `/auth/sessions` | JWT | List active device sessions without token hashes. |
+| DELETE | `/auth/sessions/:id` | JWT | Revoke one caller-owned device session. |
 | POST | `/auth/forgot-password` | Public | Email → generic response; sends one-use reset link without disclosing account existence. |
 | POST | `/auth/reset-password` | Public | Token and new password → new JWT; token is hashed, expiring and single-use. |
 | PATCH | `/auth/change-password` | JWT | Current/new password → new JWT and invalidation of older sessions. |
@@ -70,8 +74,9 @@ Staff do not receive general pet access. Booking-specific care information is ex
 | GET | `/businesses/me` | owner/admin | Read business settings. |
 | PATCH | `/businesses/me` | owner/admin | Update name/region/QR URL/business capacity. Explicit null clears nullable values. |
 | POST | `/media/upload-url` | JWT, purpose-scoped | Request a presigned object-storage upload URL for `pet`, `report`, or `wechat-qr`. |
+| GET | `/media/files/:encodedKey` | JWT, resource-scoped | Authorize media access and redirect to a 60-second signed object URL. |
 
-Media upload is two-step: request URL with purpose, content type and byte size; PUT directly to S3/R2; then save the returned public object URL through the owning resource endpoint. Purpose/role, MIME type and size are validated before signing.
+Media upload is two-step: request URL, then PUT directly to a private bucket. PostgreSQL stores an authenticated API locator, never a new public object URL. Reads re-check pet/report/business authorization before issuing a 60-second signed GET redirect.
 
 ## 6. Bookings and reports
 
@@ -131,3 +136,4 @@ In-app notification rows are authoritative. Current system-event payloads includ
 |---|---|---|
 | 2026-08-07 | 1.0 | Recorded the implemented endpoint inventory, access rules, state transitions, media flow and payment guarantees. |
 | 2026-08-08 | 1.1 | Added a backward-compatible API-version migration path, multi-device notification contract and CI controller-route drift detection; explicitly recorded the remaining lack of generated OpenAPI schemas. |
+| 2026-08-09 | 1.2 | Added refresh/logout/session-revocation endpoints and authenticated private-media reads. |

@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Post, Redirect, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
 import { CreateUploadUrlDto } from './dto/media.dto';
@@ -22,5 +22,11 @@ export class MediaController {
       throw new ForbiddenException('Only customers can upload pet photos');
     }
     return this.media.createUploadUrl(req.user.userId, body.purpose, body.contentType, body.size);
+  }
+
+  @Get('files/:encodedKey')
+  @Redirect(undefined, 302)
+  async read(@Req() req: AuthenticatedRequest, @Param('encodedKey') encodedKey: string) {
+    return { url: await this.media.createReadUrl(req.user, encodedKey) };
   }
 }

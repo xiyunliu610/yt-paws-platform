@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Deployment
 
-**Version:** 1.1
-**Updated:** 2026-08-08
+**Version:** 1.2
+**Updated:** 2026-08-09
 **Status:** Deployment code baseline implemented; hosting, domains and production credentials are not yet provisioned.
 
 ## 1. Target topology
@@ -52,7 +52,7 @@ The backend fails fast when required values are missing or unsafe:
 - public network: `PUBLIC_WEB_URL`, `SUPPORT_EMAIL`, explicit HTTPS `CORS_ORIGINS`;
 - email: `RESEND_API_KEY`, `MAIL_FROM`;
 - payment: live `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`;
-- media: bucket, public URL and access credentials, plus endpoint/region where needed;
+- media: private bucket and access credentials, plus endpoint/region where needed;
 - operations: HTTPS `ALERT_WEBHOOK_URL`;
 - platform: `NODE_ENV=production`, optional platform `PORT`.
 
@@ -97,6 +97,12 @@ At minimum monitor availability/readiness, error rate, latency, DB connections/s
 
 Rollback the container to the previous immutable image only when its code is compatible with the migrated schema. Database rollback is restore/forward-fix, not an unreviewed reverse migration. Preserve payment webhooks during incidents and reconcile events after recovery.
 
+Operational commands:
+
+- `BACKUP_DIR=/explicit/path npm run ops:backup` creates a custom-format `pg_dump` plus SHA-256 checksum.
+- `BACKUP_FILE=... RESTORE_DATABASE_URL=... npm run ops:restore-verify` restores only into an explicitly supplied disposable database and verifies migrations/core tables.
+- `ROLLBACK_IMAGE=registry/image@sha256:... npm run ops:rollback-verify` refuses mutable tags, pulls and inspects the exact rollback digest before protected hosting promotion.
+
 ## 12. Provisioning checklist
 
 - Production/staging domains and DNS.
@@ -115,3 +121,4 @@ Rollback the container to the previous immutable image only when its code is com
 |---|---|---|
 | 2026-08-07 | 1.0 | Documented the implemented container/migration/health/CI baseline and the remaining production provisioning, release and rollback process. |
 | 2026-08-08 | 1.1 | Added fail-fast EAS release URL validation and CI checks for App policies plus core-document/configuration drift. |
+| 2026-08-09 | 1.2 | Added checksum backups, disposable restore verification and immutable-digest rollback verification commands. |
