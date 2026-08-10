@@ -15,7 +15,7 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
+    "test:cov": "jest --coverage --coverageReporters=text --coverageReporters=json-summary --coverageReporters=lcov",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:all": "npm test -- --runInBand && npm run test:e2e -- --runInBand",
@@ -25,7 +25,10 @@
     "ops:restore-verify": "bash scripts/verify-restore.sh",
     "ops:rollback-verify": "bash scripts/verify-rollback-image.sh",
     "api:drift": "node scripts/check-api-doc-drift.js",
-    "release:check": "node scripts/check-release-readiness.js"
+    "api:generate": "npm run build && node scripts/generate-openapi.js",
+    "api:check": "node scripts/generate-openapi.js --check",
+    "release:check": "node scripts/check-release-readiness.js",
+    "test:release-evidence": "node --test scripts/check-release-readiness.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",
@@ -36,6 +39,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/swagger": "^11.4.6",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -52,7 +56,8 @@
     "prisma": "^7.8.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "stripe": "^22.3.2"
+    "stripe": "^22.3.2",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -68,6 +73,7 @@
     "@types/node": "^24.12.4",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^7.0.0",
+    "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -99,11 +105,24 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
+    "coverageThreshold": {
+      "global": {
+        "statements": 13,
+        "branches": 12,
+        "functions": 12,
+        "lines": 12
+      }
+    },
     "testEnvironment": "node"
   },
   "main": "index.js",
   "directories": {
     "test": "test"
   },
-  "keywords": []
+  "keywords": [],
+  "overrides": {
+    "@nestjs/swagger": {
+      "js-yaml": "5.2.2"
+    }
+  }
 }

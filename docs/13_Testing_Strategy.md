@@ -1,12 +1,12 @@
 # Y&T Paws Platform — Testing Strategy
 
-**Version:** 1.0
-**Updated:** 2026-08-08
+**Version:** 1.1
+**Updated:** 2026-08-10
 **Status:** Implemented baseline; external-provider certification remains blocked pending provisioned accounts.
 
 ## 1. Quality gates
 
-Every change must pass locked dependency installation, Prisma generation/migration, backend build, backend unit tests, backend E2E tests, production Docker build, App TypeScript checks, App policy tests and documentation/configuration drift checks. A production promotion must additionally pass `npm run release:check` in `yt-paws-backend` with traceable evidence values.
+Every change must pass locked dependency installation, Prisma generation/migration, backend build, backend unit coverage thresholds, backend E2E tests, generated OpenAPI drift, production Docker build, App TypeScript checks, App policy tests and documentation/configuration drift checks. CI uploads the backend coverage artifact.
 
 ## 2. Test layers
 
@@ -43,14 +43,15 @@ Media upload roles and protected read authorization have focused unit tests. Pus
 
 ## 5. Coverage policy
 
-No percentage target is claimed until instrumentation is enabled; percentage alone would overvalue DTO/accessor lines and undervalue payment races. CI instead enforces critical-flow and invariant coverage listed above. Adding Jest coverage thresholds is a follow-up after a baseline report is reviewed and generated artifacts are excluded.
+Jest coverage instrumentation is enabled with the reviewed initial global floor: statements 13%, branches 12%, functions 12%, lines 12%. These deliberately low baseline thresholds prevent regression while E2E-only paths are not counted by unit instrumentation. Critical-flow and database-race E2E boundaries remain mandatory.
 
 ## 6. Release certification
 
-The release owner records dated evidence for all variables checked by `release:check`. Values should be links or identifiers for test runs, provider events, reports or incident drills—not `true`. Missing evidence blocks production promotion even when unit/E2E tests pass.
+Each release variable uses `owner|verifiedAt|expiresAt|reference`. The checker rejects missing owners, future/malformed verification dates, expired evidence and non-traceable references, then emits an uploaded validation manifest.
 
 ## Change Log
 
 | Date | Version | Change |
 |---|---|---|
 | 2026-08-08 | 1.0 | Defined repository and external-provider gates, mapped real E2E coverage and separated mock confidence from production certification. |
+| 2026-08-10 | 1.1 | Added enforced coverage floors/artifacts, generated OpenAPI drift and structured expiring release evidence. |

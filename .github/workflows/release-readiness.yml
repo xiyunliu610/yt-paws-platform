@@ -30,6 +30,12 @@ jobs:
       - name: Require traceable production evidence
         working-directory: yt-paws-backend
         run: npm run release:check
+      - name: Upload validated evidence manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: yt-paws-backend/release-evidence-manifest.json
+          retention-days: 90
       - name: Build immutable candidate image
         working-directory: yt-paws-backend
         run: docker build -t yt-paws-backend:${{ github.sha }} .

@@ -19,14 +19,22 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   // docs/03_System_Architecture.md §7) — there is no public "create"
   // endpoint. Always writes the in-app row; push is best-effort on top.
   async notify(userId: string, title: string, body: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { locale: true } });
+    const localizedTitle = this.localize(title, user?.locale);
+    const localizedBody = this.localize(body, user?.locale);
     const notification = await this.prisma.notification.create({
-      data: { userId, title, body },
+      data: { userId, title: localizedTitle, body: localizedBody },
     });
 
     const devices = await this.prisma.pushDevice.findMany({ where: { userId }, select: { id: true, token: true } });
-    for (const device of devices) void this.deliver(device, title, body);
+    for (const device of devices) void this.deliver(device, localizedTitle, localizedBody);
 
     return notification;
+  }
+
+  private localize(value: string, locale = 'en') {
+    const [english, chinese] = value.split(' / ', 2);
+    return locale === 'zh' && chinese ? chinese : english;
   }
 
   private async deliver(device: { id: string; token: string }, title: string, body: string) {

@@ -141,7 +141,7 @@ describe('Account security and deletion (e2e)', () => {
         .send({ refreshToken: loggedIn.body.refreshToken }).expect(201);
       await request(app.getHttpServer()).get('/auth/sessions')
         .set('Authorization', `Bearer ${refreshed.body.token}`).expect(200)
-        .expect((response) => expect(response.body.some((item: { deviceName: string }) => item.deviceName === 'Second phone')).toBe(true));
+        .expect((response) => expect(response.body.some((item: { deviceName: string; current: boolean }) => item.deviceName === 'Second phone' && item.current)).toBe(true));
       const payload = JSON.parse(Buffer.from(refreshed.body.token.split('.')[1], 'base64url').toString()) as { sid: string };
       await request(app.getHttpServer()).delete(`/auth/sessions/${payload.sid}`)
         .set('Authorization', `Bearer ${customerToken}`).expect(200);
@@ -150,6 +150,14 @@ describe('Account security and deletion (e2e)', () => {
       await request(app.getHttpServer()).post('/auth/refresh')
         .send({ refreshToken: refreshed.body.refreshToken }).expect(401);
       customerToken = await login(emails.customer);
+    });
+
+    it('persists the account locale for recipient-specific notifications', async () => {
+      await request(app.getHttpServer()).patch('/auth/locale')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ locale: 'zh' }).expect(200).expect({ locale: 'zh' });
+      expect(await prisma.user.findUniqueOrThrow({ where: { id: customerId }, select: { locale: true } }))
+        .toEqual({ locale: 'zh' });
     });
     it('changes password, revokes the old JWT, and returns a replacement JWT', async () => {
       const response = await request(app.getHttpServer())

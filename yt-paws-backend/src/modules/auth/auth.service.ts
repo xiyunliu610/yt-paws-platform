@@ -92,6 +92,7 @@ export class AuthService {
         name: user.name,
         role: user.role,
         mustChangePassword: user.mustChangePassword,
+        locale: user.locale,
       },
     };
   }
@@ -110,7 +111,7 @@ export class AuthService {
     return this.toAuthResponse(user, this.signToken(user, session.id), refreshToken);
   }
 
-  async register(email: string, password: string, name: string, phone?: string, deviceName?: string) {
+  async register(email: string, password: string, name: string, phone?: string, deviceName?: string, locale = 'en') {
     this.validatePasswordStrength(password);
     await this.assertEmailAvailable(email);
 
@@ -118,7 +119,7 @@ export class AuthService {
 
     // Role defaults to customer, matching the schema default.
     const user = await this.prisma.user.create({
-      data: { email, password: hashedPassword, name, phone },
+      data: { email, password: hashedPassword, name, phone, locale },
     });
 
     return this.createSession(user, deviceName);
@@ -425,17 +426,23 @@ export class AuthService {
     return { loggedOut: true };
   }
 
-  listSessions(userId: string) {
-    return this.prisma.authSession.findMany({
+  async listSessions(userId: string, currentSessionId: string) {
+    const sessions = await this.prisma.authSession.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
       select: { id: true, deviceName: true, createdAt: true, lastUsedAt: true, expiresAt: true },
       orderBy: { lastUsedAt: 'desc' },
     });
+    return sessions.map((session) => ({ ...session, current: session.id === currentSessionId }));
   }
 
   async revokeSession(userId: string, sessionId: string) {
     await this.prisma.authSession.updateMany({ where: { id: sessionId, userId }, data: { revokedAt: new Date() } });
     return { revoked: true };
+  }
+
+  async updateLocale(userId: string, locale: string) {
+    await this.prisma.user.update({ where: { id: userId }, data: { locale } });
+    return { locale };
   }
 
   async resetPassword(rawToken: string, newPassword: string) {

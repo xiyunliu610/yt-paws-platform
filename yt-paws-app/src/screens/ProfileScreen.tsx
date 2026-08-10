@@ -33,6 +33,7 @@ type RootStackParamList = {
   ServiceManagement: undefined;
   BusinessSettings: undefined;
   HelpCenter: undefined;
+  Sessions: undefined;
   PetDetail: { pet: Pet };
 };
 
@@ -171,7 +172,9 @@ const ProfileScreen = () => {
   };
 
   const toggleLanguage = () => {
-    setLanguage(language === 'en' ? 'zh' : 'en');
+    const next = language === 'en' ? 'zh' : 'en';
+    setLanguage(next);
+    if (token) void authApi.updateLocale(token, next).catch(() => undefined);
   };
 
   const handleChangePassword = async () => {
@@ -454,6 +457,11 @@ const ProfileScreen = () => {
 
             <TouchableOpacity style={styles.menuItem} onPress={() => setShowPasswordForm((value) => !value)}>
               <Text style={styles.menuText}>{t.profile.changePassword}</Text>
+              <Text style={styles.menuArrow}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('Sessions')}>
+              <Text style={styles.menuText}>{t.profile.sessions}</Text>
               <Text style={styles.menuArrow}>›</Text>
             </TouchableOpacity>
 

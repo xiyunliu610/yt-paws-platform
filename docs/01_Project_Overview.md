@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
 **Document Status:** Draft v0.21
-**Last Updated:** 2026-08-09
+**Last Updated:** 2026-08-10
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---

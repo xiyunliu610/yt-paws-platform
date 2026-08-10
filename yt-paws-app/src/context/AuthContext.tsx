@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authApi, AuthUser, ApiError } from '../api/client';
+import { authApi, AuthUser, ApiError, configureSessionRefresh } from '../api/client';
+import { useLanguage } from '../i18n/LanguageContext';
 
 const TOKEN_STORAGE_KEY = 'auth_token';
 const USER_STORAGE_KEY = 'auth_user';
@@ -19,6 +20,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const { language, setLanguage } = useLanguage();
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
@@ -47,13 +49,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!token) {
+      configureSessionRefresh(null);
+      return;
+    }
+    configureSessionRefresh(async () => {
+      const storedRefreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+      if (!storedRefreshToken) throw new ApiError(401, 'Session expired');
+      try {
+        const refreshed = await authApi.refresh(storedRefreshToken);
+        await persistSession(refreshed.token, refreshed.refreshToken, refreshed.user);
+        return refreshed;
+      } catch (error) {
+        await clearSession();
+        throw error;
+      }
+    });
+    return () => configureSessionRefresh(null);
+  }, [token, language]);
+
   const persistSession = async (nextToken: string, nextRefreshToken: string, nextUser: AuthUser) => {
     setToken(nextToken);
     setUser(nextUser);
+    if (nextUser.locale && nextUser.locale !== language) setLanguage(nextUser.locale);
     await Promise.all([
       AsyncStorage.setItem(TOKEN_STORAGE_KEY, nextToken),
       AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser)),
       AsyncStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, nextRefreshToken),
+    ]);
+  };
+
+  const clearSession = async () => {
+    setToken(null);
+    setUser(null);
+    await Promise.all([
+      AsyncStorage.removeItem(TOKEN_STORAGE_KEY),
+      AsyncStorage.removeItem(USER_STORAGE_KEY),
+      AsyncStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY),
     ]);
   };
 
@@ -63,19 +96,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const register = async (email: string, password: string, name: string, phone?: string) => {
-    const response = await authApi.register(email, password, name, phone);
+    const response = await authApi.register(email, password, name, phone, language);
     await persistSession(response.token, response.refreshToken, response.user);
   };
 
   const logout = async () => {
     if (token) await authApi.logout(token).catch(() => undefined);
-    setToken(null);
-    setUser(null);
-    await Promise.all([
-      AsyncStorage.removeItem(TOKEN_STORAGE_KEY),
-      AsyncStorage.removeItem(USER_STORAGE_KEY),
-      AsyncStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY),
-    ]);
+    await clearSession();
   };
 
   const changePassword = async (currentPassword: string, newPassword: string) => {

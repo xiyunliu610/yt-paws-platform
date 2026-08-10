@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsInt, IsOptional, IsString, Max, Min, MinLength, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength, MaxLength } from 'class-validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -26,6 +26,10 @@ export class RegisterDto {
   @IsString()
   @MaxLength(120)
   deviceName?: string;
+
+  @IsOptional()
+  @IsIn(['en', 'zh'])
+  locale?: string;
 }
 
 export class LoginDto {
@@ -49,6 +53,11 @@ export class RefreshSessionDto {
   @MinLength(32)
   @MaxLength(200)
   refreshToken: string;
+}
+
+export class UpdateLocaleDto {
+  @IsIn(['en', 'zh'])
+  locale: string;
 }
 
 export class RegisterBusinessDto {

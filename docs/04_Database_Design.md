@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Database Design
 
-**Version:** 1.1
-**Updated:** 2026-08-09
+**Version:** 1.2
+**Updated:** 2026-08-10
 **Status:** Implemented; this document describes the current Prisma/PostgreSQL schema.
 
 ## 1. Scope and source of truth
@@ -49,7 +49,7 @@ erDiagram
 | Model | Important fields | Rules |
 |---|---|---|
 | `Business` | `id`, `name`, `region?`, `wechatQrCodeUrl?`, `maxConcurrentBookings?`, timestamps | A null capacity means unlimited. QR code is an object-storage URL. |
-| `User` | `businessId?`, unique `email`, password hash, profile fields, `role`, `isActive`, `tokenVersion`, `mustChangePassword`, lockout fields, staff capacity, `deletedAt?` | Token version invalidates every session after security-sensitive changes. |
+| `User` | `businessId?`, unique `email`, password hash, profile fields, `locale`, `role`, `isActive`, `tokenVersion`, `mustChangePassword`, lockout fields, staff capacity, `deletedAt?` | Locale selects `en`/`zh` notification payloads; token version invalidates every session after security-sensitive changes. |
 | `AuthSession` | `userId`, unique hashed refresh token, token version, device name, expiry/revocation/last-used timestamps | Rotating refresh-token session per device; access JWT carries its session ID. |
 | `PushDevice` / `PushTicket` | unique Expo token; ticket ID, receipt status, attempts and next-check time | Multi-device delivery, receipt reconciliation and invalid-token cleanup. |
 | `PasswordResetToken` | `userId`, unique `tokenHash`, `expiresAt`, `usedAt?` | Only the hash is stored. Tokens are one-use and cascade-delete with the user. Indexed by user and expiry. |
@@ -116,5 +116,6 @@ PostgreSQL stores object URLs, not image bytes. The media service issues short-l
 
 | Date | Version | Change |
 |---|---|---|
+| 2026-08-10 | 1.2 | Added constrained User locale for recipient-language notification delivery. |
 | 2026-08-07 | 1.0 | Documented the implemented PostgreSQL/Prisma model, capacity indexes, payment constraints, deletion retention and migration operations. |
 | 2026-08-09 | 1.1 | Added per-device auth sessions and persistent Expo ticket/receipt state; corrected the retired User push-token field. |

@@ -1,7 +1,7 @@
 # Y&T Paws Platform — API Design
 
-**Version:** 1.2
-**Updated:** 2026-08-09
+**Version:** 1.3
+**Updated:** 2026-08-10
 **Status:** Implemented REST API inventory for the current NestJS backend.
 
 ## 1. Conventions
@@ -12,7 +12,7 @@
 - Dates are ISO 8601 strings in UTC. Money is stored as PostgreSQL decimal and serialized as JSON numbers by the global interceptor.
 - Success uses the natural HTTP status (`200`, `201`); validation/authorization/conflict failures use NestJS JSON errors with `statusCode`, `message`, and `error` where applicable.
 - There is no `/api/v1` prefix in the shipped V1 contract. Migration path: first add `/api/v1` aliases without removing existing routes; ship an App using only the aliases; measure/support the minimum old App version through a published sunset window; then freeze unprefixed routes and put the first breaking contract under `/api/v2`. A prefix must never be introduced by breaking installed store clients in place.
-- OpenAPI generation is not installed. CI instead performs a minimum route-inventory drift check: every controller method/path must appear in this document. DTO/schema and response-shape drift still requires review and is a tracked limitation; OpenAPI generation should replace the hand-maintained schema layer before external API consumers exist.
+- `openapi.json` is generated from Nest controllers and DTO metadata. CI regenerates it and rejects drift; `/api/docs` is exposed outside production and only in production when `ENABLE_API_DOCS=true`.
 
 Roles are `customer`, `staff`, `owner`, and business-scoped `admin`. JWT validation also checks `isActive`, `deletedAt`, `tokenVersion`, and the temporary-password gate. Staff with `mustChangePassword=true` may only complete the password-change flow before accessing business endpoints.
 
@@ -39,6 +39,7 @@ Roles are `customer`, `staff`, `owner`, and business-scoped `admin`. JWT validat
 | POST | `/auth/logout` | JWT | Revoke the caller's current device session. |
 | GET | `/auth/sessions` | JWT | List active device sessions without token hashes. |
 | DELETE | `/auth/sessions/:id` | JWT | Revoke one caller-owned device session. |
+| PATCH | `/auth/locale` | JWT | Persist `en` or `zh` for recipient-specific server notifications. |
 | POST | `/auth/forgot-password` | Public | Email → generic response; sends one-use reset link without disclosing account existence. |
 | POST | `/auth/reset-password` | Public | Token and new password → new JWT; token is hashed, expiring and single-use. |
 | PATCH | `/auth/change-password` | JWT | Current/new password → new JWT and invalidation of older sessions. |
@@ -119,7 +120,7 @@ Amounts come from the Booking snapshot, never from App input. Stripe webhook aut
 | PATCH | `/notifications/register-device` | JWT | Upsert one Expo device token; a user may own multiple device rows. |
 | PATCH | `/notifications/unregister-device` | JWT | Remove only the supplied current-device token on logout. |
 
-In-app notification rows are authoritative. Current system-event payloads include English and Chinese text. Remote push fans out to every registered device, remains best-effort and must be verified on EAS-built physical devices with APNs/FCM credentials.
+In-app notification rows are authoritative. The server selects English or Chinese from the recipient's persisted locale before storing and pushing the message. Remote push fans out to every registered device and remains best-effort.
 
 ## 9. Security and operational behavior
 
@@ -137,3 +138,4 @@ In-app notification rows are authoritative. Current system-event payloads includ
 | 2026-08-07 | 1.0 | Recorded the implemented endpoint inventory, access rules, state transitions, media flow and payment guarantees. |
 | 2026-08-08 | 1.1 | Added a backward-compatible API-version migration path, multi-device notification contract and CI controller-route drift detection; explicitly recorded the remaining lack of generated OpenAPI schemas. |
 | 2026-08-09 | 1.2 | Added refresh/logout/session-revocation endpoints and authenticated private-media reads. |
+| 2026-08-10 | 1.3 | Added generated OpenAPI drift enforcement, account locale updates and recipient-language notifications. |

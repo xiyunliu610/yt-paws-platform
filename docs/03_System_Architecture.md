@@ -2,7 +2,7 @@
 
 **Document Status:** Draft v0.29
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-08-10
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -407,7 +407,7 @@ Detailed plans are in `11_Security.md`; the Version 1 baseline is listed here:
 | Access Control | Access control based on the `role` field (Customers can only access their own data; Owners can access their business's data) |
 | Secret Management | Third-party secrets (payment providers, cloud storage, LLM services) live only in backend environment variables and are never sent to the client |
 
-**Session freshness and revocation (updated 2026-08-09).** Each JWT carries `tokenVersion` and an `AuthSession` ID. Refresh tokens are random, stored only as hashes, rotate atomically and expire after 30 days; reuse revokes active sessions. JWT validation reloads both User and Session. Logout and the session list support targeted device revocation, while password reset/change, staff deactivation and account deletion remove every session and increment `tokenVersion`.
+**Session freshness and revocation (updated 2026-08-10).** Each JWT carries `tokenVersion` and an `AuthSession` ID. Refresh tokens are random, stored only as hashes, rotate atomically and expire after 30 days; reuse revokes active sessions. The App coalesces concurrent 401 responses into one rotation and retries each request once. Users can review named devices and revoke a selected session. Password reset/change, staff deactivation and account deletion remove every session and increment `tokenVersion`.
 
 **Password reset.** `POST /auth/forgot-password` returns the same generic payload for known and unknown email addresses. For an active account it creates 32 random bytes, persists only their SHA-256 hash, expires it after 30 minutes and invalidates other unused tokens. Resend sends a public HTTPS landing-page URL. That page offers `ytpaws://reset-password` for an installed App and a web form when the App is absent. Token validation remains server-side, atomic and single-use. Production startup rejects the raw-token test switch.
 

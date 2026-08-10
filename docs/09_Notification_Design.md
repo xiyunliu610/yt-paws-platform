@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Notification Design
 
-**Version:** 1.2
-**Updated:** 2026-08-09
+**Version:** 1.3
+**Updated:** 2026-08-10
 **Status:** In-app notifications implemented; remote push implemented but awaits EAS physical-device verification.
 
 ## 1. Scope
@@ -16,7 +16,7 @@ Email is not part of the notification center. Resend currently serves password-r
 flowchart LR
   E[Booking/payment event] --> N[NotificationsService]
   N --> D[(Notification row)]
-  N --> U[User.pushToken]
+  N --> U[PushDevice rows]
   U --> X[Expo Push API]
   D --> A[App Notification Center]
   X --> P[APNs / FCM]
@@ -46,13 +46,13 @@ There is no public create-notification endpoint. Business events create notifica
 - `PATCH /notifications/register-device`
 - `PATCH /notifications/unregister-device`
 
-All require JWT. Mark-read verifies ownership. Registration writes the current Expo token to the authenticated User; logout/device cleanup clears it. V1 supports one token per user, so a later login on another device replaces the earlier token.
+All require JWT. Mark-read verifies ownership. Registration upserts one `PushDevice` row per Expo token; logout removes only that device token. `PushTicket` stores Expo ticket and reconciliation state.
 
 ## 5. App behavior
 
 Home screens show an unread badge and open `NotificationsScreen`. Items are newest-first and can be marked read. The App requests permission and registers an Expo token only in a supported native build. Denial or unsupported Expo Go behavior must not block core use.
 
-Notification text is currently generated server-side in English. The surrounding App UI is bilingual; fully localized notification payloads require storing user locale or localization keys and is a future improvement.
+The account stores `locale` (`en` or `zh`). Language changes sync through `PATCH /auth/locale`; the server selects one language before writing the in-app row and sending push.
 
 ## 6. Push credentials and deep links
 
@@ -78,7 +78,7 @@ Production metrics should track durable rows, push attempts, accepted tickets, r
 
 ## 9. Deferred
 
-User notification preferences, quiet hours, bulk campaigns, scheduled reminders, per-user single-language server payloads, push deep-link routing and guaranteed/retried remote delivery are outside V1. Multiple devices are supported through one `PushDevice` row per Expo token; logout removes only the current device token. Current event payloads carry both English and Chinese.
+User notification preferences, quiet hours, bulk campaigns, scheduled reminders, push deep-link routing and provider-guaranteed delivery are outside V1. Multiple devices and per-recipient single-language payloads are implemented.
 
 ## Change Log
 
@@ -87,3 +87,4 @@ User notification preferences, quiet hours, bulk campaigns, scheduled reminders,
 | 2026-08-07 | 1.0 | Documented durable in-app notifications, best-effort Expo push, event producers, permissions, credentials and known V1 limits. |
 | 2026-08-08 | 1.1 | Added multi-device token storage/targeted unregister and bilingual system-event payloads; retained physical-device delivery as a release evidence gate. |
 | 2026-08-09 | 1.2 | Persisted Expo tickets and added receipt polling, invalid-token removal, exponential retry and terminal failure tracking. |
+| 2026-08-10 | 1.3 | Persisted account locale and selected one recipient language before durable notification and push delivery. |

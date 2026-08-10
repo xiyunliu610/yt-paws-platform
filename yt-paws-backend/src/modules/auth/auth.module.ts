@@ -16,12 +16,9 @@ import { SecurityService } from './security.service';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_SECRET'),
-        // Was 7d: role/businessId/disabled-state are baked into the token
-        // and never re-checked against the User row (see JwtStrategy), so a
-        // longer TTL means a fired/disabled/role-changed user keeps access
-        // for that long. Shortened as a stopgap until there's a real
-        // session/revocation mechanism; still no refresh flow, so the app
-        // just has to send the user back to login after this expires.
+        // Access tokens stay short-lived. JwtStrategy re-checks the User and
+        // AuthSession on every call; the App rotates its refresh token once
+        // for concurrent 401s and retries the original request once.
         signOptions: { expiresIn: '24h' },
       }),
       inject: [ConfigService],

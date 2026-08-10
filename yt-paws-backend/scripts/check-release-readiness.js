@@ -12,13 +12,29 @@ const requiredEvidence = {
   ROLLBACK_DRILL_VERIFIED_AT: 'immutable-image rollback drill evidence',
 };
 
-const missing = Object.entries(requiredEvidence)
-  .filter(([name]) => !process.env[name]?.trim())
-  .map(([name, description]) => `${name}: ${description}`);
+const manifest = {};
+const failures = [];
+const referencePattern = /^(https:\/\/\S+|[A-Z]{2,}-\d+|[a-z]+_[A-Za-z0-9_-]{6,})$/;
+for (const [name, description] of Object.entries(requiredEvidence)) {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    failures.push(`${name}: missing ${description}`);
+    continue;
+  }
+  const [owner, verifiedAtRaw, expiresAtRaw, reference] = raw.split('|');
+  const verifiedAt = new Date(verifiedAtRaw);
+  const expiresAt = new Date(expiresAtRaw);
+  if (!owner?.trim() || owner.trim().length < 3) failures.push(`${name}: owner must be named`);
+  if (!verifiedAtRaw || Number.isNaN(verifiedAt.getTime()) || verifiedAt > new Date()) failures.push(`${name}: verifiedAt must be a non-future ISO date`);
+  if (!expiresAtRaw || Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date()) failures.push(`${name}: expiresAt must be a future ISO date`);
+  if (!referencePattern.test(reference ?? '')) failures.push(`${name}: reference must be an HTTPS URL or traceable ticket/provider ID`);
+  manifest[name] = { owner, verifiedAt: verifiedAtRaw, expiresAt: expiresAtRaw, reference, description };
+}
 
-if (missing.length) {
-  console.error(`Production release blocked; missing evidence:\n- ${missing.join('\n- ')}`);
+if (failures.length) {
+  console.error(`Production release blocked; invalid evidence:\n- ${failures.join('\n- ')}`);
   process.exit(1);
 }
 
+require('node:fs').writeFileSync('release-evidence-manifest.json', `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 console.log('All production release evidence gates are present.');

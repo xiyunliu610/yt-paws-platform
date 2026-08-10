@@ -223,7 +223,7 @@ describe('Payments correctness (e2e)', () => {
       expect(untouchedNewAttempt.status).toBe('pending');
 
       const successNotifications = await prisma.notification.count({
-        where: { userId: customerId, title: 'Payment Successful / 支付成功' },
+        where: { userId: customerId, title: 'Payment Successful' },
       });
       expect(successNotifications).toBe(1);
     });
@@ -244,7 +244,7 @@ describe('Payments correctness (e2e)', () => {
       expect(updatedPayment.status).toBe('failed');
 
       const failureNotifications = await prisma.notification.count({
-        where: { userId: customerId, title: 'Payment Failed / 支付失败' },
+        where: { userId: customerId, title: 'Payment Failed' },
       });
       expect(failureNotifications).toBe(1);
     });
@@ -328,7 +328,7 @@ describe('Payments correctness (e2e)', () => {
       const refundNotifications = await prisma.notification.count({
         where: {
           userId: ownerId,
-          title: 'Duplicate Payment — Refund Needed / 重复付款—需要退款',
+          title: 'Duplicate Payment — Refund Needed',
           body: { contains: booking.id },
         },
       });
@@ -370,7 +370,7 @@ describe('Payments correctness (e2e)', () => {
       const refundNotifications = await prisma.notification.count({
         where: {
           userId: ownerId,
-          title: 'Duplicate Payment — Refund Needed / 重复付款—需要退款',
+          title: 'Duplicate Payment — Refund Needed',
           body: { contains: booking.id },
         },
       });
@@ -432,7 +432,7 @@ describe('Payments correctness (e2e)', () => {
       expect(res.body.refundedById).toBe(ownerId);
 
       const refundNotifications = await prisma.notification.count({
-        where: { userId: customerId, title: 'Payment Refunded / 付款已退款' },
+        where: { userId: customerId, title: 'Payment Refunded' },
       });
       expect(refundNotifications).toBe(1);
     });

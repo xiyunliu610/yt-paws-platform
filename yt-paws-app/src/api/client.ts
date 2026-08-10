@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 
 const API_PORT = 3000;
 
@@ -50,7 +51,16 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+type RefreshHandler = () => Promise<AuthResponse>;
+let refreshHandler: RefreshHandler | null = null;
+let refreshInFlight: Promise<AuthResponse> | null = null;
+
+export function configureSessionRefresh(handler: RefreshHandler | null) {
+  refreshHandler = handler;
+  if (!handler) refreshInFlight = null;
+}
+
+async function request<T>(path: string, options: RequestInit = {}, token?: string, retried = false): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -61,6 +71,12 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   });
 
   const body = await response.json().catch(() => null);
+
+  if (response.status === 401 && token && !retried && refreshHandler) {
+    refreshInFlight ??= refreshHandler().finally(() => { refreshInFlight = null; });
+    const refreshed = await refreshInFlight;
+    return request<T>(path, options, refreshed.token, true);
+  }
 
   if (!response.ok) {
     const message = body?.message ?? 'Request failed';
@@ -76,6 +92,7 @@ export interface AuthUser {
   name: string | null;
   role: string;
   mustChangePassword: boolean;
+  locale: 'en' | 'zh';
 }
 
 export interface AuthResponse {
@@ -84,17 +101,19 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+const deviceName = [Device.deviceName, Device.modelName, Device.osName].find(Boolean) ?? 'Mobile device';
+
 export const authApi = {
-  register: (email: string, password: string, name: string, phone?: string) =>
+  register: (email: string, password: string, name: string, phone?: string, locale: 'en' | 'zh' = 'en') =>
     request<AuthResponse>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name, phone, deviceName: 'Expo mobile' }),
+      body: JSON.stringify({ email, password, name, phone, deviceName, locale }),
     }),
 
   login: (email: string, password: string) =>
     request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password, deviceName: 'Expo mobile' }),
+      body: JSON.stringify({ email, password, deviceName }),
     }),
 
   refresh: (refreshToken: string) => request<AuthResponse>('/auth/refresh', {
@@ -102,6 +121,14 @@ export const authApi = {
   }),
 
   logout: (token: string) => request<{ loggedOut: true }>('/auth/logout', { method: 'POST' }, token),
+
+  sessions: (token: string) => request<AuthSession[]>('/auth/sessions', {}, token),
+
+  revokeSession: (token: string, sessionId: string) =>
+    request<{ revoked: true }>(`/auth/sessions/${sessionId}`, { method: 'DELETE' }, token),
+
+  updateLocale: (token: string, locale: 'en' | 'zh') =>
+    request<{ locale: 'en' | 'zh' }>('/auth/locale', { method: 'PATCH', body: JSON.stringify({ locale }) }, token),
 
   forgotPassword: (email: string) =>
     request<{ accepted: true }>('/auth/forgot-password', {
@@ -130,6 +157,15 @@ export const authApi = {
     ),
 
 };
+
+export interface AuthSession {
+  id: string;
+  deviceName: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  current: boolean;
+}
 
 export type MediaPurpose = 'pet' | 'report' | 'wechat-qr';
 

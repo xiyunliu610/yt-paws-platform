@@ -17,6 +17,7 @@ import {
   RefreshSessionDto,
   UpdateStaffStatusDto,
   UpdateStaffCapacityDto,
+  UpdateLocaleDto,
 } from './dto/auth.dto';
 
 @Controller('auth')
@@ -25,7 +26,7 @@ export class AuthController {
 
   @Post('register')
   register(@Body() body: RegisterDto) {
-    return this.authService.register(body.email, body.password, body.name, body.phone, body.deviceName);
+    return this.authService.register(body.email, body.password, body.name, body.phone, body.deviceName, body.locale);
   }
 
   @Post('login')
@@ -47,13 +48,19 @@ export class AuthController {
   @Get('sessions')
   @UseGuards(JwtAuthGuard)
   sessions(@Req() req: AuthenticatedRequest) {
-    return this.authService.listSessions(req.user.userId);
+    return this.authService.listSessions(req.user.userId, req.user.sessionId);
   }
 
   @Delete('sessions/:id')
   @UseGuards(JwtAuthGuard)
   revokeSession(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.authService.revokeSession(req.user.userId, id);
+  }
+
+  @Patch('locale')
+  @UseGuards(JwtAuthGuard)
+  updateLocale(@Req() req: AuthenticatedRequest, @Body() body: UpdateLocaleDto) {
+    return this.authService.updateLocale(req.user.userId, body.locale);
   }
 
   @Post('forgot-password')

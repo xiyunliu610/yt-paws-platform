@@ -93,6 +93,7 @@ model User {
   password              String
   name                  String?
   phone                 String?
+  locale                String               @default("en")
   role                  Role                 @default(customer)
   isActive              Boolean              @default(true)
   // Every JWT carries the value current at issuance. Password changes,

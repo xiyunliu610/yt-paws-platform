@@ -30,6 +30,7 @@ import BusinessSettingsScreen from './src/screens/BusinessSettingsScreen';
 import ResetPasswordScreen from './src/screens/Auth/ResetPasswordScreen';
 import RequiredPasswordChangeScreen from './src/screens/Auth/RequiredPasswordChangeScreen';
 import HelpCenterScreen from './src/screens/HelpCenterScreen';
+import SessionsScreen from './src/screens/SessionsScreen';
 
 const Stack = createStackNavigator();
 
@@ -261,6 +262,11 @@ const Navigation = () => {
             title: t.profile.helpCenterTitle,
             headerShown: true,
           }}
+        />
+        <Stack.Screen
+          name="Sessions"
+          component={SessionsScreen}
+          options={{ title: t.profile.sessions, headerShown: true }}
         />
       </Stack.Navigator>
     </NavigationContainer>

@@ -194,6 +194,7 @@ export const translations = {
       conflictErrorMessage: 'This pet already has a booking during that time',
     },
     profile: {
+      sessions: 'Signed-in devices',
       memberSince: 'Member since',
       editProfile: 'Edit Profile',
       editProfileTitle: 'Edit Profile',
@@ -783,6 +784,7 @@ export const translations = {
       conflictErrorMessage: '该宠物在这段时间已有其他预约',
     },
     profile: {
+      sessions: '登录设备',
       memberSince: '会员时间',
       editProfile: '编辑资料',
       editProfileTitle: '编辑资料',
