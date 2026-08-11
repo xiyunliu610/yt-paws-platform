@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.21
-**Last Updated:** 2026-08-10
+**Document Status:** Draft v0.24
+**Last Updated:** 2026-08-11
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---
@@ -111,10 +111,10 @@ Instead, it is a business management platform built specifically for independent
 Replace manual workflows with a reliable digital platform. Core features: booking, payment, pet profiles, daily reports, customer management.
 
 ### Mid-term — Version 1.5 / Version 2
-Improve customer experience through intelligence and real-time capability: AI daily report generation, AI customer assistant, live camera access, push notifications, private chat.
+Improve customer experience through intelligence and real-time capability: AI daily report generation, AI customer assistant, private chat, enhanced push notifications.
 
 ### Long-term — Version 3 / Version 4
-Expand PetHome into a comprehensive pet care platform: pet store, membership system, loyalty points and coupons, business analytics, AI operations assistant, multi-business support, open APIs (SaaS).
+Expand PetHome into a comprehensive pet care platform: membership system, loyalty points and coupons, business analytics, AI operations assistant, multi-business support, open APIs (SaaS). Live camera access and the pet store/e-commerce line are also long-term scope but deliberately sequenced *after* the items above — see the sequencing note under Section 10.
 
 > Long-term plans represent future possibilities rather than committed deliverables.
 
@@ -149,16 +149,18 @@ Expand PetHome into a comprehensive pet care platform: pet store, membership sys
 User registration, login, pet profiles, booking, Stripe payment, WeChat QR payment, daily reports, push notifications, and role-scoped owner/admin management screens
 
 ### Version 1.5 (Planned)
-AI daily report generation, AI customer assistant, private chat
+AI daily report generation, AI customer assistant, private chat — **in that priority order** (confirmed 2026-08-11)
 
 ### Version 2 (Planned)
-Live camera, camera authorization, remote viewing, enhanced push notifications
+Enhanced push notifications. *Live camera, camera authorization and remote viewing remain Version 2-scoped features but are no longer next in line — see the sequencing note below.*
 
 ### Version 3 (Planned)
-Pet store, inventory management, membership, loyalty points, coupons
+Membership, loyalty points, coupons. *Pet store and inventory management remain Version 3-scoped but are no longer next in line — see the sequencing note below.*
 
 ### Version 4 (Planned)
 Multi-business support, AI business analytics, AI Vision, open APIs
+
+> **Sequencing note (2026-08-11):** Live camera and the pet store/e-commerce line are deliberately deprioritized to *last* among all currently planned work, ahead only of whatever Version 4 turns out to require — see `14_Roadmap.md` §2–§3 for the maintainer's current priority order and rationale, and §5 there for what's still undecided (their exact placement relative to Version 4). The version numbers above (1.5/2/3/4) still describe *scope grouping*, not build order; `14_Roadmap.md` is the authoritative source for order.
 
 ---
 
@@ -242,8 +244,8 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 11 | Security | ✅ Completed (production controls pending) |
 | 12 | UI Design | ✅ Completed |
 | 13 | Testing | ✅ Completed |
-| 14 | Roadmap | ⏳ Not started |
-| 15 | Development Handbook | ⏳ Not started |
+| 14 | Roadmap | 📝 Draft (pending review) |
+| 15 | Development Handbook | 📝 Draft (pending review) |
 
 > Update this table's status as each document is completed to keep the documentation map traceable.
 
@@ -274,3 +276,6 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-08-08 | v0.19 | Reconciled V1 scope with the shipped role-scoped management screens and added release configuration/document-drift safeguards to CI | Xiyun Liu |
 | 2026-08-08 | v0.20 | Closed the bootstrap Business race at the database layer, completed UI/testing strategy documents and promoted live-provider, private-media, monitoring, penetration-test, restore and rollback evidence to production release gates | Xiyun Liu |
 | 2026-08-09 | v0.21 | Implemented private signed media reads, rotating per-device sessions, Expo receipt reconciliation, and backup/restore/immutable-image verification tools; real-provider evidence remains gated | Xiyun Liu |
+| 2026-08-11 | v0.22 | Added `15_Development_Handbook.md` draft (setup, local run modes, code style, testing, git/CI, migration workflow); `14_Roadmap.md` still pending maintainer input | Xiyun Liu |
+| 2026-08-11 | v0.23 | Added `14_Roadmap.md` draft from maintainer dictation: V1 public launch deliberately deferred past internal testing; V1.5 priority order set (AI daily reports → AI assistant → private chat); Camera and Pet Store/e-commerce reordered to last priority, superseding §10's original V2/V3 placement pending reconciliation | Xiyun Liu |
+| 2026-08-11 | v0.24 | Reconciled §7 and §10 with `14_Roadmap.md`: Version 2/3 scope buckets unchanged, but both sections now note that Camera and Pet Store/e-commerce are sequenced last rather than in version-number order, pointing to the Roadmap as the authoritative sequencing source | Xiyun Liu |
