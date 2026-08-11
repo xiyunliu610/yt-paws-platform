@@ -18,11 +18,21 @@ import { formatLocalizedDate } from '../i18n/dateFormat';
 const STATUS_COLORS: Record<string, string> = {
   pending: '#C9A227',
   pending_verification: '#C9A227',
-  paid: '#2C4A3E',
-  failed: '#FF5252',
+  paid: '#1F4A38',
+  failed: '#B0442E',
   refunded: '#999999',
   cancelled: '#999999',
   refund_pending: '#C9A227',
+};
+
+const STATUS_TINTS: Record<string, string> = {
+  pending: '#F7EFD4',
+  pending_verification: '#F7EFD4',
+  paid: '#E1EAE5',
+  failed: '#F5E3DE',
+  refunded: '#EDEDED',
+  cancelled: '#EDEDED',
+  refund_pending: '#F7EFD4',
 };
 
 const PaymentVerificationScreen = () => {
@@ -174,7 +184,7 @@ const PaymentVerificationScreen = () => {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           {payments === null ? (
-            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+            <ActivityIndicator color="#1F4A38" style={styles.spinner} />
           ) : failed ? (
             <Text style={styles.helperText}>{t.paymentVerification.loadFailed}</Text>
           ) : payments.length === 0 ? (
@@ -189,10 +199,10 @@ const PaymentVerificationScreen = () => {
                   <View
                     style={[
                       styles.statusBadge,
-                      { backgroundColor: STATUS_COLORS[payment.status] ?? '#999' },
+                      { backgroundColor: STATUS_TINTS[payment.status] ?? '#EDEDED' },
                     ]}
                   >
-                    <Text style={styles.statusText}>{statusLabel(payment.status)}</Text>
+                    <Text style={[styles.statusText, { color: STATUS_COLORS[payment.status] ?? '#999' }]}>{statusLabel(payment.status)}</Text>
                   </View>
                 </View>
                 <Text style={styles.meta}>
@@ -297,7 +307,7 @@ const PaymentVerificationScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -315,15 +325,10 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 12,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -334,7 +339,7 @@ const styles = StyleSheet.create({
   customerName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   statusBadge: {
     borderRadius: 12,
@@ -343,8 +348,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: 'white',
+    fontWeight: '700',
   },
   meta: {
     fontSize: 13,
@@ -368,8 +372,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Courier',
   },
   verifyButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 10,
+    backgroundColor: '#1F4A38',
+    borderRadius: 20,
     padding: 12,
     alignItems: 'center',
     marginTop: 4,
@@ -378,13 +382,13 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   verifyButtonText: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     fontSize: 14,
     fontWeight: '600',
   },
   refundButton: {
-    backgroundColor: '#B04A3C',
-    borderRadius: 10,
+    backgroundColor: '#A15C43',
+    borderRadius: 20,
     padding: 12,
     alignItems: 'center',
     marginTop: 4,
@@ -401,17 +405,15 @@ const styles = StyleSheet.create({
   },
   manualRefundWarning: {
     fontSize: 13,
-    color: '#B04A3C',
+    color: '#A15C43',
     fontWeight: '600',
   },
   refundInput: {
-    backgroundColor: '#F5EDD8',
+    backgroundColor: 'white',
     borderRadius: 10,
     padding: 12,
     fontSize: 14,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   refundFormButtons: {
     flexDirection: 'row',
@@ -419,11 +421,10 @@ const styles = StyleSheet.create({
   },
   refundCancelButton: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: 20,
     padding: 12,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    backgroundColor: 'white',
   },
   refundCancelButtonText: {
     color: '#666',

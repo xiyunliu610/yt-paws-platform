@@ -9,11 +9,21 @@ import { formatLocalizedDate } from '../i18n/dateFormat';
 const STATUS_COLORS: Record<string, string> = {
   pending: '#C9A227',
   pending_verification: '#C9A227',
-  paid: '#2C4A3E',
-  failed: '#FF5252',
+  paid: '#1F4A38',
+  failed: '#B0442E',
   refunded: '#999999',
   cancelled: '#999999',
   refund_pending: '#C9A227',
+};
+
+const STATUS_TINTS: Record<string, string> = {
+  pending: '#F7EFD4',
+  pending_verification: '#F7EFD4',
+  paid: '#E1EAE5',
+  failed: '#F5E3DE',
+  refunded: '#EDEDED',
+  cancelled: '#EDEDED',
+  refund_pending: '#F7EFD4',
 };
 
 const PaymentHistoryScreen = () => {
@@ -65,7 +75,7 @@ const PaymentHistoryScreen = () => {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           {payments === null ? (
-            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+            <ActivityIndicator color="#1F4A38" style={styles.spinner} />
           ) : failed ? (
             <Text style={styles.helperText}>{t.paymentHistory.loadFailed}</Text>
           ) : payments.length === 0 ? (
@@ -80,10 +90,10 @@ const PaymentHistoryScreen = () => {
                   <View
                     style={[
                       styles.statusBadge,
-                      { backgroundColor: STATUS_COLORS[payment.status] ?? '#999' },
+                      { backgroundColor: STATUS_TINTS[payment.status] ?? '#EDEDED' },
                     ]}
                   >
-                    <Text style={styles.statusText}>{statusLabel(payment.status)}</Text>
+                    <Text style={[styles.statusText, { color: STATUS_COLORS[payment.status] ?? '#999' }]}>{statusLabel(payment.status)}</Text>
                   </View>
                 </View>
                 <Text style={styles.amount}>NZD {payment.amount.toFixed(2)}</Text>
@@ -103,7 +113,7 @@ const PaymentHistoryScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -121,15 +131,10 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 12,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -140,7 +145,7 @@ const styles = StyleSheet.create({
   serviceName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   statusBadge: {
     borderRadius: 12,
@@ -149,8 +154,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: 'white',
+    fontWeight: '700',
   },
   amount: {
     fontSize: 18,

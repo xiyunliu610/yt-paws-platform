@@ -173,7 +173,7 @@ const StaffManagementScreen = () => {
           )}
 
           {staff === null ? (
-            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+            <ActivityIndicator color="#1F4A38" style={styles.spinner} />
           ) : failed ? (
             <Text style={styles.helperText}>{t.staffManagement.loadFailed}</Text>
           ) : staff.length === 0 && !isAdding ? (
@@ -197,7 +197,7 @@ const StaffManagementScreen = () => {
                   value={member.isActive}
                   onValueChange={(value) => handleStatusChange(member, value)}
                   disabled={member.id === user?.id || updatingId !== null}
-                  trackColor={{ false: '#D0D0D0', true: '#2C4A3E' }}
+                  trackColor={{ false: '#D0D0D0', true: '#1F4A38' }}
                 />
                 </View>
                 <View style={styles.capacityRow}>
@@ -224,7 +224,7 @@ const StaffManagementScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -233,8 +233,8 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   capacityRow: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
-  capacityInput: { flex: 1, backgroundColor: '#F7F7F7', borderRadius: 8, padding: 8 },
-  capacitySave: { color: '#2C4A3E', fontWeight: '700' },
+  capacityInput: { flex: 1, backgroundColor: '#F7F5EF', borderRadius: 10, padding: 8 },
+  capacitySave: { color: '#1F4A38', fontWeight: '700' },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -244,32 +244,30 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   addLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   form: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
     marginBottom: 20,
     gap: 12,
   },
   input: {
-    backgroundColor: '#F5EDD8',
+    backgroundColor: 'white',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   saveButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 14,
     alignItems: 'center',
   },
@@ -279,7 +277,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   spinner: {
     marginTop: 20,
@@ -289,22 +287,17 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   staffCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 10,
   },
   staffTopRow: { flexDirection: 'row', alignItems: 'center' },
   staffIcon: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F5EDD8',
+    borderRadius: 15,
+    backgroundColor: '#F5EFE0',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -312,7 +305,7 @@ const styles = StyleSheet.create({
   staffIconText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   staffInfo: {
     flex: 1,
@@ -320,7 +313,7 @@ const styles = StyleSheet.create({
   staffName: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 2,
   },
   staffEmail: {
@@ -328,7 +321,7 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   roleBadge: {
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#F5EFE0',
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -336,11 +329,11 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   inactiveText: {
     marginTop: 3,
-    color: '#B00020',
+    color: '#A15C43',
     fontSize: 12,
     fontWeight: '600',
   },

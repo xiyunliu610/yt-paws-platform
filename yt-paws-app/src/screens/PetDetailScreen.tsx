@@ -86,8 +86,7 @@ const PetDetailScreen = () => {
       if (!result.canceled && result.assets[0]?.uri) {
         setPhotoUrl(result.assets[0].uri);
       }
-    } catch (error) {
-      console.error('Choosing a pet photo failed:', error);
+    } catch {
       Alert.alert(t.petDetail.pickImageErrorTitle, t.petDetail.pickImageErrorMessage);
     }
   };
@@ -240,8 +239,8 @@ const PetDetailScreen = () => {
               value={isNeutered}
               onValueChange={setIsNeutered}
               disabled={isSaving}
-              trackColor={{ false: '#E0E0E0', true: '#2C4A3E' }}
-              thumbColor="#F5EDD8"
+              trackColor={{ false: '#E0E0E0', true: '#1F4A38' }}
+              thumbColor="#F5EFE0"
             />
           </View>
 
@@ -266,7 +265,7 @@ const PetDetailScreen = () => {
             </View>
 
             {records === null ? (
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             ) : recordsFailed ? (
               <Text style={styles.helperText}>{t.petDetail.loadRecordsFailed}</Text>
             ) : (
@@ -311,7 +310,7 @@ const PetDetailScreen = () => {
                             setShowDatePicker(false);
                           }
                         }}
-                        textColor="#2C4A3E"
+                        textColor="#1F4A38"
                         themeVariant="light"
                       />
                     )}
@@ -348,7 +347,7 @@ const PetDetailScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -364,35 +363,33 @@ const styles = StyleSheet.create({
   photo: {
     width: 100,
     height: 100,
-    borderRadius: 50,
+    borderRadius: 26,
   },
   photoPlaceholder: {
     width: 100,
     height: 100,
-    borderRadius: 50,
-    backgroundColor: '#2C4A3E',
+    borderRadius: 26,
+    backgroundColor: '#1F4A38',
     justifyContent: 'center',
     alignItems: 'center',
   },
   photoPlaceholderText: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   photoEditBadge: {
     alignSelf: 'center',
     marginTop: 8,
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   photoEditBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   section: {
     marginBottom: 20,
@@ -407,17 +404,15 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   textArea: {
     height: 90,
@@ -429,8 +424,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
     marginBottom: 16,
@@ -439,7 +434,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   saveButtonText: {
-    color: 'white',
+    color: '#F5EFE0',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -452,27 +447,27 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   addLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   helperText: {
     fontSize: 14,
     color: '#666',
   },
   recordCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 14,
     marginBottom: 10,
   },
   recordType: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
   recordDate: {
@@ -489,15 +484,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   dateInput: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   dateText: {
     fontSize: 16,
-    color: '#333',
+    color: '#1A1A1A',
     fontWeight: '600',
   },
 });

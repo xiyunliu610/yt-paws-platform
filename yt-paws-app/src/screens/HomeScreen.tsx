@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   StatusBar,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
@@ -33,18 +35,33 @@ type RootStackParamList = {
 type HomeNavigationProp = StackNavigationProp<RootStackParamList>;
 
 const SERVICE_COLORS: Record<ServiceKey, string> = {
-  boarding: '#2C4A3E',
+  boarding: '#1F4A38',
   dayCare: '#4A6B5E',
   grooming: '#6B8B7E',
   houseVisit: '#8BAB9E',
 };
 
+const SERVICE_ICONS: Record<ServiceKey, keyof typeof Feather.glyphMap> = {
+  boarding: 'home',
+  dayCare: 'sun',
+  grooming: 'scissors',
+  houseVisit: 'map-pin',
+};
+
 const FEATURE_KEYS = ['team', 'care', 'local', 'updates'] as const;
+
+const FEATURE_ICONS: Record<(typeof FEATURE_KEYS)[number], keyof typeof Feather.glyphMap> = {
+  team: 'check-circle',
+  care: 'heart',
+  local: 'map-pin',
+  updates: 'bell',
+};
 
 const HomeScreen = () => {
   const navigation = useNavigation<HomeNavigationProp>();
   const { user, token } = useAuth();
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
   const userName = user?.name ?? 'Guest';
 
   const services: Service[] = (['boarding', 'dayCare', 'grooming', 'houseVisit'] as ServiceKey[]).map(
@@ -113,13 +130,13 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2C4A3E" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={[styles.content, { paddingTop: insets.top + 12 }]}>
           <View style={styles.headerContent}>
             <View>
               <Text style={styles.greeting}>{t.home.greeting}</Text>
@@ -130,7 +147,7 @@ const HomeScreen = () => {
                 style={styles.bellButton}
                 onPress={() => navigation.navigate('Notifications')}
               >
-                <Text style={styles.bellIcon}>🔔</Text>
+                <Feather name="bell" size={19} color="#1F4A38" />
                 {unreadCount > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -147,9 +164,7 @@ const HomeScreen = () => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        <View style={styles.content}>
           <TouchableOpacity
             style={styles.quickBookingCard}
             onPress={() => navigateToBooking()}
@@ -202,11 +217,11 @@ const HomeScreen = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t.home.ourServices}</Text>
 
-            <View style={styles.servicesGrid}>
+            <View style={styles.servicesList}>
               {services.map((service) => (
                 <TouchableOpacity
                   key={service.key}
-                  style={styles.serviceCard}
+                  style={styles.serviceRow}
                   onPress={() => navigateToBooking(service)}
                   activeOpacity={0.7}
                 >
@@ -216,13 +231,16 @@ const HomeScreen = () => {
                       { backgroundColor: service.color },
                     ]}
                   >
-                    <Text style={styles.serviceIcon}>{service.name.charAt(0)}</Text>
+                    <Feather name={SERVICE_ICONS[service.key]} size={19} color="white" />
                   </View>
-                  <Text style={styles.serviceName}>{service.name}</Text>
-                  <Text style={styles.serviceDescription}>
-                    {service.description}
-                  </Text>
+                  <View style={styles.serviceInfo}>
+                    <Text style={styles.serviceName}>{service.name}</Text>
+                    <Text style={styles.serviceDescription}>
+                      {service.description}
+                    </Text>
+                  </View>
                   <Text style={styles.servicePrice}>{service.price}</Text>
+                  <Feather name="chevron-right" size={18} color="#1A1A1A" style={styles.serviceChevron} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -234,7 +252,9 @@ const HomeScreen = () => {
             <View style={styles.featuresList}>
               {FEATURE_KEYS.map((key) => (
                 <View key={key} style={styles.featureItem}>
-                  <View style={styles.featureAccent} />
+                  <View style={styles.featureIconContainer}>
+                    <Feather name={FEATURE_ICONS[key]} size={16} color="#1F4A38" />
+                  </View>
                   <View style={styles.featureContent}>
                     <Text style={styles.featureTitle}>{t.home.features[key].title}</Text>
                     <Text style={styles.featureDesc}>{t.home.features[key].desc}</Text>
@@ -264,6 +284,7 @@ const HomeScreen = () => {
           style={styles.navItem}
           onPress={() => {}}
         >
+          <Feather name="home" size={20} color="#1F4A38" />
           <Text style={styles.navTextActive}>{t.home.navHome}</Text>
         </TouchableOpacity>
 
@@ -271,6 +292,7 @@ const HomeScreen = () => {
           style={styles.navItem}
           onPress={() => navigateToBooking()}
         >
+          <Feather name="calendar" size={20} color="#999" />
           <Text style={styles.navText}>{t.home.navBooking}</Text>
         </TouchableOpacity>
 
@@ -278,6 +300,7 @@ const HomeScreen = () => {
           style={styles.navItem}
           onPress={navigateToReport}
         >
+          <Feather name="clipboard" size={20} color="#999" />
           <Text style={styles.navText}>{t.home.navReport}</Text>
         </TouchableOpacity>
 
@@ -285,6 +308,7 @@ const HomeScreen = () => {
           style={styles.navItem}
           onPress={navigateToProfile}
         >
+          <Feather name="user" size={20} color="#999" />
           <Text style={styles.navText}>{t.home.navProfile}</Text>
         </TouchableOpacity>
       </View>
@@ -295,35 +319,26 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
-  },
-  header: {
-    backgroundColor: '#2C4A3E',
-    paddingTop: 20,
-    paddingBottom: 30,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
   },
   headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    marginTop: 10,
+    marginBottom: 20,
   },
   greeting: {
-    fontSize: 16,
-    color: '#F5EDD8',
-    opacity: 0.9,
+    fontSize: 15,
+    color: '#666',
   },
   userName: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
-    color: '#F5EDD8',
-    marginTop: 4,
+    color: '#1A1A1A',
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: 'row',
@@ -331,15 +346,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   bellButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(245, 237, 216, 0.15)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#F5EFE0',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  bellIcon: {
-    fontSize: 20,
   },
   badge: {
     position: 'absolute',
@@ -362,35 +374,26 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#F5EDD8',
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: '#1F4A38',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#F5EFE0',
   },
   content: {
     padding: 24,
     paddingBottom: 100,
   },
   quickBookingCard: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 20,
+    backgroundColor: '#1F4A38',
+    borderRadius: 22,
     padding: 24,
-    marginTop: -20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
   },
   quickBookingContent: {
     flexDirection: 'row',
@@ -401,28 +404,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   quickBookingTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     marginBottom: 6,
   },
   quickBookingSubtitle: {
-    fontSize: 14,
-    color: '#F5EDD8',
-    opacity: 0.8,
+    fontSize: 13,
+    color: '#F5EFE0',
+    opacity: 0.85,
   },
   quickBookingIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(245, 237, 216, 0.2)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5EFE0',
     justifyContent: 'center',
     alignItems: 'center',
   },
   quickBookingIconText: {
-    fontSize: 28,
-    color: '#F5EDD8',
-    fontWeight: '300',
+    fontSize: 24,
+    color: '#1F4A38',
+    fontWeight: '600',
   },
   section: {
     marginTop: 32,
@@ -436,33 +439,25 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   seeAllText: {
     fontSize: 14,
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: '600',
   },
   bookingCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   bookingIcon: {
     width: 50,
     height: 50,
-    borderRadius: 25,
-    backgroundColor: '#F5EDD8',
+    borderRadius: 16,
+    backgroundColor: '#F5EFE0',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -470,7 +465,7 @@ const styles = StyleSheet.create({
   bookingIconText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   bookingInfo: {
     flex: 1,
@@ -478,7 +473,7 @@ const styles = StyleSheet.create({
   bookingPetName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
   bookingService: {
@@ -498,59 +493,52 @@ const styles = StyleSheet.create({
   },
   arrowText: {
     fontSize: 24,
-    color: '#2C4A3E',
+    color: '#1A1A1A',
+    opacity: 0.4,
     fontWeight: '300',
   },
-  servicesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+  servicesList: {
     marginTop: 8,
   },
-  serviceCard: {
-    width: '48%',
-    backgroundColor: 'white',
+  serviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: 14,
+    marginBottom: 10,
   },
   serviceIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginRight: 14,
   },
-  serviceIcon: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
+  serviceInfo: {
+    flex: 1,
   },
   serviceName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2C4A3E',
-    marginBottom: 6,
+    color: '#1A1A1A',
+    marginBottom: 4,
   },
   serviceDescription: {
     fontSize: 12,
     color: '#666',
-    marginBottom: 8,
     lineHeight: 16,
   },
   servicePrice: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#333',
+    marginLeft: 8,
+  },
+  serviceChevron: {
+    marginLeft: 6,
+    opacity: 0.4,
   },
   featuresList: {
     marginTop: 8,
@@ -558,25 +546,19 @@ const styles = StyleSheet.create({
   featureItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    marginBottom: 10,
   },
-  featureAccent: {
-    width: 4,
-    alignSelf: 'stretch',
-    borderRadius: 2,
-    backgroundColor: '#2C4A3E',
-    marginRight: 16,
+  featureIconContainer: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    backgroundColor: '#F5EFE0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
   },
   featureContent: {
     flex: 1,
@@ -584,7 +566,7 @@ const styles = StyleSheet.create({
   featureTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
   featureDesc: {
@@ -592,7 +574,7 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   contactSection: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
     marginTop: 32,
@@ -601,7 +583,7 @@ const styles = StyleSheet.create({
   contactTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 12,
   },
   contactText: {
@@ -616,20 +598,13 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingBottom: 20,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 10,
+    borderTopColor: '#F0EDE3',
   },
   navItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
   },
   navText: {
     fontSize: 13,
@@ -637,7 +612,7 @@ const styles = StyleSheet.create({
   },
   navTextActive: {
     fontSize: 13,
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: '700',
   },
 });

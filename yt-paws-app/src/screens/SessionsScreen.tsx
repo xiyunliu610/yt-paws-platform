@@ -41,7 +41,7 @@ export default function SessionsScreen() {
       <Text style={styles.intro}>
         {language === 'zh' ? '查看已登录设备，并移除不再使用或不认识的设备。' : 'Review signed-in devices and remove any you no longer use or recognize.'}
       </Text>
-      {sessions === null ? <ActivityIndicator color="#2C4A3E" /> : sessions.map((session) => (
+      {sessions === null ? <ActivityIndicator color="#1F4A38" /> : sessions.map((session) => (
         <View style={styles.card} key={session.id}>
           <View style={styles.details}>
             <Text style={styles.name}>{session.deviceName ?? (language === 'zh' ? '未知设备' : 'Unknown device')}</Text>
@@ -60,13 +60,13 @@ export default function SessionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#F5EDD8' },
-  content: { padding: 18, gap: 12 },
-  intro: { color: '#555', lineHeight: 21, marginBottom: 6 },
-  card: { backgroundColor: 'white', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  content: { padding: 18, gap: 10 },
+  intro: { color: '#666', lineHeight: 21, marginBottom: 6 },
+  card: { backgroundColor: '#F7F5EF', borderRadius: 14, padding: 16, flexDirection: 'row', alignItems: 'center' },
   details: { flex: 1 },
-  name: { fontSize: 16, color: '#2C4A3E', fontWeight: '700' },
-  meta: { color: '#777', fontSize: 12, marginTop: 5 },
-  current: { color: '#2C4A3E', fontSize: 12, fontWeight: '600', marginTop: 5 },
-  remove: { color: '#B00020', fontWeight: '600', padding: 8 },
+  name: { fontSize: 16, color: '#1A1A1A', fontWeight: '700' },
+  meta: { color: '#666', fontSize: 12, marginTop: 5 },
+  current: { color: '#1F4A38', fontSize: 12, fontWeight: '600', marginTop: 5 },
+  remove: { color: '#A15C43', fontWeight: '600', padding: 8 },
 });

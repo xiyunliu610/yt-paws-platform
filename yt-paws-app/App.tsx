@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
@@ -61,7 +62,7 @@ const Navigation = () => {
   if (isRestoring) {
     return (
       <View style={styles.splash}>
-        <ActivityIndicator size="large" color="#2C4A3E" />
+        <ActivityIndicator size="large" color="#1F4A38" />
       </View>
     );
   }
@@ -87,16 +88,21 @@ const Navigation = () => {
         initialRouteName={token ? 'Home' : 'Login'}
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#2C4A3E',
+            backgroundColor: '#FFFFFF',
+            shadowColor: 'transparent',
+            elevation: 0,
+            borderBottomWidth: 1,
+            borderBottomColor: '#F0EDE3',
           },
-          headerTintColor: '#F5EDD8',
+          headerTintColor: '#1A1A1A',
           headerTitleStyle: {
             fontWeight: 'bold',
-            fontSize: 18,
+            fontSize: 17,
+            color: '#1A1A1A',
           },
           headerBackButtonDisplayMode: 'minimal',
           cardStyle: {
-            backgroundColor: '#F5EDD8',
+            backgroundColor: '#FFFFFF',
           },
         }}
       >
@@ -275,12 +281,14 @@ const Navigation = () => {
 
 const App = () => {
   return (
-    <LanguageProvider>
-      <AuthProvider>
-        <StatusBar style="dark" backgroundColor="#F5EDD8" />
-        <Navigation />
-      </AuthProvider>
-    </LanguageProvider>
+    <SafeAreaProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <StatusBar style="dark" backgroundColor="#FFFFFF" />
+          <Navigation />
+        </AuthProvider>
+      </LanguageProvider>
+    </SafeAreaProvider>
   );
 };
 
@@ -289,7 +297,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
 });
 

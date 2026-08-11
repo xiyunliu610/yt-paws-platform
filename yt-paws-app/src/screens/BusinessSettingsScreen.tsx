@@ -68,8 +68,7 @@ const BusinessSettingsScreen = () => {
       if (!result.canceled && result.assets[0]?.uri) {
         setWechatQrCodeUrl(result.assets[0].uri);
       }
-    } catch (error) {
-      console.error('Choosing a WeChat QR code image failed:', error);
+    } catch {
       Alert.alert(t.businessSettings.pickImageErrorTitle, t.businessSettings.pickImageErrorMessage);
     }
   };
@@ -112,7 +111,7 @@ const BusinessSettingsScreen = () => {
   if (business === null && !failed) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+        <ActivityIndicator color="#1F4A38" style={styles.spinner} />
       </View>
     );
   }
@@ -189,7 +188,7 @@ const BusinessSettingsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -205,29 +204,24 @@ const styles = StyleSheet.create({
     color: '#666',
     padding: 24,
   },
-  helperTextInline: { marginTop: 6, color: '#667', fontSize: 13 },
+  helperTextInline: { marginTop: 6, color: '#666', fontSize: 13 },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 8,
     marginTop: 16,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   qrCodePicker: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderStyle: 'dashed',
     height: 180,
     justifyContent: 'center',
     alignItems: 'center',
@@ -247,13 +241,13 @@ const styles = StyleSheet.create({
   },
   removeQrCodeButtonText: {
     fontSize: 13,
-    color: '#B04A3C',
+    color: '#A15C43',
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
-    padding: 14,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
+    padding: 15,
     alignItems: 'center',
     marginTop: 24,
   },
@@ -263,7 +257,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
 });
 

@@ -278,7 +278,7 @@ const BookingDetailScreen = () => {
           {showCareDetails && <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t.myBookings.careDetailsTitle}</Text>
             {careDetails === null && !careDetailsFailed ? (
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             ) : careDetailsFailed ? (
               <View style={styles.retryRow}>
                 <Text style={styles.helperText}>{t.myBookings.loadCareDetailsFailed}</Text>
@@ -336,7 +336,7 @@ const BookingDetailScreen = () => {
                     {assigningStaffId === member.id ? (
                       <ActivityIndicator
                         size="small"
-                        color={booking.assignedStaffId === member.id ? '#F5EDD8' : '#2C4A3E'}
+                        color={booking.assignedStaffId === member.id ? '#F5EFE0' : '#1F4A38'}
                       />
                     ) : (
                       <Text
@@ -396,7 +396,7 @@ const BookingDetailScreen = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t.myBookings.dailyReportsTitle}</Text>
             {reports === null ? (
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             ) : reportsFailed ? (
               <Text style={styles.helperText}>{t.myBookings.loadReportsFailed}</Text>
             ) : reports.length === 0 ? (
@@ -426,7 +426,7 @@ const BookingDetailScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -455,11 +455,11 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   linkValue: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
     textDecorationLine: 'underline',
   },
   paidValue: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   section: {
     marginBottom: 24,
@@ -467,35 +467,32 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 12,
   },
   staffChip: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 10,
-    borderWidth: 1.5,
-    borderColor: '#E0E0E0',
     minWidth: 60,
     alignItems: 'center',
   },
   staffChipSelected: {
-    backgroundColor: '#2C4A3E',
-    borderColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   staffChipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   staffChipTextSelected: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   primaryButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
     marginBottom: 16,
@@ -504,13 +501,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#4A6B5E',
   },
   primaryButtonText: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     fontSize: 16,
     fontWeight: 'bold',
   },
   cancelButton: {
-    backgroundColor: '#FF5252',
-    borderRadius: 12,
+    backgroundColor: '#B0442E',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
     marginBottom: 24,
@@ -539,22 +536,21 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#2C4A3E',
-    borderRadius: 8,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   retryButtonText: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontSize: 14,
     fontWeight: '600',
   },
   reportCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   reportDate: {
     fontSize: 12,
@@ -572,19 +568,19 @@ const styles = StyleSheet.create({
   mediaThumb: {
     width: 80,
     height: 80,
-    borderRadius: 8,
+    borderRadius: 10,
     marginRight: 8,
   },
   petPhoto: {
     width: 88,
     height: 88,
-    borderRadius: 44,
+    borderRadius: 22,
     marginBottom: 12,
   },
   careName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
   careLabel: {

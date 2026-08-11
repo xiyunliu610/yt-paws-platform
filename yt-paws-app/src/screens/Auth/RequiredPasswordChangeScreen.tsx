@@ -24,17 +24,17 @@ export default function RequiredPasswordChangeScreen() {
     <Text style={styles.help}>{t.requiredPasswordChange.help}</Text>
     <TextInput style={styles.input} value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry placeholder={t.requiredPasswordChange.temporaryPassword} />
     <TextInput style={styles.input} value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder={t.requiredPasswordChange.newPassword} autoComplete="new-password" />
-    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t.requiredPasswordChange.submit}</Text>}</TouchableOpacity>
+    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#F5EFE0" /> : <Text style={styles.buttonText}>{t.requiredPasswordChange.submit}</Text>}</TouchableOpacity>
     <TouchableOpacity onPress={logout} disabled={loading}><Text style={styles.logout}>{t.requiredPasswordChange.signOut}</Text></TouchableOpacity>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#F5EDD8' },
-  title: { fontSize: 26, fontWeight: '700', color: '#2C4A3E', marginBottom: 8 },
-  help: { color: '#667', marginBottom: 20 },
-  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7cec9', borderRadius: 8, padding: 14, marginBottom: 12 },
-  button: { backgroundColor: '#2C4A3E', padding: 15, borderRadius: 8, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: '700' },
-  logout: { color: '#2C4A3E', textAlign: 'center', marginTop: 24 },
+  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  title: { fontSize: 26, fontWeight: '700', color: '#1A1A1A', marginBottom: 8 },
+  help: { color: '#666', marginBottom: 20 },
+  input: { backgroundColor: '#F7F5EF', borderRadius: 12, padding: 14, marginBottom: 12 },
+  button: { backgroundColor: '#1F4A38', padding: 16, borderRadius: 24, alignItems: 'center' },
+  buttonText: { color: '#F5EFE0', fontWeight: '700' },
+  logout: { color: '#1F4A38', textAlign: 'center', marginTop: 24 },
 });

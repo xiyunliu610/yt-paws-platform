@@ -20,7 +20,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
@@ -72,7 +72,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const persistSession = async (nextToken: string, nextRefreshToken: string, nextUser: AuthUser) => {
     setToken(nextToken);
     setUser(nextUser);
-    if (nextUser.locale && nextUser.locale !== language) setLanguage(nextUser.locale);
     await Promise.all([
       AsyncStorage.setItem(TOKEN_STORAGE_KEY, nextToken),
       AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser)),

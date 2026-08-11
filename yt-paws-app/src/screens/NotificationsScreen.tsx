@@ -43,7 +43,7 @@ const NotificationsScreen = () => {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           {notifications === null ? (
-            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+            <ActivityIndicator color="#1F4A38" style={styles.spinner} />
           ) : failed ? (
             <Text style={styles.helperText}>{t.notifications.loadFailed}</Text>
           ) : notifications.length === 0 ? (
@@ -74,7 +74,7 @@ const NotificationsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -92,19 +92,14 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 10,
   },
   cardUnread: {
     borderLeftWidth: 3,
-    borderLeftColor: '#2C4A3E',
+    borderLeftColor: '#1F4A38',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -116,12 +111,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   title: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   body: {
     fontSize: 14,

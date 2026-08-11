@@ -22,10 +22,18 @@ type Navigation = StackNavigationProp<RootStackParamList>;
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#C9A227',
-  confirmed: '#2C4A3E',
+  confirmed: '#1F4A38',
   in_progress: '#4A6B5E',
-  completed: '#8BAB9E',
+  completed: '#7C9C8F',
   cancelled: '#999999',
+};
+
+const STATUS_TINTS: Record<string, string> = {
+  pending: '#F7EFD4',
+  confirmed: '#E1EAE5',
+  in_progress: '#E6ECE8',
+  completed: '#EDF2F0',
+  cancelled: '#EDEDED',
 };
 
 const MyBookingsScreen = () => {
@@ -71,30 +79,34 @@ const MyBookingsScreen = () => {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           {bookings === null ? (
-            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+            <ActivityIndicator color="#1F4A38" style={styles.spinner} />
           ) : failed ? (
             <Text style={styles.helperText}>{t.myBookings.loadFailed}</Text>
           ) : bookings.length === 0 ? (
             <Text style={styles.helperText}>{t.myBookings.empty}</Text>
           ) : (
-            bookings.map((booking) => (
-              <TouchableOpacity
-                key={booking.id}
-                style={styles.card}
-                onPress={() => navigation.navigate('BookingDetail', { booking })}
-              >
-                <View style={styles.cardHeader}>
-                  <Text style={styles.serviceName}>{booking.service?.name}</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[booking.status] ?? '#999' }]}>
-                    <Text style={styles.statusText}>{statusLabel(booking.status)}</Text>
+            bookings.map((booking) => {
+              const statusColor = STATUS_COLORS[booking.status] ?? '#999';
+              const statusTint = STATUS_TINTS[booking.status] ?? '#EDEDED';
+              return (
+                <TouchableOpacity
+                  key={booking.id}
+                  style={styles.card}
+                  onPress={() => navigation.navigate('BookingDetail', { booking })}
+                >
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.serviceName}>{booking.service?.name}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: statusTint }]}>
+                      <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel(booking.status)}</Text>
+                    </View>
                   </View>
-                </View>
-                <Text style={styles.petName}>{booking.pet?.name}</Text>
-                <Text style={styles.dateRange}>
-                  {formatLocalizedDate(booking.startDate, language)} → {formatLocalizedDate(booking.endDate, language)}
-                </Text>
-              </TouchableOpacity>
-            ))
+                  <Text style={styles.petName}>{booking.pet?.name}</Text>
+                  <Text style={styles.dateRange}>
+                    {formatLocalizedDate(booking.startDate, language)} → {formatLocalizedDate(booking.endDate, language)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -105,7 +117,7 @@ const MyBookingsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -123,15 +135,10 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 12,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -142,7 +149,7 @@ const styles = StyleSheet.create({
   serviceName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   statusBadge: {
     borderRadius: 12,
@@ -151,8 +158,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: 'white',
+    fontWeight: '700',
   },
   petName: {
     fontSize: 14,

@@ -34,15 +34,15 @@ export default function ResetPasswordScreen() {
     <Text style={styles.help}>{t.resetPassword.help}</Text>
     <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder={t.resetPassword.newPassword} autoComplete="new-password" />
     <TextInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry placeholder={t.resetPassword.confirmPassword} autoComplete="new-password" />
-    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{t.resetPassword.submit}</Text>}</TouchableOpacity>
+    <TouchableOpacity style={styles.button} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#F5EFE0" /> : <Text style={styles.buttonText}>{t.resetPassword.submit}</Text>}</TouchableOpacity>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#F5EDD8' },
-  title: { fontSize: 26, fontWeight: '700', color: '#2C4A3E', marginBottom: 8 },
-  help: { color: '#667', marginBottom: 20 },
-  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7cec9', borderRadius: 8, padding: 14, marginBottom: 12 },
-  button: { backgroundColor: '#2C4A3E', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 8 },
-  buttonText: { color: '#fff', fontWeight: '700' },
+  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  title: { fontSize: 26, fontWeight: '700', color: '#1A1A1A', marginBottom: 8 },
+  help: { color: '#666', marginBottom: 20 },
+  input: { backgroundColor: '#F7F5EF', borderRadius: 12, padding: 14, marginBottom: 12 },
+  button: { backgroundColor: '#1F4A38', padding: 16, borderRadius: 24, alignItems: 'center', marginTop: 8 },
+  buttonText: { color: '#F5EFE0', fontWeight: '700' },
 });

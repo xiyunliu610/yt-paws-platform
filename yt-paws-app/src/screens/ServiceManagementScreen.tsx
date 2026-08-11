@@ -258,7 +258,7 @@ const ServiceManagementScreen = () => {
           )}
 
           {services === null ? (
-            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+            <ActivityIndicator color="#1F4A38" style={styles.spinner} />
           ) : failed ? (
             <Text style={styles.helperText}>{t.serviceManagement.loadFailed}</Text>
           ) : services.length === 0 && !isAdding ? (
@@ -280,7 +280,7 @@ const ServiceManagementScreen = () => {
                   <Switch
                     value={service.isActive}
                     onValueChange={(value) => handleToggleActive(service, value)}
-                    trackColor={{ true: '#2C4A3E' }}
+                    trackColor={{ true: '#1F4A38' }}
                   />
                 </TouchableOpacity>
 
@@ -310,7 +310,7 @@ const ServiceManagementScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -327,28 +327,26 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   addLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   form: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
     marginBottom: 12,
     gap: 12,
   },
   input: {
-    backgroundColor: '#F5EDD8',
+    backgroundColor: 'white',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   pricingUnitRow: {
     flexDirection: 'row',
@@ -358,13 +356,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    backgroundColor: 'white',
     alignItems: 'center',
   },
   pricingUnitButtonActive: {
-    backgroundColor: '#2C4A3E',
-    borderColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   pricingUnitButtonText: {
     fontSize: 14,
@@ -372,11 +368,11 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   pricingUnitButtonTextActive: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   saveButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 14,
     alignItems: 'center',
     marginBottom: 20,
@@ -387,7 +383,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   spinner: {
     marginTop: 20,
@@ -397,15 +393,10 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   serviceCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 10,
   },
   serviceCardHeader: {
     flexDirection: 'row',
@@ -419,7 +410,7 @@ const styles = StyleSheet.create({
   serviceName: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 2,
   },
   servicePrice: {

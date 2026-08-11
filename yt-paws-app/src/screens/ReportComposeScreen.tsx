@@ -55,8 +55,7 @@ const ReportComposeScreen = () => {
       if (!result.canceled) {
         setPhotos((prev) => [...prev, ...result.assets.map((asset) => asset.uri)].slice(0, MAX_PHOTOS));
       }
-    } catch (error) {
-      console.error('Choosing report photos failed:', error);
+    } catch {
       Alert.alert(t.reportCompose.pickImageErrorTitle, t.reportCompose.pickImageErrorMessage);
     }
   };
@@ -151,7 +150,7 @@ const ReportComposeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -171,17 +170,15 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   textArea: {
     height: 130,
@@ -190,7 +187,7 @@ const styles = StyleSheet.create({
   addLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   photoRow: {
     marginTop: 4,
@@ -222,8 +219,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   submitButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
   },
@@ -231,7 +228,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitButtonText: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     fontSize: 16,
     fontWeight: 'bold',
   },
