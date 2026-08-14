@@ -1,7 +1,7 @@
 # Y&T Paws Platform — Development Handbook
 
-**Version:** 1.0
-**Updated:** 2026-08-11
+**Version:** 1.1
+**Updated:** 2026-08-14
 **Status:** Draft — reflects the repository as implemented; expand as workflows change.
 
 ## 1. Repository layout
@@ -88,7 +88,7 @@ Full layer breakdown, coverage policy and what's deliberately *not* covered by m
 
 ## 9. CI/CD pipeline
 
-`ci.yml` (runs on every push/PR) in order: install backend deps → `prisma generate` → `prisma migrate deploy` against a throwaway Postgres service container → backend build → **API drift check** (`npm run api:drift`, fails if the OpenAPI spec doesn't match the code) → release-evidence self-test → shell script syntax check → unit tests with coverage → e2e tests → upload coverage artifact → build the production Docker image → app `npm ci` → app `tsc --noEmit` → app policy tests + release-config drift check.
+`ci.yml` (runs on every push/PR) in order: install backend deps → `prisma generate` → `prisma migrate deploy` against a throwaway Postgres service container → backend build → **API drift check** (`npm run api:drift`, fails if the OpenAPI spec doesn't match the code) → **API check** (`npm run api:check`, regenerates the OpenAPI spec and diffs it against the committed one) → release-evidence self-test → shell script syntax check → unit tests with coverage → e2e tests → upload coverage artifact → build the production Docker image → app `npm ci` → app `tsc --noEmit` → app policy tests + release-config drift check.
 
 `release-readiness.yml` is manually triggered (`workflow_dispatch`) and gates actual production releases on traceable, dated, non-expired evidence variables (live Stripe/WeChat verification, push device test, security review, backup/rollback drills — see `13_Testing_Strategy.md` §6) before building an immutable, SHA-tagged image. It does not run automatically; someone has to decide a release is ready and dispatch it.
 
@@ -122,3 +122,4 @@ This repo writes docs from *implemented* state, not aspiration — see the tone 
 | Date | Version | Change |
 |---|---|---|
 | 2026-08-11 | 1.0 | Initial draft: setup, local run modes (including the tunnel/backend-port limitation and simulator prerequisites discovered while testing), code style, testing, git/CI, migration workflow and the single-Business reset gotcha |
+| 2026-08-14 | 1.1 | §9: added the `npm run api:check` step, which was missing from the CI pipeline description |
