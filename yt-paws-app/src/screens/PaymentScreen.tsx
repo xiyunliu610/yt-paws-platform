@@ -16,6 +16,7 @@ import * as Linking from 'expo-linking';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ApiError, paymentsApi, Booking, WechatPaymentIntent, Payment } from '../api/client';
+import { authenticatedMediaSource } from '../api/mediaSource';
 
 type RootStackParamList = {
   Payment: { booking: Booking };
@@ -147,7 +148,7 @@ const PaymentScreen = () => {
     return (
       <View style={styles.container}>
         <View style={styles.centerContent}>
-          <ActivityIndicator color="#2C4A3E" />
+          <ActivityIndicator color="#1F4A38" />
         </View>
       </View>
     );
@@ -203,7 +204,7 @@ const PaymentScreen = () => {
 
               {stripeStatus === 'processing' ? (
                 <View style={styles.processingBox}>
-                  <ActivityIndicator color="#2C4A3E" style={styles.processingSpinner} />
+                  <ActivityIndicator color="#1F4A38" style={styles.processingSpinner} />
                   <Text style={styles.helperText}>{t.payment.cardProcessingMessage}</Text>
                 </View>
               ) : stripeStatus === 'failed' ? (
@@ -229,7 +230,7 @@ const PaymentScreen = () => {
             </View>
           ) : !wechatIntent ? (
             <View style={styles.centerContent}>
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             </View>
           ) : wechatIntent.status === 'pending_verification' ? (
             <View style={styles.centerContent}>
@@ -251,7 +252,7 @@ const PaymentScreen = () => {
 
               <View style={styles.qrCard}>
                 {wechatIntent.qrCodeUrl ? (
-                  <Image source={{ uri: wechatIntent.qrCodeUrl }} style={styles.qrImage} resizeMode="contain" />
+                  <Image source={authenticatedMediaSource(wechatIntent.qrCodeUrl, token)} style={styles.qrImage} resizeMode="contain" />
                 ) : (
                   <Text style={styles.helperText}>{t.payment.noQrCodeMessage}</Text>
                 )}
@@ -279,7 +280,7 @@ const PaymentScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   },
   methodTabs: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 14,
     padding: 4,
     marginBottom: 20,
@@ -307,18 +308,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   methodTabActive: {
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   methodTabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#666',
   },
   methodTabTextActive: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -353,10 +354,10 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   qrCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
@@ -376,8 +377,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   payButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
   },
@@ -385,14 +386,14 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   payButtonText: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     fontSize: 16,
     fontWeight: 'bold',
   },
   paidTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 8,
     textAlign: 'center',
   },

@@ -14,7 +14,7 @@ type BookingStatus = 'completed' | 'upcoming';
 type Period = 'week' | 'month' | 'year';
 
 const SERVICE_COLORS: Record<ServiceKey, string> = {
-  boarding: '#2C4A3E',
+  boarding: '#1F4A38',
   dayCare: '#4A6B5E',
   grooming: '#6B8B7E',
   houseVisit: '#8BAB9E',
@@ -73,7 +73,7 @@ const ReportScreen = () => {
   };
 
   const getStatusColor = (status: BookingStatus) => {
-    return status === 'completed' ? '#4CAF50' : '#FF9800';
+    return status === 'completed' ? '#1F4A38' : '#C9A227';
   };
 
   const maxAmount = Math.max(...monthlyData.map((d) => d.amount));
@@ -84,12 +84,9 @@ const ReportScreen = () => {
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>{t.report.headerTitle}</Text>
-          <Text style={styles.headerSubtitle}>{t.report.headerSubtitle}</Text>
-        </View>
-
         <View style={styles.content}>
+          <Text style={styles.headerSubtitle}>{t.report.headerSubtitle}</Text>
+
           <View style={styles.periodSelector}>
             {(['week', 'month', 'year'] as Period[]).map((period) => (
               <TouchableOpacity
@@ -250,27 +247,14 @@ const ReportScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
   },
-  header: {
-    backgroundColor: '#2C4A3E',
-    padding: 24,
-    paddingTop: 40,
-    paddingBottom: 30,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#F5EDD8',
-    marginBottom: 8,
-  },
   headerSubtitle: {
     fontSize: 14,
-    color: '#F5EDD8',
-    opacity: 0.9,
+    color: '#666',
   },
   content: {
     padding: 24,
@@ -278,9 +262,10 @@ const styles = StyleSheet.create({
   },
   periodSelector: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 4,
+    marginTop: 20,
     marginBottom: 20,
   },
   periodButton: {
@@ -290,7 +275,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   periodButtonActive: {
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   periodText: {
     fontSize: 14,
@@ -298,7 +283,7 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   periodTextActive: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -308,24 +293,16 @@ const styles = StyleSheet.create({
   },
   statCard: {
     width: '48%',
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
     margin: '1%',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   statNumber: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 6,
   },
   statLabel: {
@@ -335,7 +312,7 @@ const styles = StyleSheet.create({
   },
   statService: {
     fontSize: 12,
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: '600',
   },
   section: {
@@ -350,26 +327,18 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 16,
   },
   filterText: {
     fontSize: 14,
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: '600',
   },
   chartCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   chart: {
     flexDirection: 'row',
@@ -389,7 +358,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   bar: {
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
     borderTopLeftRadius: 6,
     borderTopRightRadius: 6,
     minHeight: 10,
@@ -405,20 +374,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   bookingCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    marginBottom: 10,
   },
   bookingLeft: {
     marginRight: 16,
@@ -435,7 +396,7 @@ const styles = StyleSheet.create({
   bookingDay: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   bookingMiddle: {
     flex: 1,
@@ -443,7 +404,7 @@ const styles = StyleSheet.create({
   bookingService: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
   bookingPet: {
@@ -471,7 +432,7 @@ const styles = StyleSheet.create({
   bookingAmount: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 4,
   },
   bookingArrow: {
@@ -479,17 +440,9 @@ const styles = StyleSheet.create({
     color: '#999',
   },
   serviceStats: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   serviceStatItem: {
     marginBottom: 20,
@@ -527,19 +480,19 @@ const styles = StyleSheet.create({
   },
   exportButton: {
     backgroundColor: 'white',
-    borderRadius: 12,
+    borderRadius: 24,
     padding: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
     borderWidth: 1.5,
-    borderColor: '#2C4A3E',
+    borderColor: '#1F4A38',
   },
   exportButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
 });
 

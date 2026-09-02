@@ -242,28 +242,25 @@ const BookingScreen = () => {
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>{t.booking.headerTitle}</Text>
-          <Text style={styles.headerSubtitle}>{t.booking.headerSubtitle}</Text>
-        </View>
-
         <View style={styles.content}>
+          <Text style={styles.headerSubtitle}>{t.booking.headerSubtitle}</Text>
+
           <View style={styles.section}>
             <Text style={styles.label}>{t.booking.selectService}</Text>
             {services === null ? (
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             ) : servicesFailed ? (
               <Text style={styles.helperText}>{t.booking.loadServicesFailed}</Text>
             ) : services.length === 0 ? (
               <Text style={styles.helperText}>{t.booking.noServicesAvailable}</Text>
             ) : (
-              <View style={styles.optionsGrid}>
+              <View style={styles.optionsList}>
                 {services.map((service) => (
                   <TouchableOpacity
                     key={service.id}
                     style={[
-                      styles.optionCard,
-                      selectedServiceId === service.id && styles.optionCardSelected,
+                      styles.optionRow,
+                      selectedServiceId === service.id && styles.optionRowSelected,
                     ]}
                     onPress={() => setSelectedServiceId(service.id)}
                   >
@@ -288,19 +285,19 @@ const BookingScreen = () => {
           <View style={styles.section}>
             <Text style={styles.label}>{t.booking.selectPetLabel}</Text>
             {pets === null ? (
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             ) : petsFailed ? (
               <Text style={styles.helperText}>{t.booking.loadPetsFailed}</Text>
             ) : (
               <>
                 {pets.length > 0 && !isAddingPet && (
-                  <View style={styles.optionsGrid}>
+                  <View style={styles.optionsList}>
                     {pets.map((pet) => (
                       <TouchableOpacity
                         key={pet.id}
                         style={[
-                          styles.optionCard,
-                          selectedPetId === pet.id && styles.optionCardSelected,
+                          styles.optionRow,
+                          selectedPetId === pet.id && styles.optionRowSelected,
                         ]}
                         onPress={() => setSelectedPetId(pet.id)}
                       >
@@ -400,7 +397,7 @@ const BookingScreen = () => {
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                   onChange={onDateChange}
                   minimumDate={new Date()}
-                  textColor="#2C4A3E"
+                  textColor="#1F4A38"
                   themeVariant="light"
                 />
                 {Platform.OS === 'ios' && (
@@ -436,7 +433,7 @@ const BookingScreen = () => {
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                   onChange={onTimeChange}
                   is24Hour={true}
-                  textColor="#2C4A3E"
+                  textColor="#1F4A38"
                   themeVariant="light"
                 />
                 {Platform.OS === 'ios' && (
@@ -544,27 +541,15 @@ const BookingScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
   },
-  header: {
-    backgroundColor: '#2C4A3E',
-    padding: 24,
-    paddingTop: 40,
-    paddingBottom: 30,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#F5EDD8',
-    marginBottom: 8,
-  },
   headerSubtitle: {
     fontSize: 14,
-    color: '#F5EDD8',
-    opacity: 0.9,
+    color: '#666',
+    marginBottom: 20,
   },
   content: {
     padding: 24,
@@ -574,111 +559,98 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   label: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#2C4A3E',
-    marginBottom: 12,
+    color: '#999',
+    marginBottom: 10,
   },
   helperText: {
     fontSize: 14,
     color: '#666',
   },
-  optionsGrid: {
+  optionsList: {
+    gap: 10,
+  },
+  optionRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6,
-  },
-  optionCard: {
-    width: '48%',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    margin: '1%',
-    borderWidth: 2,
-    borderColor: '#E0E0E0',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#F7F5EF',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  optionCardSelected: {
-    borderColor: '#2C4A3E',
-    backgroundColor: '#2C4A3E',
+  optionRowSelected: {
+    backgroundColor: '#1F4A38',
   },
   optionText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#2C4A3E',
-    marginBottom: 6,
-    textAlign: 'center',
+    color: '#1A1A1A',
   },
   optionTextSelected: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   optionPrice: {
     fontSize: 13,
     color: '#666',
   },
   optionPriceSelected: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     opacity: 0.9,
   },
   addPetLink: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginTop: 4,
   },
   addPetForm: {
     marginTop: 12,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
     marginBottom: 12,
   },
   petTypeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 12,
+    gap: 8,
   },
   petTypeButton: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 16,
-    marginHorizontal: 4,
-    borderWidth: 2,
-    borderColor: '#E0E0E0',
     alignItems: 'center',
   },
   petTypeButtonSelected: {
-    borderColor: '#2C4A3E',
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   petTypeText: {
     fontSize: 16,
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     fontWeight: '600',
   },
   petTypeTextSelected: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   dateInput: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   dateText: {
     fontSize: 16,
-    color: '#333',
+    color: '#1A1A1A',
     fontWeight: '600',
   },
   pickerButtonContainer: {
@@ -686,13 +658,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   pickerButton: {
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
     paddingHorizontal: 32,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 20,
   },
   pickerButtonText: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -700,38 +672,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 16,
     padding: 8,
   },
   durationButton: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#2C4A3E',
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    backgroundColor: '#1F4A38',
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
   durationButtonText: {
-    fontSize: 24,
-    color: '#F5EDD8',
+    fontSize: 22,
+    color: '#F5EFE0',
     fontWeight: 'bold',
   },
   durationInput: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     textAlign: 'center',
     minWidth: 80,
     paddingHorizontal: 20,
   },
   priceCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 24,
-    borderWidth: 2,
-    borderColor: '#2C4A3E',
   },
   priceRow: {
     flexDirection: 'row',
@@ -750,18 +720,18 @@ const styles = StyleSheet.create({
   },
   priceDivider: {
     height: 1,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#E5E1D5',
     marginVertical: 12,
   },
   priceTotalLabel: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   priceTotalValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   priceNote: {
     fontSize: 12,
@@ -770,8 +740,8 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   submitButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 27,
     padding: 18,
     alignItems: 'center',
     marginBottom: 16,
@@ -782,27 +752,25 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   infoBox: {
     flexDirection: 'row',
-    backgroundColor: '#FFF9E6',
-    borderRadius: 12,
+    backgroundColor: '#F5EFE0',
+    borderRadius: 14,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#FFE082',
   },
   infoAccent: {
     width: 4,
     alignSelf: 'stretch',
     borderRadius: 2,
-    backgroundColor: '#C9A227',
+    backgroundColor: '#1F4A38',
     marginRight: 12,
   },
   infoText: {
     flex: 1,
     fontSize: 13,
-    color: '#666',
+    color: '#5A5548',
     lineHeight: 20,
   },
 });

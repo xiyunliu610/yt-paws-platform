@@ -5,11 +5,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request';
-import { InitiateStripeDto } from './dto/payment.dto';
+import { InitiateStripeDto, RefundPaymentDto } from './dto/payment.dto';
+import { OperationalAlertsService } from '../operations/operational-alerts.service';
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private paymentsService: PaymentsService) {}
+  constructor(private paymentsService: PaymentsService, private alerts: OperationalAlertsService) {}
 
   // Must be declared before 'stripe/:bookingId' — Nest/Express match routes
   // in registration order, so the parameterized route would otherwise treat
@@ -18,11 +19,16 @@ export class PaymentsController {
   // Called directly by Stripe's servers, not the app, so there's no JWT to
   // check here — request authenticity comes from the signature instead.
   @Post('stripe/webhook')
-  handleStripeWebhook(
+  async handleStripeWebhook(
     @Req() req: Request & { rawBody: Buffer },
     @Headers('stripe-signature') signature: string,
   ) {
-    return this.paymentsService.handleStripeWebhook(req.rawBody, signature);
+    try {
+      return await this.paymentsService.handleStripeWebhook(req.rawBody, signature);
+    } catch (error) {
+      await this.alerts.send('stripe_webhook_failed', error instanceof Error ? error.message : 'Unknown Stripe webhook error');
+      throw error;
+    }
   }
 
   @Post('stripe/:bookingId')
@@ -52,6 +58,24 @@ export class PaymentsController {
   @Roles('owner', 'admin')
   verifyWechatPayment(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.paymentsService.verifyWechatPayment(req.user, id);
+  }
+
+  @Patch(':id/refund')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  refundPayment(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RefundPaymentDto,
+  ) {
+    return this.paymentsService.refundPayment(req.user, id, body.reason);
+  }
+
+  @Post(':id/reconcile-refund')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  reconcileRefund(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.paymentsService.reconcileRefund(req.user, id);
   }
 
   @Get('mine')

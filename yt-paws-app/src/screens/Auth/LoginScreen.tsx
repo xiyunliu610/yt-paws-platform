@@ -10,9 +10,11 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth, ApiError } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { authApi } from '../../api/client';
 
 const LoginScreen = () => {
   const navigation = useNavigation();
@@ -44,9 +46,8 @@ const LoginScreen = () => {
 
     try {
       await login(email, password);
-      navigation.navigate('Home' as never);
+      navigation.reset({ index: 0, routes: [{ name: 'Home' as never }] });
     } catch (error) {
-      console.error('Login failed:', error);
       const message = error instanceof ApiError ? error.message : t.login.loginFailedMessage;
       Alert.alert(t.login.loginFailedTitle, message);
     } finally {
@@ -58,8 +59,18 @@ const LoginScreen = () => {
     navigation.navigate('Register' as never);
   };
 
-  const handleForgotPassword = () => {
-    Alert.alert(t.login.forgotPasswordTitle, t.login.forgotPasswordMessage);
+  const handleForgotPassword = async () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      Alert.alert(t.login.errorTitle, t.login.enterResetEmail);
+      return;
+    }
+    try {
+      await authApi.forgotPassword(email.trim());
+      Alert.alert(t.login.forgotPasswordTitle, t.login.forgotPasswordMessage);
+    } catch {
+      Alert.alert(t.login.errorTitle, t.login.resetRequestFailed);
+    }
   };
 
   const toggleLanguage = () => {
@@ -80,93 +91,78 @@ const LoginScreen = () => {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
+          <View style={styles.logoSquare}>
             <Text style={styles.logoText}>Y&T</Text>
           </View>
           <Text style={styles.brandName}>{t.common.brandName}</Text>
           <Text style={styles.tagline}>{t.login.tagline}</Text>
         </View>
 
-        <View style={styles.formContainer}>
-          <Text style={styles.title}>{t.login.welcomeBack}</Text>
-          <Text style={styles.subtitle}>{t.login.subtitle}</Text>
+        <Text style={styles.title}>{t.login.welcomeBack}</Text>
+        <Text style={styles.subtitle}>{t.login.subtitle}</Text>
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>{t.login.email}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder={t.login.emailPlaceholder}
-              placeholderTextColor="#999"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-              editable={!isLoading}
-            />
-          </View>
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>{t.login.email}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={t.login.emailPlaceholder}
+            placeholderTextColor="#999"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+            editable={!isLoading}
+          />
+        </View>
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>{t.login.password}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder={t.login.passwordPlaceholder}
-              placeholderTextColor="#999"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete="password"
-              editable={!isLoading}
-            />
-          </View>
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>{t.login.password}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder={t.login.passwordPlaceholder}
+            placeholderTextColor="#999"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+            autoComplete="password"
+            editable={!isLoading}
+          />
+        </View>
 
-          <View style={styles.optionsRow}>
-            <TouchableOpacity
-              style={styles.rememberMeContainer}
-              onPress={() => setRememberMe(!rememberMe)}
-              disabled={isLoading}
-            >
-              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]} />
-              <Text style={styles.rememberMeText}>{t.login.rememberMe}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
-              <Text style={styles.forgotPassword}>{t.login.forgotPassword}</Text>
-            </TouchableOpacity>
-          </View>
-
+        <View style={styles.optionsRow}>
           <TouchableOpacity
-            style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-            onPress={handleLogin}
+            style={styles.rememberMeContainer}
+            onPress={() => setRememberMe(!rememberMe)}
             disabled={isLoading}
           >
-            <Text style={styles.loginButtonText}>
-              {isLoading ? t.login.signingIn : t.login.signIn}
-            </Text>
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && <Feather name="check" size={13} color="#F5EFE0" />}
+            </View>
+            <Text style={styles.rememberMeText}>{t.login.rememberMe}</Text>
           </TouchableOpacity>
 
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>{t.login.or}</Text>
-            <View style={styles.divider} />
-          </View>
+          <TouchableOpacity onPress={handleForgotPassword} disabled={isLoading}>
+            <Text style={styles.forgotPassword}>{t.login.forgotPassword}</Text>
+          </TouchableOpacity>
+        </View>
 
-          <View style={styles.socialContainer}>
-            <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>{t.login.apple}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>{t.login.google}</Text>
-            </TouchableOpacity>
-          </View>
+        <TouchableOpacity
+          style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+          onPress={handleLogin}
+          disabled={isLoading}
+        >
+          <Text style={styles.loginButtonText}>
+            {isLoading ? t.login.signingIn : t.login.signIn}
+          </Text>
+        </TouchableOpacity>
 
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>{t.login.noAccount}</Text>
-            <TouchableOpacity onPress={navigateToRegister} disabled={isLoading}>
-              <Text style={styles.registerLink}>{t.login.signUp}</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.registerContainer}>
+          <Text style={styles.registerText}>{t.login.noAccount}</Text>
+          <TouchableOpacity onPress={navigateToRegister} disabled={isLoading}>
+            <Text style={styles.registerLink}>{t.login.signUp}</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -176,7 +172,7 @@ const LoginScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   languageToggle: {
     position: 'absolute',
@@ -187,10 +183,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2C4A3E',
+    borderColor: '#1F4A38',
   },
   languageToggleText: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -203,11 +199,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 40,
   },
-  logoCircle: {
+  logoSquare: {
     width: 80,
     height: 80,
-    borderRadius: 40,
-    backgroundColor: '#2C4A3E',
+    borderRadius: 22,
+    backgroundColor: '#1F4A38',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -215,35 +211,22 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   brandName: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 8,
   },
   tagline: {
     fontSize: 14,
     color: '#666',
   },
-  formContainer: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 8,
   },
   subtitle: {
@@ -257,7 +240,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 8,
   },
   input: {
@@ -284,12 +267,14 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderWidth: 2,
-    borderColor: '#2C4A3E',
-    borderRadius: 4,
+    borderColor: '#1F4A38',
+    borderRadius: 5,
     marginRight: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   checkboxChecked: {
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   rememberMeText: {
     fontSize: 14,
@@ -297,13 +282,13 @@ const styles = StyleSheet.create({
   },
   forgotPassword: {
     fontSize: 14,
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: '600',
   },
   loginButton: {
     height: 54,
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 27,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -312,7 +297,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   loginButtonText: {
-    color: 'white',
+    color: '#F5EFE0',
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -363,7 +348,7 @@ const styles = StyleSheet.create({
   },
   registerLink: {
     fontSize: 14,
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: 'bold',
   },
 });

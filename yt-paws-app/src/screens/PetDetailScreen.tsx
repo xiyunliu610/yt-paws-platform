@@ -18,7 +18,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
-import { ApiError, petsApi, Pet, PetHealthRecord } from '../api/client';
+import { ApiError, petsApi, mediaApi, Pet, PetHealthRecord } from '../api/client';
+import { authenticatedMediaSource } from '../api/mediaSource';
 
 type RootStackParamList = {
   PetDetail: { pet: Pet };
@@ -67,8 +68,6 @@ const PetDetailScreen = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // Same interim base64-data-URI approach as daily report photos (see
-  // docs/03_System_Architecture.md §5.3) — no cloud storage exists yet.
   const pickPhoto = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -82,14 +81,12 @@ const PetDetailScreen = () => {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
-        base64: true,
       });
 
-      if (!result.canceled && result.assets[0]?.base64) {
-        setPhotoUrl(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      if (!result.canceled && result.assets[0]?.uri) {
+        setPhotoUrl(result.assets[0].uri);
       }
-    } catch (error) {
-      console.error('Choosing a pet photo failed:', error);
+    } catch {
       Alert.alert(t.petDetail.pickImageErrorTitle, t.petDetail.pickImageErrorMessage);
     }
   };
@@ -103,9 +100,12 @@ const PetDetailScreen = () => {
 
     setIsSaving(true);
     try {
+      const storedPhotoUrl = photoUrl && !photoUrl.startsWith('https://')
+        ? await mediaApi.upload(token, photoUrl, 'pet')
+        : photoUrl;
       await petsApi.update(token, pet.id, {
         name: name.trim(),
-        photoUrl: photoUrl || undefined,
+        photoUrl: storedPhotoUrl || undefined,
         species: species.trim() || undefined,
         breed: breed.trim() || undefined,
         age: age.trim() ? parseInt(age, 10) : undefined,
@@ -158,7 +158,7 @@ const PetDetailScreen = () => {
           <View style={styles.photoSection}>
             <TouchableOpacity onPress={pickPhoto} disabled={isSaving}>
               {photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.photo} />
+                <Image source={authenticatedMediaSource(photoUrl, token)} style={styles.photo} />
               ) : (
                 <View style={styles.photoPlaceholder}>
                   <Text style={styles.photoPlaceholderText}>{name.charAt(0).toUpperCase()}</Text>
@@ -239,8 +239,8 @@ const PetDetailScreen = () => {
               value={isNeutered}
               onValueChange={setIsNeutered}
               disabled={isSaving}
-              trackColor={{ false: '#E0E0E0', true: '#2C4A3E' }}
-              thumbColor="#F5EDD8"
+              trackColor={{ false: '#E0E0E0', true: '#1F4A38' }}
+              thumbColor="#F5EFE0"
             />
           </View>
 
@@ -265,7 +265,7 @@ const PetDetailScreen = () => {
             </View>
 
             {records === null ? (
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             ) : recordsFailed ? (
               <Text style={styles.helperText}>{t.petDetail.loadRecordsFailed}</Text>
             ) : (
@@ -310,7 +310,7 @@ const PetDetailScreen = () => {
                             setShowDatePicker(false);
                           }
                         }}
-                        textColor="#2C4A3E"
+                        textColor="#1F4A38"
                         themeVariant="light"
                       />
                     )}
@@ -347,7 +347,7 @@ const PetDetailScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -363,35 +363,33 @@ const styles = StyleSheet.create({
   photo: {
     width: 100,
     height: 100,
-    borderRadius: 50,
+    borderRadius: 26,
   },
   photoPlaceholder: {
     width: 100,
     height: 100,
-    borderRadius: 50,
-    backgroundColor: '#2C4A3E',
+    borderRadius: 26,
+    backgroundColor: '#1F4A38',
     justifyContent: 'center',
     alignItems: 'center',
   },
   photoPlaceholderText: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   photoEditBadge: {
     alignSelf: 'center',
     marginTop: 8,
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   photoEditBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   section: {
     marginBottom: 20,
@@ -406,17 +404,15 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
     color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   textArea: {
     height: 90,
@@ -428,8 +424,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
     marginBottom: 16,
@@ -438,7 +434,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   saveButtonText: {
-    color: 'white',
+    color: '#F5EFE0',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -451,27 +447,27 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   addLink: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   helperText: {
     fontSize: 14,
     color: '#666',
   },
   recordCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 14,
     marginBottom: 10,
   },
   recordType: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
   recordDate: {
@@ -488,15 +484,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   dateInput: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 12,
     padding: 14,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   dateText: {
     fontSize: 16,
-    color: '#333',
+    color: '#1A1A1A',
     fontWeight: '600',
   },
 });

@@ -3,9 +3,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
-import { LanguageProvider } from './src/i18n/LanguageContext';
+import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 import { registerForPushNotificationsAsync } from './src/notifications/pushToken';
 
 // Screens
@@ -25,6 +26,12 @@ import StaffManagementScreen from './src/screens/StaffManagementScreen';
 import BusinessHomeScreen from './src/screens/BusinessHomeScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import PaymentVerificationScreen from './src/screens/PaymentVerificationScreen';
+import ServiceManagementScreen from './src/screens/ServiceManagementScreen';
+import BusinessSettingsScreen from './src/screens/BusinessSettingsScreen';
+import ResetPasswordScreen from './src/screens/Auth/ResetPasswordScreen';
+import RequiredPasswordChangeScreen from './src/screens/Auth/RequiredPasswordChangeScreen';
+import HelpCenterScreen from './src/screens/HelpCenterScreen';
+import SessionsScreen from './src/screens/SessionsScreen';
 
 const Stack = createStackNavigator();
 
@@ -37,7 +44,8 @@ const HomeRouter = () => {
 };
 
 const Navigation = () => {
-  const { token, isRestoring } = useAuth();
+  const { token, user, isRestoring } = useAuth();
+  const { t } = useLanguage();
 
   // Best-effort push registration once a session exists. No-ops quietly if
   // permission is denied or (as in Expo Go on SDK 53+) remote push simply
@@ -54,27 +62,47 @@ const Navigation = () => {
   if (isRestoring) {
     return (
       <View style={styles.splash}>
-        <ActivityIndicator size="large" color="#2C4A3E" />
+        <ActivityIndicator size="large" color="#1F4A38" />
       </View>
     );
   }
 
+  const linking = {
+    prefixes: ['ytpaws://'],
+    config: { screens: { ResetPassword: 'reset-password' } },
+  };
+
+  if (token && user?.mustChangePassword) {
+    return (
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="RequiredPasswordChange" component={RequiredPasswordChangeScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    );
+  }
+
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator
         initialRouteName={token ? 'Home' : 'Login'}
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#2C4A3E',
+            backgroundColor: '#FFFFFF',
+            shadowColor: 'transparent',
+            elevation: 0,
+            borderBottomWidth: 1,
+            borderBottomColor: '#F0EDE3',
           },
-          headerTintColor: '#F5EDD8',
+          headerTintColor: '#1A1A1A',
           headerTitleStyle: {
             fontWeight: 'bold',
-            fontSize: 18,
+            fontSize: 17,
+            color: '#1A1A1A',
           },
           headerBackButtonDisplayMode: 'minimal',
           cardStyle: {
-            backgroundColor: '#F5EDD8',
+            backgroundColor: '#FFFFFF',
           },
         }}
       >
@@ -90,10 +118,12 @@ const Navigation = () => {
           name="Register"
           component={RegisterScreen}
           options={{
-            title: 'Create Account',
+            title: t.register.title,
             headerShown: true,
           }}
         />
+
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ title: t.resetPassword.title }} />
 
         <Stack.Screen
           name="Home"
@@ -109,7 +139,7 @@ const Navigation = () => {
           name="Booking"
           component={BookingScreen}
           options={{
-            title: 'Book a Service',
+            title: t.booking.headerTitle,
             headerShown: true,
           }}
         />
@@ -118,7 +148,7 @@ const Navigation = () => {
           name="Profile"
           component={ProfileScreen}
           options={{
-            title: 'Profile',
+            title: t.home.navProfile,
             headerShown: true,
           }}
         />
@@ -127,7 +157,7 @@ const Navigation = () => {
           name="Report"
           component={ReportScreen}
           options={{
-            title: 'My Reports',
+            title: t.report.headerTitle,
             headerShown: true,
           }}
         />
@@ -136,7 +166,7 @@ const Navigation = () => {
           name="MyBookings"
           component={MyBookingsScreen}
           options={{
-            title: 'My Bookings',
+            title: t.myBookings.headerTitle,
             headerShown: true,
           }}
         />
@@ -145,7 +175,7 @@ const Navigation = () => {
           name="BookingDetail"
           component={BookingDetailScreen}
           options={{
-            title: 'Booking Details',
+            title: t.myBookings.detailTitle,
             headerShown: true,
           }}
         />
@@ -154,7 +184,7 @@ const Navigation = () => {
           name="PetDetail"
           component={PetDetailScreen}
           options={{
-            title: 'Pet Details',
+            title: t.petDetail.headerTitle,
             headerShown: true,
           }}
         />
@@ -163,7 +193,7 @@ const Navigation = () => {
           name="Payment"
           component={PaymentScreen}
           options={{
-            title: 'Payment',
+            title: t.payment.headerTitle,
             headerShown: true,
           }}
         />
@@ -172,7 +202,7 @@ const Navigation = () => {
           name="PaymentHistory"
           component={PaymentHistoryScreen}
           options={{
-            title: 'Payment History',
+            title: t.paymentHistory.headerTitle,
             headerShown: true,
           }}
         />
@@ -181,7 +211,7 @@ const Navigation = () => {
           name="ReportCompose"
           component={ReportComposeScreen}
           options={{
-            title: 'Add Daily Report',
+            title: t.reportCompose.headerTitle,
             headerShown: true,
           }}
         />
@@ -190,7 +220,7 @@ const Navigation = () => {
           name="StaffManagement"
           component={StaffManagementScreen}
           options={{
-            title: 'Manage Staff',
+            title: t.staffManagement.headerTitle,
             headerShown: true,
           }}
         />
@@ -199,7 +229,7 @@ const Navigation = () => {
           name="Notifications"
           component={NotificationsScreen}
           options={{
-            title: 'Notifications',
+            title: t.notifications.headerTitle,
             headerShown: true,
           }}
         />
@@ -208,9 +238,41 @@ const Navigation = () => {
           name="PaymentVerification"
           component={PaymentVerificationScreen}
           options={{
-            title: 'Payment Verification',
+            title: t.paymentVerification.headerTitle,
             headerShown: true,
           }}
+        />
+
+        <Stack.Screen
+          name="ServiceManagement"
+          component={ServiceManagementScreen}
+          options={{
+            title: t.serviceManagement.headerTitle,
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="BusinessSettings"
+          component={BusinessSettingsScreen}
+          options={{
+            title: t.businessSettings.headerTitle,
+            headerShown: true,
+          }}
+        />
+
+        <Stack.Screen
+          name="HelpCenter"
+          component={HelpCenterScreen}
+          options={{
+            title: t.profile.helpCenterTitle,
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen
+          name="Sessions"
+          component={SessionsScreen}
+          options={{ title: t.profile.sessions, headerShown: true }}
         />
       </Stack.Navigator>
     </NavigationContainer>
@@ -219,12 +281,14 @@ const Navigation = () => {
 
 const App = () => {
   return (
-    <LanguageProvider>
-      <AuthProvider>
-        <StatusBar style="dark" backgroundColor="#F5EDD8" />
-        <Navigation />
-      </AuthProvider>
-    </LanguageProvider>
+    <SafeAreaProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <StatusBar style="dark" backgroundColor="#FFFFFF" />
+          <Navigation />
+        </AuthProvider>
+      </LanguageProvider>
+    </SafeAreaProvider>
   );
 };
 
@@ -233,7 +297,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
 });
 

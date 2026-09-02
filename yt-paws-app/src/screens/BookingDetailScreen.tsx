@@ -14,6 +14,9 @@ import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
+import { formatLocalizedDateTime } from '../i18n/dateFormat';
+import { canViewCareDetails } from './careDetailsPolicy';
+import { authenticatedMediaSource } from '../api/mediaSource';
 import {
   ApiError,
   bookingsApi,
@@ -21,6 +24,7 @@ import {
   paymentsApi,
   staffApi,
   Booking,
+  BookingCareDetails,
   DailyReport,
   Payment,
   StaffMember,
@@ -46,7 +50,7 @@ const BookingDetailScreen = () => {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<BookingDetailRouteProp>();
   const { token, user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [booking, setBooking] = useState(route.params.booking);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -56,9 +60,22 @@ const BookingDetailScreen = () => {
   const [payment, setPayment] = useState<Payment | null | undefined>(undefined);
   const [staffList, setStaffList] = useState<StaffMember[] | null>(null);
   const [assigningStaffId, setAssigningStaffId] = useState<string | null>(null);
+  const [careDetails, setCareDetails] = useState<BookingCareDetails | null>(null);
+  const [careDetailsFailed, setCareDetailsFailed] = useState(false);
 
   const isManager = user?.role === 'owner' || user?.role === 'admin';
   const isAssignedStaff = user?.role === 'staff' && booking.assignedStaffId === user.id;
+  const showCareDetails = canViewCareDetails(user, booking);
+
+  const loadCareDetails = useCallback(() => {
+    if (!token || !showCareDetails) return;
+    setCareDetailsFailed(false);
+    setCareDetails(null);
+    bookingsApi
+      .careDetails(token, booking.id)
+      .then((details) => setCareDetails(details))
+      .catch(() => setCareDetailsFailed(true));
+  }, [token, showCareDetails, booking.id]);
 
   // Refetch reports whenever the screen regains focus, so returning from
   // ReportComposeScreen shows the just-published entry without a manual pull.
@@ -73,6 +90,12 @@ const BookingDetailScreen = () => {
         })
         .catch(() => setReportsFailed(true));
     }, [token, booking.id]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      loadCareDetails();
+    }, [loadCareDetails]),
   );
 
   useEffect(() => {
@@ -93,15 +116,7 @@ const BookingDetailScreen = () => {
     staffApi.list(token).then(setStaffList).catch(() => {});
   }, [token, isManager]);
 
-  const formatDate = (isoDate: string) => {
-    const date = new Date(isoDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  };
+  const formatDate = (isoDate: string) => formatLocalizedDateTime(isoDate, language);
 
   const statusLabel = (status: string) => {
     switch (status) {
@@ -195,7 +210,13 @@ const BookingDetailScreen = () => {
     }
   };
 
-  const canCancel = CANCELLABLE_STATUSES.includes(booking.status) && (user?.role === 'customer' || isManager);
+  const hasCancellationRole = user?.role === 'customer' || isManager;
+  const isCancellationStatus = CANCELLABLE_STATUSES.includes(booking.status);
+  const isBeforeCancellationCutoff =
+    Date.now() < new Date(booking.startDate).getTime() - 24 * 60 * 60 * 1000;
+  const canCancel = hasCancellationRole && isCancellationStatus && isBeforeCancellationCutoff;
+  const showCancellationCutoff =
+    hasCancellationRole && isCancellationStatus && !isBeforeCancellationCutoff;
   const canAdvance = isManager && !!NEXT_STATUS[booking.status];
   const canAddReport = booking.status === 'in_progress' && (isAssignedStaff || isManager);
   const assignedStaffMember = staffList?.find((s) => s.id === booking.assignedStaffId);
@@ -254,6 +275,50 @@ const BookingDetailScreen = () => {
             )}
           </View>
 
+          {showCareDetails && <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t.myBookings.careDetailsTitle}</Text>
+            {careDetails === null && !careDetailsFailed ? (
+              <ActivityIndicator color="#1F4A38" />
+            ) : careDetailsFailed ? (
+              <View style={styles.retryRow}>
+                <Text style={styles.helperText}>{t.myBookings.loadCareDetailsFailed}</Text>
+                <TouchableOpacity onPress={loadCareDetails} style={styles.retryButton}>
+                  <Text style={styles.retryButtonText}>{t.myBookings.retryButton}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : careDetails ? (
+              <View style={styles.card}>
+                {!!careDetails.pet.photoUrl && (
+                  <Image source={authenticatedMediaSource(careDetails.pet.photoUrl, token)} style={styles.petPhoto} />
+                )}
+                <Text style={styles.careName}>{careDetails.pet.name}</Text>
+                <Text style={styles.careText}>
+                  {[careDetails.pet.species, careDetails.pet.breed].filter(Boolean).join(' · ') || t.myBookings.notProvided}
+                </Text>
+                <Text style={styles.careLabel}>{t.myBookings.personalityLabel}</Text>
+                <Text style={styles.careText}>{careDetails.pet.personality || t.myBookings.notProvided}</Text>
+                <Text style={styles.careLabel}>{t.myBookings.dietNotesLabel}</Text>
+                <Text style={styles.careText}>{careDetails.pet.dietNotes || t.myBookings.notProvided}</Text>
+                <Text style={styles.careLabel}>{t.myBookings.customerContactLabel}</Text>
+                <Text style={styles.careText}>
+                  {[careDetails.customer.name, careDetails.customer.phone, careDetails.customer.email]
+                    .filter(Boolean)
+                    .join(' · ') || t.myBookings.notProvided}
+                </Text>
+                <Text style={styles.careLabel}>{t.myBookings.healthRecordsLabel}</Text>
+                {careDetails.pet.healthRecords.length === 0 ? (
+                  <Text style={styles.careText}>{t.myBookings.noHealthRecords}</Text>
+                ) : (
+                  careDetails.pet.healthRecords.map((record) => (
+                    <Text key={record.id} style={styles.careText}>
+                      {formatDate(record.date)} · {record.type}{record.notes ? ` — ${record.notes}` : ''}
+                    </Text>
+                  ))
+                )}
+              </View>
+            ) : null}
+          </View>}
+
           {isManager && staffList && staffList.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t.myBookings.assignStaffTitle}</Text>
@@ -271,7 +336,7 @@ const BookingDetailScreen = () => {
                     {assigningStaffId === member.id ? (
                       <ActivityIndicator
                         size="small"
-                        color={booking.assignedStaffId === member.id ? '#F5EDD8' : '#2C4A3E'}
+                        color={booking.assignedStaffId === member.id ? '#F5EFE0' : '#1F4A38'}
                       />
                     ) : (
                       <Text
@@ -322,10 +387,16 @@ const BookingDetailScreen = () => {
             </TouchableOpacity>
           )}
 
+          {showCancellationCutoff && (
+            <Text style={styles.cancellationPolicyText}>
+              {t.myBookings.cancellationUnavailable}
+            </Text>
+          )}
+
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t.myBookings.dailyReportsTitle}</Text>
             {reports === null ? (
-              <ActivityIndicator color="#2C4A3E" />
+              <ActivityIndicator color="#1F4A38" />
             ) : reportsFailed ? (
               <Text style={styles.helperText}>{t.myBookings.loadReportsFailed}</Text>
             ) : reports.length === 0 ? (
@@ -338,7 +409,7 @@ const BookingDetailScreen = () => {
                   {report.mediaUrls.length > 0 && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaRow}>
                       {report.mediaUrls.map((url) => (
-                        <Image key={url} source={{ uri: url }} style={styles.mediaThumb} />
+                        <Image key={url} source={authenticatedMediaSource(url, token)} style={styles.mediaThumb} />
                       ))}
                     </ScrollView>
                   )}
@@ -355,7 +426,7 @@ const BookingDetailScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -364,7 +435,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -384,11 +455,11 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   linkValue: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
     textDecorationLine: 'underline',
   },
   paidValue: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   section: {
     marginBottom: 24,
@@ -396,35 +467,32 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 12,
   },
   staffChip: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 10,
-    borderWidth: 1.5,
-    borderColor: '#E0E0E0',
     minWidth: 60,
     alignItems: 'center',
   },
   staffChipSelected: {
-    backgroundColor: '#2C4A3E',
-    borderColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   staffChipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
   },
   staffChipTextSelected: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   primaryButton: {
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
     marginBottom: 16,
@@ -433,13 +501,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#4A6B5E',
   },
   primaryButtonText: {
-    color: '#F5EDD8',
+    color: '#F5EFE0',
     fontSize: 16,
     fontWeight: 'bold',
   },
   cancelButton: {
-    backgroundColor: '#FF5252',
-    borderRadius: 12,
+    backgroundColor: '#B0442E',
+    borderRadius: 24,
     padding: 16,
     alignItems: 'center',
     marginBottom: 24,
@@ -452,15 +520,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  cancellationPolicyText: {
+    color: '#8A4B2A',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
   helperText: {
     fontSize: 14,
     color: '#666',
   },
+  retryRow: {
+    alignItems: 'flex-start',
+  },
+  retryButton: {
+    marginTop: 10,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  retryButtonText: {
+    color: '#1F4A38',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   reportCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
+    backgroundColor: '#F7F5EF',
+    borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   reportDate: {
     fontSize: 12,
@@ -478,8 +568,32 @@ const styles = StyleSheet.create({
   mediaThumb: {
     width: 80,
     height: 80,
-    borderRadius: 8,
+    borderRadius: 10,
     marginRight: 8,
+  },
+  petPhoto: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    marginBottom: 12,
+  },
+  careName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  careLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 12,
+    marginBottom: 3,
+  },
+  careText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
   },
 });
 

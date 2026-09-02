@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: yt_paws_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/yt_paws_test
+      JWT_SECRET: ci-only-secret-not-for-production
+      STRIPE_SECRET_KEY: sk_test_unconfigured
+      STRIPE_WEBHOOK_SECRET: whsec_test_e2e_secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            yt-paws-backend/package-lock.json
+            yt-paws-app/package-lock.json
+      - name: Install backend
+        working-directory: yt-paws-backend
+        run: npm ci
+      - name: Generate Prisma client
+        working-directory: yt-paws-backend
+        run: npx prisma generate
+      - name: Migrate isolated test database
+        working-directory: yt-paws-backend
+        run: npx prisma migrate deploy
+      - name: Verify backend
+        working-directory: yt-paws-backend
+        run: npm run build && test -f dist/src/main.js && npm run api:drift && npm run api:check && npm run test:release-evidence && bash -n scripts/*.sh && npm run test:cov -- --runInBand && npm run test:e2e -- --runInBand
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: yt-paws-backend/coverage
+          if-no-files-found: error
+      - name: Verify production container
+        working-directory: yt-paws-backend
+        run: docker build -t yt-paws-backend:ci .
+      - name: Install app
+        working-directory: yt-paws-app
+        run: npm ci
+      - name: Type-check app
+        working-directory: yt-paws-app
+        run: npx tsc --noEmit
+      - name: Verify app policies and release safeguards
+        working-directory: yt-paws-app
+        run: npm test && npm run validate:drift

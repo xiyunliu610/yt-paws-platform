@@ -1,4 +1,4 @@
-import { Controller, Patch, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Patch, Body, UseGuards, Req } from '@nestjs/common';
 import { BusinessesService } from './businesses.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -10,6 +10,12 @@ import { UpdateBusinessDto } from './dto/business.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class BusinessesController {
   constructor(private businessesService: BusinessesService) {}
+
+  @Get('me')
+  @Roles('owner', 'admin')
+  findMine(@Req() req: AuthenticatedRequest) {
+    return this.businessesService.findMine(req.user);
+  }
 
   @Patch('me')
   @Roles('owner', 'admin')

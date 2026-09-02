@@ -1,8 +1,8 @@
 # 02 · Product Requirements Document
 
-**Document Status:** Draft v0.9
+**Document Status:** Draft v0.27
 **Related Document:** `01_Project_Overview.md`
-**Last Updated:** 2026-07-28
+**Last Updated:** 2026-08-07
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 **Scope:** Version 1 (six core modules, of equal priority, sequenced according to current development progress)
 
@@ -79,7 +79,31 @@ Corresponding backend module: `auth`
 - Given the email is already registered, When they submit, Then the system rejects it with "email already exists" (same rule as US-01.1)
 - Out of scope for Version 1: business verification/approval workflow, billing/subscription for the business itself, and (now) any UI for this at all — a customer-facing "Register Business" entry point would only ever be able to fail, so it was removed from the app rather than left as a dead end
 
-*Already implemented: `POST /auth/register-business`, now bootstrap-only (`AuthService.registerBusiness` checks `Business` row count). The `RegisterBusinessScreen` and its "Register Business" link on the login screen were removed from the app (2026-07-30) along with the now-dead `authApi.registerBusiness` client call — none of the three had a reachable path to success once a `Business` already exists.*
+*Already implemented: `POST /auth/register-business`, now bootstrap-only. `AuthService.registerBusiness` provides an early count check and PostgreSQL's `business_singleton_unique` expression index is the atomic concurrency backstop. The `RegisterBusinessScreen` and its login link/client call were removed from the app.*
+
+### US-01.5 Password and Session Security
+> As a user, I want to reset or change my password and have older sessions revoked, so that a lost credential does not keep granting access.
+
+**Acceptance Criteria**
+- Forgot-password always returns the same generic response, whether an account exists or not
+- Reset tokens are random, stored only as SHA-256 hashes, expire after 30 minutes and work once
+- Password change/reset increments `User.tokenVersion`; every older JWT returns 401 on its next request
+- A newly created staff account is marked `mustChangePassword`; both App navigation and authenticated backend routes block business access until successful password change
+- Resend sends a link to the public reset landing page. Installed Apps open `ytpaws://reset-password`; without the App, the same page provides a web reset form
+- Login and reset requests are rate-limited by both IP and email hash; five consecutive bad passwords lock the account for 15 minutes and security events are persisted without plaintext email search keys
+- Production startup rejects `EXPOSE_PASSWORD_RESET_TOKEN=true`; raw reset tokens are available only to opted-in non-production tests
+
+### US-01.6 Staff Activation and Account Deletion
+> As an owner or user, I want safe staff offboarding and account deletion, so that former users immediately lose access and personal data is not retained unnecessarily.
+
+**Acceptance Criteria**
+- Owner/admin can activate/deactivate a staff/owner account only within their own business
+- A manager cannot deactivate themselves or the last active Owner; this invariant is checked in a Serializable transaction
+- Deactivation increments `tokenVersion`, clears the push token and invalidates current JWTs immediately
+- Profile exposes password-confirmed account deletion with two destructive confirmations
+- The last active Owner cannot delete their account
+- Deletion anonymizes the User, removes notifications/reset tokens, clears pet profiles/photos/health records and report text/media, unassigns staff bookings and removes the `refundedBy` personal reference
+- Booking/Service/Payment financial facts remain for accounting, refund, fraud and dispute records; the deleted customer identity is represented only by the anonymized User id/email
 
 ---
 
@@ -88,14 +112,25 @@ Corresponding backend module: `auth`
 Corresponding backend module: `pets`
 
 ### US-02.1 Add Pet Profile
-> As a logged-in user, I want to add my pet's information, so that care providers understand my pet's basic situation.
+> As a logged-in user, I want to add my pet with minimal friction and fill in the rest of its profile later, so that registering a pet doesn't feel like a long form before I can even book something.
+
+**Decided 2026-07-31 (was: require name + breed together at creation — see the superseded AC below).** Progressive profile-building is the accepted V1 behavior, not a shortcut to later correct: creation only requires a name; species, breed, age, weight, spay/neuter status, personality, dietary notes, and a photo are all optional at creation time and can be added afterwards via the pet's detail screen (US-02.2). A booking can be created against a pet with only a name on file — V1 has no per-service "this pet profile isn't complete enough" gate, and none is planned; if a business needs specific information before a stay (e.g. dietary notes for boarding), that's handled the same way it is today, outside the app (a conversation with the customer), not a submission blocker.
 
 **Acceptance Criteria**
+- Given the user taps "Add Pet" in their account, When they enter a name and submit, Then the system creates a Pet record linked to the current user
+- Given the name field is empty, When the user submits, Then the system blocks submission and highlights the missing field
+- Given the user uploads a pet photo (at creation or later via US-02.2), When the upload succeeds, Then the photo displays on the pet's profile card
+
+*Already implemented: `POST /pets` requires only `name`. Creation is wired into the app as a minimal name + species form in two places (`ProfileScreen` and `BookingScreen`). Remaining fields are filled in via `PetDetailScreen`; photos use the S3-compatible presigned upload flow and PostgreSQL stores only the resulting HTTPS URL.*
+
+<details>
+<summary>Superseded AC (pre-2026-07-31): require name + breed at creation</summary>
+
 - Given the user taps "Add Pet" in their account, When they fill in name, breed, age, weight, spay/neuter status, personality description and dietary notes and submit, Then the system creates a Pet record linked to the current user
 - Given required fields (name, breed) are empty, When the user submits, Then the system blocks submission and highlights the missing fields
-- Given the user uploads a pet photo, When the upload succeeds, Then the photo displays on the pet's profile card
 
-*Partially implemented: `POST /pets` requires only `name` (not `breed` as the AC above states — the backend hasn't been tightened to match yet). Creation is wired into the app as a minimal name + species form in two places (`ProfileScreen`'s "My Pets" and an inline prompt inside `BookingScreen` when a customer has no pets yet). The remaining fields (age, weight, spay/neuter status, personality, dietary notes, and — as of 2026-07-27 — a photo) can be filled in afterwards via `PetDetailScreen` (see US-02.2). The photo AC is satisfied via the same interim base64-data-URI approach as daily report photos (`Pet.photoUrl`; see `03_System_Architecture.md` §5.3), not a real upload to cloud storage.*
+This was never actually built this way — `POST /pets` only ever required `name` — and the decision above is that the simpler behavior is correct, not a gap to close.
+</details>
 
 ### US-02.2 View/Edit Pet Profile
 > As a logged-in user, I want to view and edit information for pets I've already added, so that I can keep it up to date.
@@ -138,7 +173,7 @@ Corresponding backend modules: `services`, `bookings`
 - Given the user has no pet profiles, When they attempt to create a booking, Then the system prompts "Please add a pet first" and guides them to do so
 - Given the selected time slot conflicts with an existing booking (e.g. the business's capacity is full), When submitted, Then the system flags the conflict and blocks creation
 
-*Already implemented: `POST /bookings`, wired into `BookingScreen` (including an inline "add a pet" flow when the customer has no pet profiles yet). Conflict detection is scoped to the same pet's own overlapping bookings only — there's no `capacity` field on `Service`/`Business` yet, so business-wide capacity limits aren't enforced.*
+*Implemented: `POST /bookings` is wired into `BookingScreen`, including inline pet creation. Conflict checks run in a Serializable transaction and cover the same pet plus optional business-wide and per-service concurrent limits. `Business.maxConcurrentBookings` and `Service.maxConcurrentBookings` default to null (unlimited) and are owner-configurable. One booking represents one pet, so a service limit covers boarding pet count and grooming time-slot concurrency without hard-coding service names. Staff capacity is checked separately when an owner assigns a booking.*
 
 ### US-03.3 View Booking Status
 > As a logged-in user, I want to view my booking history and current status, so that I understand the progress of my service.
@@ -156,7 +191,7 @@ Corresponding backend modules: `services`, `bookings`
 - Given a booking's status is "Pending Confirmation" or "Confirmed" within the cancellation policy window, When the user taps cancel, Then the system updates the status to "Cancelled" and releases the time slot
 - Given a booking has passed the non-cancellable time window (exact rule to be confirmed with the business), When the user attempts to cancel, Then the system shows that cancellation is not allowed and why
 
-*Already implemented: `PATCH /bookings/:id/cancel` (allowed for the booking's own customer, or the business's owner/admin; only while `pending`/`confirmed`) is wired into `BookingDetailScreen` as a cancel button, shown to customers and to owner/admin (hidden for staff, who have no cancel permission on the backend). The non-cancellable time window is still not implemented, consistent with the AC above marking the exact rule as unconfirmed.*
+*Implemented: `PATCH /bookings/:id/cancel` is available to the booking customer and owner/admin while pending/confirmed. Both customer and business follow the same policy: cancellation is rejected from 24 hours before the service start time onward. Staff cannot cancel.*
 
 ### US-03.5 Business Owner Creates a Staff Account
 > As a Business Owner, I want to create an account for a staff member under my business, so that I can start assigning them bookings.
@@ -179,6 +214,18 @@ Corresponding backend modules: `services`, `bookings`
 
 *Already implemented: `PATCH /bookings/:id/assign`, wired into `BookingDetailScreen` as a row of tappable staff chips (owner/admin only), backed by the same `GET /auth/staff` list used by `StaffManagementScreen`. Reassignment (tapping a different staff member) is supported, matching the AC that only the newly assigned staff member sees it afterward.*
 
+### US-03.7 Business Owner Manages Services (added 2026-07-31)
+> As a Business Owner, I want to create, edit, price, and publish/unpublish my own services, so that I can run day-to-day service configuration myself instead of asking someone to edit the database directly.
+
+**Acceptance Criteria**
+- Given the owner opens "Manage Services", When the page loads, Then it lists every service on their business, including delisted ones (not just what customers currently see)
+- Given the owner adds a new service with a name and a non-negative price, When they save, Then the service is created and immediately visible in the list
+- Given the owner edits a service's name, description, price, pricing unit, or duration, When they save, Then the changes apply immediately — including to bookings placed *after* the edit; already-placed bookings keep their price snapshot (see `03_System_Architecture.md` §4.1) unaffected
+- Given the owner toggles a service active/inactive, When the toggle changes, Then customers immediately stop (or start) seeing it in their service list
+- Out of scope for Version 1: deleting a service outright. **V1 never deletes a Service that has Bookings against it — archiving via `isActive: false` is the only way to retire one.** A hard-delete endpoint isn't a missing feature to add later; a `Booking.serviceId` pointing at a deleted row would break price-history/reporting for every past booking against it, so this is deliberate, not an oversight
+
+*Already implemented: this closes a gap where `POST /services` and `PATCH /services/:id` (owner/admin only) existed on the backend from V1's start but had no UI — an owner could not configure their own services without calling the API directly. `ServiceManagementScreen` (reachable from `ProfileScreen`'s "Manage Services" quick action, owner/admin only) lists every service via the same `GET /services` customers use (which returns the full list, active or not, for owner/staff roles — see `03_System_Architecture.md` §4.2), with an add form and a tap-to-expand edit form per service, plus a switch for the active/inactive toggle.*
+
 ---
 
 ## Module 4: Payments
@@ -194,6 +241,8 @@ Corresponding backend module: `payments`
 
 *Already implemented (frontend added 2026-07-28): `POST /payments/stripe/:bookingId` now creates a Stripe **Checkout Session** (a Stripe-hosted payment page), not a raw PaymentIntent — chosen specifically so the app never needs a native Stripe SDK or a card-entry form; `POST /payments/stripe/webhook` verifies the signature and marks the `Payment` `paid`/`failed` on `checkout.session.completed`/`checkout.session.expired`. Note this marks the associated `Payment.status`, not `Booking.status` — `Booking` has no "paid" state in its enum, by design (see `03_System_Architecture.md` §6). `PaymentScreen` now has a Card/WeChat method selector; the Card tab's "Pay with Card" button calls `initiateStripe` with a `Linking.createURL()`-derived return URL, opens `checkoutUrl` via `expo-web-browser`'s `openAuthSessionAsync` (works inside Expo Go — no dev-client build needed), and on return polls a new `GET /payments/:id` a few times to reflect the outcome, since the redirect itself is only a UX signal, never proof of payment. Still untested against a real Stripe account — `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` remain unset in `.env`; the business owner needs to supply their own Stripe test keys before this can be exercised end to end.*
 
+**App Review note:** “Payments in this app are exclusively for physical pet boarding and pet-care services delivered outside the app. No digital content, app functionality, subscriptions, or virtual goods are sold.” This maps to Apple App Review Guideline 3.1.3(e), not an in-app digital purchase.
+
 ### US-04.2 Chinese User — WeChat QR Payment
 > As a Chinese-speaking user, I want to scan a WeChat QR code to complete payment, so that I can pay using a method I'm familiar with.
 
@@ -204,7 +253,7 @@ Corresponding backend module: `payments`
 
 > Note: The personal WeChat QR code is not an official merchant API and cannot auto-confirm receipt via callback, hence the "manual verification" flow. This is a key difference from the Stripe path and must be clearly documented in `03_System_Architecture.md`.
 
-*Already implemented: `POST /payments/wechat/:bookingId` returns the business's static QR code image (`Business.wechatQrCodeUrl`, settable by the owner via `PATCH /businesses/me` — there's no upload flow, just a URL field) plus a generated reference note; `PATCH /payments/:id/mark-paid` (customer) moves it to `pending_verification`; `PATCH /payments/:id/verify` (owner/admin only) confirms it as `paid`. `initiateWechat` was made idempotent on 2026-07-27 (reuses an existing pending/pending_verification payment for the same booking instead of creating a duplicate row every time the payment screen is reopened). Wired into the app: `BookingDetailScreen` shows a tappable payment-status row for the customer (routes to `PaymentScreen`), which displays the QR code, amount and reference note, and drives the "I've Paid" action. As of 2026-07-27, the owner's side is also wired up: a new `GET /payments/business` lists every payment for the business (customer name, amount, reference, status), surfaced in `PaymentVerificationScreen` (reachable from `ProfileScreen`'s "Verify Payments" quick action, owner/admin only), with pending-verification entries sorted first and a one-tap "Verify" action calling `PATCH /payments/:id/verify`. "Notify the business to reconcile" (previously unimplemented) is now covered by Module 5 — see US-05.2.*
+*Already implemented: `POST /payments/wechat/:bookingId` returns the business's static QR code image (`Business.wechatQrCodeUrl`, settable by the owner via `PATCH /businesses/me` — see US-04.5, added 2026-07-31, for the image-picker UI this now has) plus a generated reference note; `PATCH /payments/:id/mark-paid` (customer) moves it to `pending_verification`; `PATCH /payments/:id/verify` (owner/admin only) confirms it as `paid`. `initiateWechat` was made idempotent on 2026-07-27 (reuses an existing pending/pending_verification payment for the same booking instead of creating a duplicate row every time the payment screen is reopened). Wired into the app: `BookingDetailScreen` shows a tappable payment-status row for the customer (routes to `PaymentScreen`), which displays the QR code, amount and reference note, and drives the "I've Paid" action. As of 2026-07-27, the owner's side is also wired up: a new `GET /payments/business` lists every payment for the business (customer name, amount, reference, status), surfaced in `PaymentVerificationScreen` (reachable from `ProfileScreen`'s "Verify Payments" quick action, owner/admin only), with pending-verification entries sorted first and a one-tap "Verify" action calling `PATCH /payments/:id/verify`. "Notify the business to reconcile" (previously unimplemented) is now covered by Module 5 — see US-05.2.*
 
 ### US-04.3 View Payment History
 > As a logged-in user, I want to view my payment history, so that I can reconcile my bills.
@@ -213,6 +262,27 @@ Corresponding backend module: `payments`
 - Given the user opens "Billing / Payment History", When the page loads, Then it displays the payment method, amount, status and time for each booking
 
 *Already implemented: `GET /payments/mine` (now also joining the booking's service name, for a readable list) is wired into a new `PaymentHistoryScreen` (reachable from `ProfileScreen`'s "Payment History" quick action), listing method, amount, status and date per payment.*
+
+### US-04.4 Business Owner Refunds a Payment (added 2026-07-31)
+> As a Business Owner, I want to refund a customer's payment when a booking doesn't go ahead, so that I'm not stuck reconciling a charge outside the app with no record of it.
+
+**Acceptance Criteria**
+- Given a `paid` payment, When the owner refunds it with a reason, Then the payment moves to "Refunded", the reason is recorded, and the customer is notified
+- Given the payment was via Stripe, When the refund is confirmed, Then the underlying Stripe charge is actually refunded through the Stripe API, not just marked refunded locally; pending/ambiguous provider results remain `refund_pending` and can be reconciled safely by an owner/admin
+- Given the payment was via WeChat, When the owner refunds it, Then the system records the refund (the owner has already returned the money manually outside the app — same trust model as WeChat payment verification)
+- Given a payment is not currently `paid` (already refunded, still pending, etc.), When a refund is attempted, Then the system rejects it
+- Out of scope for Version 1: partial-amount refunds (full refund only), and any automatic link between refunding a payment and cancelling its booking — those are two separate owner actions
+
+*Already implemented: `PATCH /payments/:id/refund` (owner/admin only, `reason` required) — see `03_System_Architecture.md` §6.3 for the claim-before-calling-Stripe ordering and the rollback behavior if the Stripe API call fails. Wired into `PaymentVerificationScreen` as a "Refund" button on `paid` payments, expanding into an inline reason field plus confirm/cancel.*
+
+### US-04.5 Business Owner Manages Business Settings (added 2026-07-31)
+> As a Business Owner, I want to set my business's name, contact/location info, and WeChat payment QR code myself, so that initial setup and later changes don't require someone to edit the database directly.
+
+**Acceptance Criteria**
+- Given the owner opens "Business Settings", When the page loads, Then it shows the business's current name, region/contact info, and WeChat QR code (if set)
+- Given the owner edits the name, region, or uploads a new QR code image, When they save, Then the changes take effect immediately — including for `US-04.2`'s WeChat payment flow, which reads the QR code from the same field
+
+*Already implemented: `GET /businesses/me` plus `PATCH /businesses/me` for name, region and WeChat QR. `BusinessSettingsScreen` uploads the QR image through the shared S3-compatible presigned upload flow.*
 
 ### Payment Strategy and Future Expansion
 
@@ -250,7 +320,7 @@ Payment methods will keep growing as the market and available technology evolve.
 - Given a WeChat payment enters "Pending Manual Verification" status, When the status changes, Then the user receives a "waiting for business to confirm receipt" notification
 - Given the business completes verification, When the status changes to "Paid", Then the user receives a confirmation notification
 
-*Already implemented (2026-07-27), reusing the same `NotificationsService` as US-05.1: `payments.service.ts` notifies the customer on `markWechatPaid` (confirms their "I've Paid" tap registered) and on `verifyWechatPayment` (payment confirmed), and notifies every owner/admin of the business on `markWechatPaid` (the "waiting for business to confirm receipt" half of the first AC, satisfied from the business's side rather than the customer's — this was the specific gap `03_System_Architecture.md` §6.2 had flagged as unimplemented). Stripe's webhook handler also notifies the customer on both `payment_intent.succeeded` and `payment_intent.payment_failed`, which goes beyond this US's literal wording but follows the same pattern.*
+*Already implemented (2026-07-27), reusing the same `NotificationsService` as US-05.1: `payments.service.ts` notifies the customer on `markWechatPaid` (confirms their "I've Paid" tap registered) and on `verifyWechatPayment` (payment confirmed), and notifies every owner/admin of the business on `markWechatPaid` (the "waiting for business to confirm receipt" half of the first AC, satisfied from the business's side rather than the customer's — this was the specific gap `03_System_Architecture.md` §6.2 had flagged as unimplemented). Stripe's webhook handler also notifies the customer on `checkout.session.completed`/`.expired` (not `payment_intent.succeeded`/`.payment_failed` — those were the event names before US-04.1's Checkout Session rewrite; see `03_System_Architecture.md` §6.1), which goes beyond this US's literal wording but follows the same pattern.*
 
 ### Implementation Note: Push Delivery vs. In-App Notifications (2026-07-27)
 
@@ -266,14 +336,14 @@ Both user stories above are split into two independently-working halves:
 Corresponding backend module: `reports`
 
 ### US-06.1 Business Publishes a Daily Report
-> As a service provider, I want to upload text, photos and video for an in-progress booking to record the pet's condition that day, so that the owner can feel confident about their pet's wellbeing.
+> As a service provider, I want to upload text and photos for an in-progress booking to record the pet's condition that day, so that the owner can feel confident about their pet's wellbeing.
 
 **Acceptance Criteria**
-- Given a booking's status is "In Progress", When the business enters a text description, uploads photos/video, and submits, Then the system creates a daily report record linked to that booking with a timestamp
-- Given an uploaded photo/video exceeds the system's allowed file size, When submitted, Then the system shows a "file too large" message and blocks the upload
+- Given a booking's status is "In Progress", When the business enters a text description, uploads up to three photos, and submits, Then the system creates a daily report record linked to that booking with a timestamp
+- Given an uploaded photo exceeds 5 MB, When submitted, Then the App blocks the upload before requesting an object-storage URL
 - Given there are multiple daily reports in one day (e.g. morning and evening), When viewing the report list, Then multiple entries display in chronological order rather than overwriting each other
 
-*Already implemented: `POST /reports/:bookingId` (the booking's assigned staff, or the business's owner/admin). Restricted to bookings in `in_progress` status, driven from the frontend by the "advance status" action on `BookingDetailScreen` (see US-03.3). Wired into a new `ReportComposeScreen`, reachable from `BookingDetailScreen`'s "Add Daily Report" button (shown to the assigned staff member or the owner/admin, only while the booking is `in_progress`): a text field plus up to 3 photos. Since Section 5's presigned cloud-storage upload flow still isn't implemented, photos are captured with `base64: true` and submitted as `data:image/jpeg;base64,...` URIs directly in `mediaUrls`, rather than as real hosted URLs — a deliberate interim stopgap (see `03_System_Architecture.md` ADR, 2026-07-27) until a storage provider is chosen. There's still no server-side "file too large" check; the app-side mitigation is capping both the photo count (3) and the picker's JPEG quality (0.5).*
+*Already implemented: `POST /reports/:bookingId` for the assigned staff or business owner/admin, restricted to `in_progress`. `ReportComposeScreen` accepts text and up to three photos, uploads each directly with a five-minute presigned object-storage URL, then submits only HTTPS URLs in `mediaUrls`. DTOs reject inline data URIs.*
 
 ### US-06.2 User Views Pet Daily Reports
 > As a logged-in user, I want to view daily reports for my pet during a care period, so that I can stay updated on my pet's condition.
@@ -282,7 +352,7 @@ Corresponding backend module: `reports`
 - Given the user's pet has an associated in-progress/completed booking, When the user opens that booking's detail page, Then they see all related daily reports (text + media)
 - Given that booking has no daily reports yet, When the user views it, Then the system shows "No daily reports yet" rather than an error or blank page
 
-*Already implemented: `GET /reports/:bookingId` (the booking's own customer, or any member of the business), returned in chronological order. Wired into `BookingDetailScreen`'s "Daily Reports" section for every role that can open the screen (customer, assigned staff, owner/admin), rendering each report's text and photo thumbnails, with a friendly "No daily reports yet" empty state and a refetch-on-focus so a report just published in `ReportComposeScreen` (see US-06.1) shows up immediately on return.*
+*Already implemented: `GET /reports/:bookingId` (the booking's own customer, assigned staff, or owner/admin), returned in chronological order. Wired into `BookingDetailScreen`'s "Daily Reports" section for those roles, rendering each report's text and photo thumbnails, with a friendly "No daily reports yet" empty state and a refetch-on-focus.*
 
 ---
 
@@ -293,10 +363,14 @@ Corresponding backend module: `reports`
 | Category | Requirement (draft, to be confirmed) |
 |---|---|
 | Bilingual Support | Interface text must support Chinese/English switching, without mixed languages |
-| Media Storage | Daily report photos/videos need a storage solution (local/cloud, to be determined in the Architecture document) |
+| Media Storage | V1 daily-report photos use S3-compatible object storage through purpose/role-scoped presigned uploads; video is explicitly deferred beyond V1 |
 | Data Privacy | Pet information and payment information require appropriate access control (users can only see their own data) |
 | WeChat Payment Verification SLA | Needs agreement with the business on a reasonable average verification turnaround (e.g. within 24 hours) |
 | Multi-Tenant Data Isolation | Core business-owned tables (Booking, Service, Payment via Booking, etc.) reserve a `business_id` field; in Version 1 all data belongs to Y&T Paws by default, but query logic should filter by `business_id` rather than hard-coding the assumption of "only one business." Pet is intentionally excluded — it belongs to its owning customer, not a business (see `01_Project_Overview.md` §11) |
+
+### V1 Help Center (non-AI)
+
+Profile provides an in-app bilingual Help Center with keyword search, topic filters and curated answers for booking, payment, pet/report and account questions. It performs no paid AI/API calls and does not take business actions. Unmatched or booking-specific questions route to the existing public support page. The App depends on a `HelpProvider` interface so a future authenticated AI assistant can replace or supplement local search without changing navigation or exposing a provider key in the mobile bundle.
 
 ---
 
@@ -313,3 +387,21 @@ Corresponding backend module: `reports`
 | 2026-07-27 | v0.7 | Synced implementation status again, closing most of the remaining frontend gaps: pet editing and health records (US-02.2/02.3, `PetDetailScreen`), booking cancellation and status history (US-03.3/03.4, `MyBookingsScreen` + `BookingDetailScreen`), business self-registration UI (US-01.4, `RegisterBusinessScreen`), staff account management and booking assignment (US-03.5/03.6, new `StaffManagementScreen` plus assignment chips in `BookingDetailScreen`, backed by a new `GET /auth/staff` endpoint), WeChat payment and payment history (US-04.2/04.3, new `PaymentScreen` + `PaymentHistoryScreen`), and daily report authoring (US-06.1, new `ReportComposeScreen`, using base64-embedded photos as an interim stopgap for missing cloud storage) and viewing (US-06.2, `BookingDetailScreen`). Stripe card payment (US-04.1) remains backend-only and is explicitly deferred pending a decision on native SDK vs. WebView Checkout | Xiyun Liu |
 | 2026-07-27 | v0.8 | Closed four more gaps in the same session: Module 5 Notifications (US-05.1/US-05.2) implemented end-to-end for the first time — in-app notification record plus best-effort Expo push, triggered from `bookings`/`payments` — including the previously-flagged-as-missing "notify the business to reconcile" step; owner-side WeChat payment verification (US-04.2) via new `PaymentVerificationScreen`; pet photo upload (US-02.1/02.2) via the same interim base64 approach as daily report photos; and a new role-based `BusinessHomeScreen` dashboard (owner/staff/admin land here instead of the customer `HomeScreen`) — the last one has no PRD user story, added as a UX gap closure. Documented that remote push delivery, while implemented, can't be verified end-to-end in Expo Go on SDK 53+ (dev-client build required, same tradeoff as Stripe) | Xiyun Liu |
 | 2026-07-28 | v0.9 | Closed the last remaining V1 gap: Stripe card payment frontend (US-04.1). Resolved the "native SDK vs. WebView Checkout" decision flagged since v0.7 in favor of Stripe Checkout Sessions opened via `expo-web-browser` — no native Stripe SDK, no dev-client build, works inside Expo Go. `initiateStripe`'s backend contract changed from returning a PaymentIntent `clientSecret` to a Checkout Session `checkoutUrl`; the webhook now keys off `checkout.session.completed`/`.expired` instead of `payment_intent.succeeded`/`.payment_failed`. Added `GET /payments/:id` for post-redirect polling. `PaymentScreen` gained a Card/WeChat method selector | Xiyun Liu |
+| 2026-07-29 | v0.10 | Corrected the Multi-Tenant Data Isolation NFR row: Pet is deliberately excluded from the `business_id`-carrying tables (see `01_Project_Overview.md` §11), not an oversight; clarified the `admin` role note under Section 2 — current code treats `admin` as a second `owner`-equivalent scoped to the same `businessId` via the `@Roles('owner','admin')` guards, not the cross-business platform-operator role originally described, which remains unbuilt | Xiyun Liu |
+| 2026-07-30 | v0.11 | Rewrote US-01.4: business registration is bootstrap-only, not ongoing self-service — `POST /auth/register-business` now rejects once a `Business` row exists. Removed the `RegisterBusinessScreen`/login-screen entry point/API client call as a result, since a customer-facing "Register Business" action could now only ever fail | Xiyun Liu |
+| 2026-07-31 | v0.12 | Added US-03.7 (owner service management — `ServiceManagementScreen`, previously API-only), US-04.4 (owner-initiated full refunds via `PATCH /payments/:id/refund`), and US-04.5 (business settings — name/region/WeChat QR, `BusinessSettingsScreen`, `GET /businesses/me` added since there was previously no way to read current values back). Rewrote US-02.1 (Pet creation): progressive profile-building (name only required at creation) is now the *accepted* V1 behavior rather than a gap against a stricter AC that was never actually built | Xiyun Liu |
+| 2026-08-01 | v0.13 | Corrected event names in US-05.2's implementation note (`checkout.session.completed`/`.expired`, not the pre-rewrite `payment_intent.succeeded`/`.payment_failed`) and US-06.1's now-outdated "no server-side file-too-large check" line (DTO-level size/shape limits were added 2026-07-31). Added the "V1 never hard-deletes a Service" AC to US-03.7. Backend gained `GET /bookings/:id/care-details` (customer/assigned-staff/owner-admin) so staff caring for a pet can see its full profile, and `ReportsService`'s read permission was tightened to match write (assigned staff only); see `03_System_Architecture.md` v0.14 for both | Xiyun Liu |
+| 2026-08-01 | v0.14 | Added US-01.5/01.6: hashed single-use password reset tokens, password-change session revocation, staff first-password flag and activation controls, last-owner/self-deactivation protection, plus password-confirmed in-app account deletion with explicit anonymization and financial-record retention rules | Xiyun Liu |
+| 2026-08-01 | v0.15 | Completed password reset delivery and recovery UX (Resend, App deep link, web fallback), enforced the staff first-password gate in App/API, added persistent login/reset abuse controls and security audit events, published linked privacy/terms/external deletion pages, and replaced new base64 media writes with S3-compatible direct uploads | Xiyun Liu |
+| 2026-08-02 | v0.16 | Added production-operability acceptance baseline in code/CI: strict secret/provider validation, Docker packaging, automatic Prisma migration, database readiness and process liveness probes, graceful shutdown and production image build verification | Xiyun Liu |
+| 2026-08-02 | v0.17 | Aligned V1 daily reports with the shipped photo-only implementation (maximum three JPEG/PNG/WebP images, 5 MB each; video deferred), removed unfinished social/profile/favorites/coupon surfaces from the review build, and linked Profile support actions to the public support page | Xiyun Liu |
+| 2026-08-03 | v0.18 | Added the zero-cost V1 bilingual Help Center: local curated FAQ search and category filtering, with specific/unmatched questions routed to human support; paid AI behavior remains outside V1 | Xiyun Liu |
+| 2026-08-04 | v0.19 | Finalized booking capacity/cancellation policy: owner-configurable business, service and staff concurrent limits default to unlimited; per-service overlap covers boarding pet count and grooming slots; customers and owners share a 24-hour cancellation cutoff. Added production alerting and expanded service/pet/report/notification/booking e2e coverage | Xiyun Liu |
+| 2026-08-05 | v0.20 | Closed the remaining US-01.3 date-format gap: user-facing dates now re-render with the selected language (`en-NZ` or `zh-CN`) while API/storage values remain ISO timestamps | Xiyun Liu |
+| 2026-08-06 | v0.21 | Added regression coverage for operational alerts, stale-refund detection and real HTTP health probes; fixed `AppModule` registration so the documented `/health/live` and `/health/ready` endpoints are now reachable rather than controller-only dead code | Xiyun Liu |
+| 2026-08-07 | v0.22 | Made the cancellation contract explicit in the App: the action disappears at the exact 24-hour cutoff, an in-window contact message replaces it, and confirmation warns that cancelling never automatically refunds a paid booking. Added e2e boundaries for unlimited/capped/non-overlapping/released capacity, staff reassignment, exact cutoff and retained payment state | Xiyun Liu |
+| 2026-08-07 | v0.23 | Completed the AI-agent design baseline without activating paid AI: V1 remains a local bilingual Help Center, while any future assistant is gated by explicit read-only-first scope, human escalation, privacy disclosures, evaluation and spend controls | Xiyun Liu |
+| 2026-08-07 | v0.24 | Published implementation-derived Payment and Notification designs and separated implemented application behavior from remaining live-provider/EAS device verification; Camera and paid AI code remain explicitly deferred | Xiyun Liu |
+| 2026-08-08 | v0.25 | Synced the shipped booking care-information UI: customer, assigned staff and owner/admin visibility now mirrors backend authorization; failures provide an explicit retry action and the access policy has automated tests. Added fail-fast preview/production URL validation | Xiyun Liu |
+| 2026-08-08 | v0.26 | Made the single-Business bootstrap invariant concurrency-safe in PostgreSQL, added multi-device push registration and bilingual system notifications, and formalized external provider/security evidence as production release gates | Xiyun Liu |
+| 2026-08-09 | v0.27 | Added rotating hashed refresh sessions with per-device revocation, authenticated private media reads and Expo receipt reconciliation; added provider-neutral backup/restore/rollback verification commands | Xiyun Liu |

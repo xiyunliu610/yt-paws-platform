@@ -28,6 +28,12 @@ export class CreateServiceDto {
   @IsInt()
   @Min(1)
   durationMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  maxConcurrentBookings?: number | null;
 }
 
 export class UpdateServiceDto {
@@ -56,6 +62,12 @@ export class UpdateServiceDto {
   @IsInt()
   @Min(1)
   durationMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  maxConcurrentBookings?: number | null;
 
   @IsOptional()
   @IsBoolean()

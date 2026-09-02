@@ -21,6 +21,12 @@ export class BookingsController {
     return this.bookingsService.create(req.user, body);
   }
 
+  // The booking's customer, its assigned staff, or the business's owner/admin.
+  @Get(':id/care-details')
+  findCareDetails(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.bookingsService.findCareDetails(req.user, id);
+  }
+
   @Patch(':id/cancel')
   cancel(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.bookingsService.cancel(req.user, id);

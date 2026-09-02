@@ -4,10 +4,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../i18n/LanguageContext';
 import { notificationsApi, AppNotification } from '../api/client';
+import { formatLocalizedDateTime } from '../i18n/dateFormat';
 
 const NotificationsScreen = () => {
   const { token } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [notifications, setNotifications] = useState<AppNotification[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -24,16 +25,6 @@ const NotificationsScreen = () => {
         .catch(() => setFailed(true));
     }, [token]),
   );
-
-  const formatDate = (isoDate: string) => {
-    const date = new Date(isoDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  };
 
   const handlePress = async (notification: AppNotification) => {
     if (!token || notification.readAt) return;
@@ -52,7 +43,7 @@ const NotificationsScreen = () => {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
           {notifications === null ? (
-            <ActivityIndicator color="#2C4A3E" style={styles.spinner} />
+            <ActivityIndicator color="#1F4A38" style={styles.spinner} />
           ) : failed ? (
             <Text style={styles.helperText}>{t.notifications.loadFailed}</Text>
           ) : notifications.length === 0 ? (
@@ -70,7 +61,7 @@ const NotificationsScreen = () => {
                   <Text style={styles.title}>{notification.title}</Text>
                 </View>
                 <Text style={styles.body}>{notification.body}</Text>
-                <Text style={styles.date}>{formatDate(notification.createdAt)}</Text>
+                <Text style={styles.date}>{formatLocalizedDateTime(notification.createdAt, language)}</Text>
               </TouchableOpacity>
             ))
           )}
@@ -83,7 +74,7 @@ const NotificationsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -101,19 +92,14 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#F7F5EF',
     borderRadius: 14,
     padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 10,
   },
   cardUnread: {
     borderLeftWidth: 3,
-    borderLeftColor: '#2C4A3E',
+    borderLeftColor: '#1F4A38',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -125,12 +111,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   title: {
     fontSize: 15,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
   },
   body: {
     fontSize: 14,

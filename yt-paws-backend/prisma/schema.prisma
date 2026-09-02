@@ -37,6 +37,19 @@ enum PaymentStatus {
   paid
   failed
   refunded
+  // Voided without money changing hands — either superseded by the
+  // customer switching payment method (see PaymentsService), or the losing
+  // side of a genuine cross-method double-payment race (see the
+  // payment_booking_paid_unique index below). Distinct from `failed`,
+  // which means the payment attempt itself didn't go through.
+  cancelled
+  // Reserved between claiming a refund and it actually completing — see
+  // PaymentsService.refundPayment. Exists so the booking-level "at most one
+  // payment currently holding this booking's money" invariant
+  // (payment_booking_paid_unique) covers this window too: without it, a new
+  // payment could reach `paid` for the same booking while a refund for the
+  // old one was still in flight with Stripe.
+  refund_pending
 }
 
 enum CheckoutAttemptStatus {
@@ -46,7 +59,9 @@ enum CheckoutAttemptStatus {
 }
 
 /// A pet care business onboarded to the platform. Version 1 has exactly one
-/// row (Y&T Paws) and AuthService.registerBusiness enforces that — it's a
+/// row (Y&T Paws). The business_singleton_unique expression index enforces
+/// that invariant in PostgreSQL, while AuthService provides an early friendly
+/// rejection — it's a
 /// bootstrap step, not an ongoing self-service signup surface (decided
 /// 2026-07-30, see docs/01_Project_Overview.md §11). business_id is still
 /// carried on core tables from Version 1 onward so a real multi-business
@@ -54,45 +69,123 @@ enum CheckoutAttemptStatus {
 /// actually create a second row here.
 /// See docs/01_Project_Overview.md §11 and docs/03_System_Architecture.md §4.
 model Business {
-  id              String    @id @default(uuid()) @db.Uuid
-  name            String
-  region          String?
+  id                    String    @id @default(uuid()) @db.Uuid
+  name                  String
+  region                String?
   // Static image of the business's personal WeChat QR code, shown to
   // customers during WeChat payment (US-04.2). There's no official merchant
   // API integration in V1, so this is just a URL the owner sets, not
   // something the platform generates.
-  wechatQrCodeUrl String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  staff           User[]
-  services        Service[]
-  bookings        Booking[]
+  wechatQrCodeUrl       String?
+  maxConcurrentBookings Int?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  staff                 User[]
+  services              Service[]
+  bookings              Booking[]
 }
 
 model User {
-  id               String         @id @default(uuid()) @db.Uuid
-  businessId       String?        @db.Uuid
-  business         Business?      @relation(fields: [businessId], references: [id])
-  email            String         @unique
-  password         String
-  name             String?
-  phone            String?
-  role             Role           @default(customer)
-  // Expo push token, registered client-side after the user grants
-  // notification permission. Null until then, or if they never grant it
-  // (or are running in an environment where remote push isn't available,
-  // e.g. Expo Go on SDK 53+) — in-app notifications work regardless.
-  pushToken        String?
-  // Not yet settable via any endpoint — added so JwtStrategy can reject a
-  // disabled account immediately (it looks the user up fresh on every
-  // request rather than trusting the JWT's claims; see jwt.strategy.ts).
-  isActive         Boolean        @default(true)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  pets             Pet[]
-  bookings         Booking[]      @relation("CustomerBookings")
-  assignedBookings Booking[]      @relation("StaffAssignedBookings")
-  notifications    Notification[]
+  id                    String               @id @default(uuid()) @db.Uuid
+  businessId            String?              @db.Uuid
+  business              Business?            @relation(fields: [businessId], references: [id])
+  email                 String               @unique
+  password              String
+  name                  String?
+  phone                 String?
+  locale                String               @default("en")
+  role                  Role                 @default(customer)
+  isActive              Boolean              @default(true)
+  // Every JWT carries the value current at issuance. Password changes,
+  // resets and account deletion increment it, invalidating all older JWTs
+  // on their very next authenticated request.
+  tokenVersion          Int                  @default(0)
+  mustChangePassword    Boolean              @default(false)
+  failedLoginAttempts   Int                  @default(0)
+  lockedUntil           DateTime?
+  maxConcurrentBookings Int?
+  deletedAt             DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  pets                  Pet[]
+  bookings              Booking[]            @relation("CustomerBookings")
+  assignedBookings      Booking[]            @relation("StaffAssignedBookings")
+  notifications         Notification[]
+  refundsIssued         Payment[]            @relation("PaymentRefundedBy")
+  passwordResetTokens   PasswordResetToken[]
+  securityEvents        SecurityEvent[]
+  pushDevices           PushDevice[]
+  sessions              AuthSession[]
+}
+
+model AuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @unique
+  tokenVersion     Int
+  deviceName       String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastUsedAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model PushDevice {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tickets   PushTicket[]
+
+  @@index([userId])
+}
+
+model PushTicket {
+  id           String     @id @default(uuid()) @db.Uuid
+  deviceId     String     @db.Uuid
+  device       PushDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  expoTicketId String     @unique
+  status       String     @default("pending")
+  attempts     Int        @default(0)
+  nextCheckAt  DateTime   @default(now())
+  error        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([status, nextCheckAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model SecurityEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      String
+  ipAddress String?
+  emailHash String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([type, ipAddress, createdAt])
+  @@index([type, emailHash, createdAt])
+  @@index([userId, createdAt])
 }
 
 model Pet {
@@ -105,9 +198,8 @@ model Pet {
   personality   String?
   dietNotes     String?
   isNeutered    Boolean?
-  // Same interim approach as DailyReport.mediaUrls (see
-  // docs/03_System_Architecture.md §5.3): a data: URI until real cloud
-  // storage exists, not a hosted URL.
+  // Public object-storage URL. Legacy data: URIs can be migrated with the
+  // media migration command before production rollout.
   photoUrl      String?
   ownerId       String            @db.Uuid
   owner         User              @relation(fields: [ownerId], references: [id])
@@ -129,23 +221,24 @@ model PetHealthRecord {
 }
 
 model Service {
-  id              String      @id @default(uuid()) @db.Uuid
-  businessId      String      @db.Uuid
-  business        Business    @relation(fields: [businessId], references: [id])
-  name            String
-  description     String?
-  price           Decimal     @db.Decimal(10, 2)
+  id                    String      @id @default(uuid()) @db.Uuid
+  businessId            String      @db.Uuid
+  business              Business    @relation(fields: [businessId], references: [id])
+  name                  String
+  description           String?
+  price                 Decimal     @db.Decimal(10, 2)
   // Whether `price` is charged once per booking (e.g. grooming) or per
   // calendar day of the booking's date range (e.g. boarding). Booking
   // snapshots both of these onto itself at creation time (see
   // Booking.unitPrice) so a later price change here doesn't alter what an
   // existing booking owes.
-  pricingUnit     PricingUnit @default(flat)
-  durationMinutes Int?
-  isActive        Boolean     @default(true)
-  bookings        Booking[]
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  pricingUnit           PricingUnit @default(flat)
+  durationMinutes       Int?
+  maxConcurrentBookings Int?
+  isActive              Boolean     @default(true)
+  bookings              Booking[]
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
 }
 
 model Booking {
@@ -175,16 +268,42 @@ model Booking {
   dailyReports    DailyReport[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  // Capacity checks filter active bookings by one resource and then apply
+  // the overlap predicate startDate < requestedEnd AND endDate > requestedStart.
+  // These indexes keep that hot path bounded as booking history grows.
+  @@index([petId, status, startDate, endDate])
+  @@index([businessId, status, startDate, endDate])
+  @@index([serviceId, status, startDate, endDate])
+  @@index([assignedStaffId, status, startDate, endDate])
+  @@index([customerId, createdAt])
 }
 
-// At most one "active" Payment per booking per method — enforced by two
+// At most one "active" Payment per booking per method, and at most one
+// "paid" Payment per booking across *all* methods — enforced by three
 // partial unique indexes Prisma's schema DSL can't express (no WHERE clause
-// support), added by hand in the
-// 20260729130000_payment_dedup_and_stripe_attempts migration instead:
+// support), added by hand instead:
 //   payment_stripe_pending_unique   ON ("bookingId") WHERE method='stripe' AND status='pending'
+//     (20260729130000_payment_dedup_and_stripe_attempts)
 //   payment_wechat_active_unique    ON ("bookingId") WHERE method='wechat_qr' AND status IN ('pending','pending_verification')
+//     (20260729130000_payment_dedup_and_stripe_attempts)
+//   payment_booking_paid_unique     ON ("bookingId") WHERE status IN ('paid','refund_pending')
+//     (20260731000000_cross_method_payment_dedup; predicate widened to
+//     include refund_pending by 20260801000001_refund_state_machine_index) — the
+//     second index only dedupes within one method; without this one, a
+//     booking could have a Stripe payment reach `paid` via the webhook
+//     *and* a WeChat payment reach `paid` via owner verification,
+//     independently, since neither path checks the other method. See
+//     PaymentsService for how a violation here is handled (it's a real
+//     possible race, not just a theoretical one — the app doesn't stop a
+//     customer from having both a Stripe checkout and a WeChat transfer in
+//     flight at once). refund_pending is included so a refund actually in
+//     flight with Stripe still reserves the booking's "one payment holding
+//     the money" slot — otherwise a new payment could reach `paid` for the
+//     same booking mid-refund, and the refund's rollback-to-`paid` on
+//     failure would then collide with it.
 // A `prisma migrate dev` run against this schema has no matching construct
-// for them, so it will propose dropping them — always review with
+// for any of them, so it will propose dropping them — always review with
 // --create-only rather than letting it apply automatically.
 model Payment {
   id               String                  @id @default(uuid()) @db.Uuid
@@ -201,19 +320,37 @@ model Payment {
   // Payment.
   checkoutAttempts StripeCheckoutAttempt[]
   verifiedAt       DateTime?
+  // Refunds: V1 only supports refunding a Payment in full (see
+  // PaymentsService.refundPayment) — a distinct Refund model would only
+  // earn its keep once partial/multiple refunds per Payment are needed.
+  refundedAt       DateTime?
+  refundReason     String?
+  refundedById     String?                 @db.Uuid
+  refundedBy       User?                   @relation("PaymentRefundedBy", fields: [refundedById], references: [id])
+  // Stripe's refund id (re_...), captured after a successful
+  // stripe.refunds.create call — kept for support/audit lookups against the
+  // Stripe dashboard. (The idempotency key that prevents double-refunding
+  // on a retried request is the Payment's own id, passed to
+  // stripe.refunds.create — this column is the result, not the key.)
+  stripeRefundId   String?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
 
 model StripeCheckoutAttempt {
-  id        String                @id @default(uuid()) @db.Uuid
-  paymentId String                @db.Uuid
-  payment   Payment               @relation(fields: [paymentId], references: [id])
+  id              String                @id @default(uuid()) @db.Uuid
+  paymentId       String                @db.Uuid
+  payment         Payment               @relation(fields: [paymentId], references: [id])
   // Stripe Checkout Session id (cs_...) — what the webhook payload
   // identifies itself by, so this is the join key back to a Payment.
-  sessionId String                @unique
-  status    CheckoutAttemptStatus @default(pending)
-  createdAt DateTime              @default(now())
+  sessionId       String                @unique
+  status          CheckoutAttemptStatus @default(pending)
+  // Captured from the webhook once the session completes — refunding a
+  // Checkout Session payment means refunding its underlying PaymentIntent
+  // (stripe.refunds.create({ payment_intent })), and the Session id alone
+  // isn't that.
+  paymentIntentId String?
+  createdAt       DateTime              @default(now())
 }
 
 model DailyReport {

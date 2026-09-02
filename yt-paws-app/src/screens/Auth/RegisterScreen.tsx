@@ -9,10 +9,13 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Linking,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth, ApiError } from '../../context/AuthContext';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { PUBLIC_WEB_URL } from '../../api/client';
 
 const RegisterScreen = () => {
   const navigation = useNavigation();
@@ -85,12 +88,11 @@ const RegisterScreen = () => {
 
       Alert.alert(t.register.successTitle, t.register.successMessage, [
         {
-          text: t.register.goToLogin,
-          onPress: () => navigation.navigate('Login' as never),
+          text: t.booking.goHome,
+          onPress: () => navigation.reset({ index: 0, routes: [{ name: 'Home' as never }] }),
         },
       ]);
     } catch (error) {
-      console.error('Registration failed:', error);
       const message = error instanceof ApiError ? error.message : t.register.registerFailedMessage;
       Alert.alert(t.register.registerFailedTitle, message);
     } finally {
@@ -123,14 +125,14 @@ const RegisterScreen = () => {
         </View>
 
         <View style={styles.header}>
-          <View style={styles.logoCircle}>
+          <View style={styles.logoSquare}>
             <Text style={styles.logoText}>Y&T</Text>
           </View>
           <Text style={styles.title}>{t.register.title}</Text>
           <Text style={styles.subtitle}>{t.register.subtitle}</Text>
         </View>
 
-        <View style={styles.formContainer}>
+        <View>
           <View style={styles.inputContainer}>
             <Text style={styles.label}>{t.register.fullName} *</Text>
             <TextInput
@@ -208,12 +210,14 @@ const RegisterScreen = () => {
             onPress={() => setAgreedToTerms(!agreedToTerms)}
             disabled={isLoading}
           >
-            <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]} />
+            <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
+              {agreedToTerms && <Feather name="check" size={13} color="#F5EFE0" />}
+            </View>
             <Text style={styles.termsText}>
               {t.register.terms}
-              <Text style={styles.termsLink}>{t.register.termsLink}</Text>
+              <Text style={styles.termsLink} onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/terms`)}>{t.register.termsLink}</Text>
               {t.register.and}
-              <Text style={styles.termsLink}>{t.register.privacyLink}</Text>
+              <Text style={styles.termsLink} onPress={() => Linking.openURL(`${PUBLIC_WEB_URL}/privacy`)}>{t.register.privacyLink}</Text>
             </Text>
           </TouchableOpacity>
 
@@ -226,21 +230,6 @@ const RegisterScreen = () => {
               {isLoading ? t.register.signingUp : t.register.signUp}
             </Text>
           </TouchableOpacity>
-
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>{t.register.orSocial}</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <View style={styles.socialContainer}>
-            <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>{t.register.apple}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton} disabled={isLoading}>
-              <Text style={styles.socialButtonText}>{t.register.google}</Text>
-            </TouchableOpacity>
-          </View>
 
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>{t.register.haveAccount}</Text>
@@ -257,7 +246,7 @@ const RegisterScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5EDD8',
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     flexGrow: 1,
@@ -274,10 +263,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2C4A3E',
+    borderColor: '#1F4A38',
   },
   languageToggleText: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -285,11 +274,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 32,
   },
-  logoCircle: {
+  logoSquare: {
     width: 70,
     height: 70,
-    borderRadius: 35,
-    backgroundColor: '#2C4A3E',
+    borderRadius: 19,
+    backgroundColor: '#1F4A38',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -297,12 +286,12 @@ const styles = StyleSheet.create({
   logoText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#F5EDD8',
+    color: '#F5EFE0',
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2C4A3E',
+    color: '#1A1A1A',
     marginBottom: 8,
   },
   subtitle: {
@@ -310,38 +299,22 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
-  formContainer: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-    marginBottom: 24,
-  },
   inputContainer: {
     marginBottom: 20,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2C4A3E',
+    color: '#1F4A38',
     marginBottom: 8,
   },
   input: {
     height: 50,
-    borderWidth: 1.5,
-    borderColor: '#E0E0E0',
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 16,
     color: '#333',
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#F7F5EF',
   },
   hint: {
     fontSize: 12,
@@ -359,14 +332,16 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderWidth: 2,
-    borderColor: '#2C4A3E',
-    borderRadius: 4,
+    borderColor: '#1F4A38',
+    borderRadius: 5,
     marginRight: 10,
     marginTop: 2,
     flexShrink: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   checkboxChecked: {
-    backgroundColor: '#2C4A3E',
+    backgroundColor: '#1F4A38',
   },
   termsText: {
     fontSize: 13,
@@ -375,13 +350,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   termsLink: {
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: '600',
   },
   registerButton: {
     height: 54,
-    backgroundColor: '#2C4A3E',
-    borderRadius: 12,
+    backgroundColor: '#1F4A38',
+    borderRadius: 27,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -390,7 +365,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   registerButtonText: {
-    color: 'white',
+    color: '#F5EFE0',
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -441,7 +416,7 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     fontSize: 14,
-    color: '#2C4A3E',
+    color: '#1F4A38',
     fontWeight: 'bold',
   },
 });

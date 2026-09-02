@@ -88,7 +88,7 @@ export class BookingsService {
       throw new ForbiddenException('You can only book for your own pet');
     }
 
-    const service = await this.prisma.service.findUnique({ where: { id: data.serviceId } });
+    const service = await this.prisma.service.findUnique({ where: { id: data.serviceId }, include: { business: true } });
     if (!service || !service.isActive) {
       throw new NotFoundException('Service not available');
     }
@@ -114,6 +114,20 @@ export class BookingsService {
           });
           if (conflict) {
             throw new ConflictException('This pet already has a booking during that time');
+          }
+
+          const activeOverlap = {
+            status: { in: [BookingStatus.pending, BookingStatus.confirmed, BookingStatus.in_progress] },
+            startDate: { lt: end },
+            endDate: { gt: start },
+          };
+          if (service.business.maxConcurrentBookings !== null) {
+            const count = await tx.booking.count({ where: { ...activeOverlap, businessId: service.businessId } });
+            if (count >= service.business.maxConcurrentBookings) throw new ConflictException('The business is fully booked during this time');
+          }
+          if (service.maxConcurrentBookings !== null) {
+            const count = await tx.booking.count({ where: { ...activeOverlap, serviceId: service.id } });
+            if (count >= service.maxConcurrentBookings) throw new ConflictException('This service is fully booked during this time');
           }
 
           // Snapshot the service's current price/pricingUnit onto the
@@ -146,9 +160,8 @@ export class BookingsService {
   }
 
   // US-03.4: the customer who made the booking, or the business managing it,
-  // can cancel while it's still pending/confirmed. The exact non-cancellable
-  // time window is still TBD with the business (see PRD US-03.4 note), so
-  // only the status check is enforced for now.
+  // can cancel while it is pending/confirmed and at least 24 hours remain
+  // before the service starts. The same cutoff applies to managers.
   async cancel(user: RequestingUser, bookingId: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) {
@@ -165,6 +178,9 @@ export class BookingsService {
     if (booking.status !== BookingStatus.pending && booking.status !== BookingStatus.confirmed) {
       throw new BadRequestException(`Booking cannot be cancelled once it is ${booking.status}`);
     }
+    if (Date.now() >= booking.startDate.getTime() - 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Bookings cannot be cancelled within 24 hours of the service start time');
+    }
 
     const updated = await this.prisma.booking.update({
       where: { id: bookingId },
@@ -176,8 +192,8 @@ export class BookingsService {
     // them about their booking.
     await this.notifications.notify(
       booking.customerId,
-      'Booking Cancelled',
-      `Your booking has been cancelled.`,
+      'Booking Cancelled / 预约已取消',
+      'Your booking has been cancelled. / 您的预约已取消。',
     );
 
     return updated;
@@ -191,6 +207,11 @@ export class BookingsService {
     [BookingStatus.pending]: BookingStatus.confirmed,
     [BookingStatus.confirmed]: BookingStatus.in_progress,
     [BookingStatus.in_progress]: BookingStatus.completed,
+  };
+  private static readonly STATUS_LABEL_ZH: Partial<Record<BookingStatus, string>> = {
+    [BookingStatus.confirmed]: '已确认',
+    [BookingStatus.in_progress]: '服务中',
+    [BookingStatus.completed]: '已完成',
   };
 
   async updateStatus(requester: RequestingUser, bookingId: string, nextStatus: string) {
@@ -217,11 +238,42 @@ export class BookingsService {
     // US-05.1
     await this.notifications.notify(
       booking.customerId,
-      'Booking Update',
-      `Your booking is now ${BookingsService.STATUS_LABEL[expectedNext]}.`,
+      'Booking Update / 预约更新',
+      `Your booking is now ${BookingsService.STATUS_LABEL[expectedNext]}. / 您的预约状态现为${BookingsService.STATUS_LABEL_ZH[expectedNext]}。`,
     );
 
     return updated;
+  }
+
+  // Lets the person actually caring for the pet during this booking (the
+  // assigned staff member, or the business's owner/admin) see the pet's
+  // full profile — dietNotes, personality, health records, etc. — plus the
+  // customer's contact info, none of which was reachable before: PetsService
+  // only ever let a pet's owner read it (see pets.service.ts), so a staff
+  // member had no way to see this even for a booking they were actively
+  // carrying out. Scoped to the booking itself (not a general "see any pet
+  // in my business" grant) so staff only see what they're assigned to.
+  async findCareDetails(user: RequestingUser, bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        pet: { include: { healthRecords: { orderBy: { date: 'desc' } } } },
+        customer: { select: { name: true, email: true, phone: true } },
+      },
+    });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    const isCustomer = booking.customerId === user.userId;
+    const isAssignedStaff = user.role === Role.staff && booking.assignedStaffId === user.userId;
+    const isManager =
+      (user.role === Role.owner || user.role === Role.admin) && user.businessId === booking.businessId;
+    if (!isCustomer && !isAssignedStaff && !isManager) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    return { pet: booking.pet, customer: booking.customer };
   }
 
   // PRD US-03.6: owner assigns a booking to a staff member of the same business.
@@ -241,9 +293,29 @@ export class BookingsService {
       throw new BadRequestException('That user is not a staff member of this business');
     }
 
-    return this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { assignedStaffId: staffId },
-    });
+    const assign = () => this.prisma.$transaction(async (tx) => {
+      if (staff.maxConcurrentBookings !== null) {
+        const overlapping = await tx.booking.count({
+          where: {
+            id: { not: bookingId },
+            assignedStaffId: staffId,
+            status: { in: [BookingStatus.pending, BookingStatus.confirmed, BookingStatus.in_progress] },
+            startDate: { lt: booking.endDate },
+            endDate: { gt: booking.startDate },
+          },
+        });
+        if (overlapping >= staff.maxConcurrentBookings) {
+          throw new ConflictException('This staff member is at capacity during this time');
+        }
+      }
+      return tx.booking.update({ where: { id: bookingId }, data: { assignedStaffId: staffId } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    try {
+      return await assign();
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') return assign();
+      throw error;
+    }
   }
 }

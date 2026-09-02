@@ -1,8 +1,8 @@
 # 03 · System Architecture
 
-**Document Status:** Draft v0.9
+**Document Status:** Draft v0.29
 **Related Documents:** `01_Project_Overview.md`, `02_Product_Requirements.md`
-**Last Updated:** 2026-07-28
+**Last Updated:** 2026-08-10
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 > This document defines PetHome's overall system structure: how components are divided, how they communicate, and where data flows. Detailed database table structures are in `04_Database_Design.md`; detailed API definitions are in `05_API_Design.md`. This document is only responsible for defining the "skeleton."
@@ -20,7 +20,7 @@ PetHome v1.0 uses a **Modular Monolith** architecture rather than microservices:
 - NestJS's Module mechanism already supports clear boundary separation; if a module (e.g. AI Agent or Camera) genuinely needs to scale independently in the future, it can be extracted from the monolith at relatively low cost
 - Aligns with the "Simplicity Before Complexity" design principle from `01_Project_Overview.md`
 
-**Unified entry point (Gateway Layer):** All client requests pass through the same NestJS application first, rather than being spread across multiple independent services. This layer handles JWT authentication, rate limiting, request logging, and validation. This "Gateway Layer" is **not** an independently deployed gateway component (unlike, say, Kong, Nginx, or AWS API Gateway) — it is an architectural concept expressing "a single unified request entry point with cross-cutting concerns handled centrally." Concretely, it is implemented via NestJS's Middleware / Guard / Interceptor mechanisms sitting in front of Controllers and Services:
+**Unified entry point (Gateway Layer):** All client requests pass through the same NestJS application first. Validation, structured metadata-only request logging and a broad per-process rate limit are global; JWT/role guards apply to protected controllers. Auth additionally has stricter persistent login/reset limits. The application-level limiter is not a replacement for an edge/WAF limit and its counters are not shared across replicas. This "Gateway Layer" is **not** an independently deployed gateway component (unlike Kong, Nginx or AWS API Gateway); it is the NestJS middleware/guard/interceptor boundary:
 
 ```
 HTTP
@@ -44,7 +44,6 @@ flowchart TB
         Gateway["API Entry Point (Gateway Layer)<br/>(JWT / Rate Limit / Logging / Validation)"]
         subgraph V1["Version 1 · Current Development"]
             Auth["auth module"]
-            Users["users module"]
             Pets["pets module"]
             Services["services module"]
             Bookings["bookings module"]
@@ -69,7 +68,7 @@ flowchart TB
         PaymentNZ["Payment Service · New Zealand<br/>(Current: Stripe)"]
         PaymentCN["Payment Service · China<br/>(Current: WeChat personal QR, manual verification)"]
         Storage["Cloud Object Storage<br/>(Candidates: Cloudflare R2 / AWS S3 / other OSS)"]
-        Push["Push Notification Provider<br/>(Candidates: Expo Push / FCM)"]
+        Push["Expo Push Notification Provider<br/>(V1 remote delivery)"]
         LLM["LLM Provider<br/>(Candidates: OpenAI / Anthropic / Gemini)"]
         Camera["IP Camera<br/>(Currently planned: TP-Link Tapo)"]
     end
@@ -88,6 +87,7 @@ flowchart TB
 - Solid lines = connections implemented in Version 1
 - Dashed lines = connections only enabled in future versions; currently just reserved in the architecture
 - The "Reserved · Future Versions" dashed box = not implemented now, only placeholder in the diagram, so readers can immediately see the gap between the system's eventual shape and current progress
+- "Reserved" means roadmap placement, not code/schema readiness. Camera has no module, device/session tables or credential/stream authorization design; platform-superadmin likewise requires a new authorization model and broad service-layer changes.
 
 ---
 
@@ -117,11 +117,11 @@ The following principles underpin all subsequent design decisions (database, API
 
 | Module | Responsibility | Corresponding PRD Module |
 |---|---|---|
-| `auth` | Registration (customer, plus the one-time business/owner bootstrap — see §13's ADR), login, JWT issuance/validation, role management, owner-provisioned staff accounts (create + list) — there is no separate `users` module; basic user info is owned by `auth` | Module 1 |
+| `auth` | Registration (customer, plus the one-time business/owner bootstrap — see §13's ADR), login, JWT issuance/validation/revocation, password reset/change, staff creation/list/activation, and account deletion/anonymization — there is no separate `users` module; account lifecycle is owned by `auth` | Module 1 |
 | `pets` | Pet profiles, health records | Module 2 |
 | `services` | Display and management of service offerings (boarding / drop-in, etc.) | Module 3 |
 | `bookings` | Booking creation, status transitions, cancellation logic, owner-to-staff assignment | Module 3 |
-| `businesses` | Business profile fields not set at registration (currently just the WeChat QR code image URL) | Module 4 (supporting) |
+| `businesses` | Business profile fields not set at registration — name, region, WeChat QR code image URL — plus reading them back (`GET /businesses/me`, added 2026-07-31) | Module 4 (supporting) |
 | `payments` | Payment initiation, WeChat manual verification flow, payment records | Module 4 |
 | `reports` | Creation and viewing of pet daily reports | Module 6 |
 | `notifications` | In-app notification records, Expo push token registration, best-effort push delivery — called as a side effect from `bookings`/`payments`, not driven by its own business logic | Module 5 |
@@ -160,6 +160,7 @@ erDiagram
     USER ||--o{ BOOKING : makes
     USER ||--o{ BOOKING : "is assigned (staff)"
     USER ||--o{ NOTIFICATION : receives
+    USER ||--o{ PUSH_DEVICE : registers
     PET ||--o{ BOOKING : "is subject of"
     SERVICE ||--o{ BOOKING : "ordered as"
     BOOKING ||--o{ PAYMENT : "paid via"
@@ -177,13 +178,17 @@ erDiagram
         uuid business_id FK "nullable, only set for owner/staff"
         string email
         enum role "customer/staff/owner/admin"
-        string push_token "nullable, Expo push token registered client-side"
         boolean is_active "default true; JwtStrategy re-checks this on every request, see §8"
+    }
+    PUSH_DEVICE {
+        uuid id PK
+        uuid user_id FK
+        string token UK "one row per Expo device token"
     }
     PET {
         uuid id PK
         uuid owner_id FK
-        string photo_url "nullable, interim base64 data URI — see §5.3"
+        string photo_url "nullable, object-storage URL"
     }
     SERVICE {
         uuid id PK
@@ -246,11 +251,11 @@ Written down explicitly to avoid scope creep during development:
 - ❌ No customer-facing staff selection (customers don't see or choose `assigned_staff_id`; only the Owner sets it) — deferred until staff headcount justifies the extra UI (profiles, availability, etc.)
 - ✅ Only: core tables carry a `business_id` field, and owner/staff-facing queries consistently apply this filter
 - ✅ Owner-to-staff booking assignment via `assigned_staff_id`
-- ⚠️ Exception: `GET /services` for a customer applies no `business_id` filter at all — it relies on `AuthService.registerBusiness` enforcing that only one `Business` row can ever exist (§13's ADR), not on a query-level filter. This is correct only as long as that stays true; see the comment on `ServicesService.findAll`
+- ⚠️ Exception: `GET /services` for a customer applies no `business_id` filter. V1 therefore has a PostgreSQL `business_singleton_unique` expression index that atomically permits at most one `Business`; the application count check only provides an early friendly error. Removing the index requires the complete multi-business discovery/isolation launch, never a standalone migration.
 
 ---
 
-## 5. Media Storage Architecture (Media / Pet Daily Report Photos & Videos)
+## 5. Media Storage Architecture (Photos in V1)
 
 PetHome adopts a cloud object storage architecture for media files. The specific provider (e.g., Cloudflare R2, AWS S3, Alibaba Cloud OSS, Tencent Cloud COS) will be selected during deployment planning. The architecture is provider-agnostic.
 
@@ -262,8 +267,9 @@ sequenceDiagram
     participant API as NestJS (reports / future Media Service)
     participant Storage as Cloud Object Storage
 
-    App->>API: Request upload permission (file type/size)
-    API->>API: Validate user permission, file size limit
+    App->>App: Reject image larger than 5 MB
+    App->>API: Request upload permission (purpose/type/size)
+    API->>API: Validate role, purpose, type and declared size
     API->>Storage: Generate presigned upload URL
     Storage-->>API: Return presigned URL
     API-->>App: Return presigned URL
@@ -273,7 +279,7 @@ sequenceDiagram
 ```
 
 **Why not upload to the backend server first, then forward to cloud storage?**
-- Avoids the backend server bearing the traffic load of large files (especially video)
+- Avoids the backend server bearing image traffic load
 - Faster upload speed and better user experience
 - The backend only handles "issuing upload permission" and "recording the upload result" — clearer responsibility
 
@@ -281,14 +287,9 @@ sequenceDiagram
 - Currently only the `reports` (pet daily reports) module uses media storage
 - Future v1.5 private chat and v2 camera screenshots/recordings will reuse the same cloud storage infrastructure (see Section 3.2, Media Service evolution direction) rather than each implementing it independently
 
-### 5.3 Interim Stopgap: Base64-Embedded Photos (Frontend Only, 2026-07-27)
+### 5.3 Implemented S3-Compatible Uploads (2026-08-01)
 
-`ReportComposeScreen` (the business-side daily report authoring screen) needed to ship before a storage provider was chosen, so it does **not** implement the presigned-URL flow above. Instead, photos are captured with the picker's `base64: true` option and submitted directly as `data:image/jpeg;base64,...` strings in `DailyReport.mediaUrls` — no upload step, no cloud storage involved. This is a deliberate, scoped-down interim measure, not a change to the target architecture in 5.1:
-
-- Capped at 3 photos per report, JPEG quality 0.5, to keep the inline payload size reasonable
-- No video support (base64-embedding video would be impractical)
-- `DailyReport.mediaUrls` (`String[]`) accepts this without a schema change, since it has always been an untyped array of strings
-- **Must be replaced**, not extended, once Section 5.1's presigned-upload flow is implemented — at that point `mediaUrls` should hold real object-storage URLs again, consistent with how the backend (`reports.service.ts`) already assumes them to be "already hosted somewhere"
+The `media` module issues five-minute presigned PUT URLs into a private S3-compatible bucket. PostgreSQL stores an authenticated API locator, not an object URL. `GET /media/files/:encodedKey` checks pet ownership, booking assignment/business scope or QR visibility, then redirects to a 60-second signed GET. The App attaches JWT headers to protected image requests. Legacy public/base64 values require migration. Account deletion decodes protected locators and deletes objects best-effort.
 
 ---
 
@@ -350,7 +351,28 @@ sequenceDiagram
 
 **Idempotency (added 2026-07-27, made concurrency-safe 2026-07-29):** `initiateWechat` checks for an existing `pending`/`pending_verification` `wechat_qr` payment on the booking before creating a new one, returning that instead. This was needed once the frontend `PaymentScreen` started calling it every time the screen mounts (e.g. re-opening the booking after backgrounding the app mid-transfer) — without it, each visit would have created a new `Payment` row for the same booking. The check-then-create is inherently racy under concurrent requests (two calls can both see "none exists" before either writes), so it's backstopped by a partial unique index on `Payment` — `payment_wechat_active_unique`, one active `wechat_qr` payment per booking — that the database itself enforces; the loser of the race gets a unique-constraint error, which `getOrCreateActivePayment` catches and resolves by re-reading the winner's row instead of erroring. The same construction (partial unique index + create-then-catch) backstops the Stripe side (`payment_stripe_pending_unique`), and `markWechatPaid`/`verifyWechatPayment` use the same atomic conditional-update pattern as the Stripe webhook (§6.1) to guard against a double-tap performing the same transition twice.
 
+**Cross-method double payment (fixed 2026-07-31).** Everything above dedupes *within* one payment method — it never stopped a booking from having a `pending` Stripe payment and a `pending`/`pending_verification` WeChat payment at the same time, each capable of independently reaching `paid` through its own path (the Stripe webhook; the owner clicking verify) with no cross-check against the other. Three layers now prevent this:
+1. `loadPayableBooking` blocks starting *any* new payment (same or different method) while another payment for the booking is `pending_verification` — that status means the customer has already claimed real money moved outside the app, so it isn't safe to let them start a second method on top of it.
+2. `initiateStripe`/`initiateWechat` cancel the *other* method's still-`pending` (not yet claimed) payment when the customer switches methods, via `cancelOtherPendingMethodPayments` — so an abandoned Stripe checkout doesn't linger able to be paid once the customer has moved on to WeChat, or vice versa.
+3. A `payment_booking_paid_unique` partial unique index (`Payment.bookingId` `WHERE status='paid'`) is the last-resort backstop for a true race the above two don't cover — e.g. the webhook and an owner's verify click landing close enough together. The losing write hits the constraint; `PaymentsService.handleDuplicatePaymentRace` marks that payment `cancelled` (not `paid`, so revenue reporting isn't double-counted) and notifies the business's owner/admin that a duplicate payment was received and needs a manual refund, since real money had already moved by that point in both the Stripe and WeChat cases.
+
 **Key difference:** The Stripe path is driven automatically by webhook; the WeChat path is driven by the business's manual action. These two paths are two independent strategy implementations within the `payments` module (corresponding to the "pluggable payment method" design principle in `02_Product_Requirements.md`), sharing the same `Payment` state machine but with different triggers for state transitions.
+
+### 6.3 Refund Flow (added 2026-07-31, state machine revised 2026-08-01)
+
+`PATCH /payments/:id/refund` (owner/admin only, `RefundPaymentDto.reason` required) refunds a `paid` Payment **in full — V1 has no partial-amount refunds.** This is a Payment-level action only: it does not touch `Booking.status`. Whether a booking itself should also be cancelled is a separate decision the owner makes through the existing `PATCH /bookings/:id/cancel`, not something refunding implies automatically.
+
+**Stripe uses three states: `paid → refund_pending → refunded` (or back to `paid` on definitive failure).** The original version went straight `paid → refunded`, claimed atomically before calling Stripe. That closed the "two concurrent refund requests both call Stripe" race, but left a narrower one open: for the whole window the payment showed as `refunded` (not `paid`), `payment_booking_paid_unique` no longer covered it, so a *new* payment for the same booking could reach `paid` in that gap — and if the Stripe call then failed and needed to roll back to `paid`, that write would collide with the new payment's claim on the same index. `refund_pending` closes this:
+
+1. **Claim:** `paid → refund_pending`, atomically (`updateMany({ where: { status: 'paid' } })`) — only the request that wins ever calls Stripe. `payment_booking_paid_unique`'s predicate now covers `refund_pending` too (`WHERE status IN ('paid','refund_pending')`), so the booking's "one payment holding the money" slot stays reserved for this Payment the *entire* time a refund is in flight, not just up to the claim.
+2. **External call (`stripe`):** `stripe.refunds.create({ payment_intent, metadata: { paymentId } }, { idempotencyKey: 'refund_' + payment.id })` against the `paymentIntentId` captured on the succeeded `StripeCheckoutAttempt` (see §6.1's amendment below). The idempotency key means a retry cannot double-refund the charge.
+3. **Finalize:** `succeeded` becomes `refunded`; a provider-pending result stays `refund_pending`; only a definitive failure returns to `paid`. Unknown connection/API outcomes also stay pending for recovery. `wechat_qr` has no external API and moves `paid → refunded` in one conditional database write after the owner's explicit confirmation that money was already returned manually.
+
+The customer is notified (`'Payment Refunded'`) once step 3 completes as `refunded`.
+
+**Recovery:** refund creation includes `metadata.paymentId`. Stripe `refund.created`/`refund.updated`/`refund.failed` webhooks advance or roll back `refund_pending`, including after a process crash. An owner/admin can also call `POST /payments/:id/reconcile-refund`; it repeats the original request with the same idempotency key when no refund id was saved, so Stripe returns the original result (or safely performs the request if it never arrived). Connection/API failures remain pending because their outcome is unknown; only definitive rejection is rolled back to `paid`. The owner payment screen exposes this reconciliation action.
+
+**Amendment to §6.1:** `StripeCheckoutAttempt` gained a `paymentIntentId` column, captured from the Checkout Session object (`session.payment_intent`) when `handleStripeWebhook` processes `checkout.session.completed`. This exists solely for §6.3's refund flow — refunding a Checkout Session payment means refunding the underlying PaymentIntent, and the Session id alone (which is all `StripeCheckoutAttempt` stored before this) isn't that.
 
 ---
 
@@ -385,13 +407,23 @@ Detailed plans are in `11_Security.md`; the Version 1 baseline is listed here:
 | Access Control | Access control based on the `role` field (Customers can only access their own data; Owners can access their business's data) |
 | Secret Management | Third-party secrets (payment providers, cloud storage, LLM services) live only in backend environment variables and are never sent to the client |
 
-**Session freshness (updated 2026-07-29).** The JWT carries `role`/`businessId` as claims, and — with no refresh-token flow yet — is valid for 24h (shortened from an initial 7d) with no version/revocation mechanism. Rather than trust those claims for the token's whole lifetime, `JwtStrategy.validate` looks the user up fresh from the database on every request and returns the live `role`/`businessId`/`isActive` instead: a role change, business reassignment, or (once something sets `User.isActive = false` — no endpoint does yet) an account deactivation takes effect on the very next request rather than waiting up to 24h. This is a stopgap, not the end state: a real solution still needs `tokenVersion`-style invalidation and a refresh-token flow so access tokens can be short-lived without forcing a daily re-login, plus revocation on logout/password-change. Tracked as follow-up work, not required before Version 1 ships internally.
+**Session freshness and revocation (updated 2026-08-10).** Each JWT carries `tokenVersion` and an `AuthSession` ID. Refresh tokens are random, stored only as hashes, rotate atomically and expire after 30 days; reuse revokes active sessions. The App coalesces concurrent 401 responses into one rotation and retries each request once. Users can review named devices and revoke a selected session. Password reset/change, staff deactivation and account deletion remove every session and increment `tokenVersion`.
+
+**Password reset.** `POST /auth/forgot-password` returns the same generic payload for known and unknown email addresses. For an active account it creates 32 random bytes, persists only their SHA-256 hash, expires it after 30 minutes and invalidates other unused tokens. Resend sends a public HTTPS landing-page URL. That page offers `ytpaws://reset-password` for an installed App and a web form when the App is absent. Token validation remains server-side, atomic and single-use. Production startup rejects the raw-token test switch.
+
+**Abuse controls and first-login gate.** Login/reset attempts are counted from persisted `SecurityEvent` rows by IP and hashed email; five consecutive invalid passwords lock that User for 15 minutes. Successful login clears the counter. Newly provisioned staff are denied every authenticated business endpoint except `PATCH /auth/change-password` while `mustChangePassword=true`; the App mounts only the required-password screen for the same state.
+
+Security events have a 90-day operational retention window, pruned at most once per process-hour during new event writes. Account deletion removes events tied to either the User id or the original email hash before anonymization.
+
+**Staff/offboarding invariant.** `PATCH /auth/staff/:id/status` is owner/admin-only and same-business scoped. Self-deactivation and reactivation of deleted users are rejected. Last-active-owner count plus update executes at Serializable isolation (with one serialization retry), as does owner account deletion, preventing two concurrent requests from removing every active Owner.
+
+**Account deletion and retention.** `DELETE /auth/account` requires the current password; the Profile UI adds two destructive confirmations. It immediately disables/anonymizes the User and clears name, phone, original email, password usability, push token, notifications and reset tokens. Owned Pet care fields/photos are blanked, health records deleted, and the customer's daily-report text/media removed. Staff assignments and `Payment.refundedById` are detached. Booking, Service and Payment rows, amounts/statuses/provider references and timestamps remain because they are required to reconcile real money, refunds, accounting, fraud and disputes. This is anonymization with minimal financial retention, not a claim that every database row is physically erased.
 
 ---
 
 ## 9. Logging and Monitoring (Placeholder)
 
-Version 1 does not introduce a dedicated logging/monitoring system; it relies only on NestJS's default log output and the hosting platform's basic logging capability.
+Version 1 keeps hosting-platform logs but now also has a minimal provider-neutral operational alert channel. `OperationalAlertsService` writes structured errors and posts to the required production `ALERT_WEBHOOK_URL`. Stripe webhook exceptions and Resend rejection alert immediately. `RefundMonitorService` scans every 15 minutes and alerts once when a `refund_pending` payment remains unresolved for more than 30 minutes. Full metrics/tracing remain future work.
 
 Future versions will introduce a complete observability stack, generally in this direction:
 
@@ -423,18 +455,20 @@ The project uses three standard environments to avoid contaminating production d
 
 **Principle:** Sensitive configuration such as database connection strings and third-party secrets (payment providers, cloud storage, LLM services) is always injected via environment variables and never committed to the repository; `.env.*` files are added to `.gitignore`, with only `.env.example` committed as a field-documentation template.
 
+**Mobile app API URL (added 2026-07-31).** `yt-paws-app/src/api/client.ts` resolves its backend base URL in this order: `EXPO_PUBLIC_API_URL` (inlined into the JS bundle at build time by Expo, no extra config needed) if set, else the Metro dev-server host the device is currently connected to (works automatically in Expo Go and dev-client builds, whatever the dev machine's LAN IP happens to be that day), else `10.0.2.2`/`localhost` as a last-resort fallback for the Android emulator / iOS simulator. That fallback only exists for local development — it is never reachable from a real device — so a non-dev (`eas build --profile preview`/`production`) build with no `EXPO_PUBLIC_API_URL` configured would appear to build and install fine but be unable to reach any backend at all, silently. `yt-paws-app/eas.json`'s `preview`/`production` build profiles set `EXPO_PUBLIC_API_URL` via their `env` block (currently placeholder domains — must be filled in once a real backend is deployed); the `development` profile deliberately leaves it unset so dev-client builds keep following the Metro host like Expo Go does.
+
 ---
 
-## 11. Deployment Architecture (Placeholder, TBD)
+## 11. Deployment Architecture
 
-The specific deployment platform has not yet been decided and will be determined in `10_Deployment.md`. A generic deployment topology is given here to clarify the relationships between layers, without binding to a specific vendor:
+The hosting vendor remains selectable, but the deployable unit is now concrete: `yt-paws-backend/Dockerfile` builds the NestJS production image, its entrypoint runs `prisma migrate deploy` before accepting traffic, the server honors the platform-provided `PORT`, and `/health/live` plus `/health/ready` support process and database health checks. Production startup fails immediately when required database, JWT, Stripe, Resend, legal-site, CORS or object-storage configuration is missing or unsafe.
 
 ```mermaid
 flowchart TB
     Internet["User Devices"] --> CDN["CDN / Reverse Proxy<br/>(TBD)"]
-    CDN --> API["NestJS Application<br/>(hosting platform TBD)"]
-    API --> DB[("PostgreSQL<br/>(hosting approach TBD)")]
-    API --> Storage["Cloud Object Storage"]
+    CDN --> API["NestJS Docker Image<br/>health-checked modular monolith"]
+    API --> DB[("Managed PostgreSQL<br/>migration + backup required")]
+    API --> Storage["S3-compatible Object Storage"]
 ```
 
 ---
@@ -449,11 +483,11 @@ flowchart TB
 | ORM | Prisma |
 | Authentication | JWT |
 | Payment Services | Payment providers (Current: Stripe [NZ], WeChat personal QR [China, manual verification]) |
-| Media Storage | Cloud object storage (Candidates: Cloudflare R2 / AWS S3 / other OSS, TBD) |
-| Push Notifications | Push notification provider (Candidates: Expo Push / Firebase Cloud Messaging, TBD) |
+| Media Storage | S3-compatible object storage (AWS S3 or Cloudflare R2 configuration supported) |
+| Push Notifications | Expo Push service for V1 remote delivery; in-app notifications remain provider-independent |
 | AI (from v1.5) | LLM provider (Candidates: OpenAI / Anthropic / Google Gemini) |
 | Camera (from v2) | IP camera (Currently planned: TP-Link Tapo) |
-| Deployment (TBD) | Candidates: AWS / Railway / Render — see `10_Deployment.md` |
+| Deployment | OCI/Docker image; compatible with AWS, Railway, Render and similar managed container platforms |
 
 ---
 
@@ -467,22 +501,28 @@ flowchart TB
 | WeChat payment integration approach | Personal QR code + manual verification, rather than the official merchant API | The official merchant API has a high application threshold; manual verification is a pragmatic transitional approach for now, with an extension point reserved for switching to the official API in the future |
 | Third-party service description approach | Provider-agnostic | Storage, push, AI, camera, etc. categories only define responsibilities without binding to a specific vendor, reducing future documentation and code changes when switching providers |
 | Business onboarding (revised 2026-07-30) | `POST /auth/register-business` creates the `Business` row and its first `owner` User atomically, but only once — `AuthService.registerBusiness` rejects the call if a `Business` already exists | The original "self-service for any number of businesses, starting now" design meant `services.findAll` (no `businessId` filter for customers) mixed every registered business's listings — real marketplace behavior V1 explicitly isn't supposed to have. Bootstrapping the one V1 tenant doesn't need that; a real multi-business flow (discovery, selection, isolation) is Version 4 work, done properly then |
-| Staff provisioning | Owner creates staff accounts directly (`POST /auth/staff`) with a system-generated temporary password returned to the owner, rather than an email invite flow | No transactional email infrastructure exists yet; owners already relay information to staff manually (WeChat, phone), so this fits current operating reality without new infrastructure |
+| Staff provisioning | Owner creates staff accounts directly (`POST /auth/staff`) with a system-generated temporary password returned to the owner; the staff member is forced to change it before any business API access | Password-reset transactional email now exists, but staff provisioning deliberately remains owner-mediated for V1 operations |
 | Service pricing model | `Service.pricing_unit` enum (`flat` \| `per_day`, default `flat`) rather than a fixed per-service formula | Boarding is naturally priced per night, grooming/house-visits per session; a single field lets both coexist without a booking-total field or per-service special-casing in the payments module |
 | Payment amount storage (revised 2026-07-29) | `Booking.unit_price`/`pricing_unit` snapshot `Service`'s values at creation time; `Payment.amount` is computed from that snapshot once, at first payment initiation, and reused by every later attempt | The original "compute fresh from `Service.price` every time" design meant a price change could change what an already-placed, unpaid booking owed — a real billing-dispute risk, not an acceptable V1 tradeoff. Snapshotting at booking time (not payment time) fixes this while keeping `Booking` itself total-free |
 | Stripe webhook correlation (revised 2026-07-29) | A `StripeCheckoutAttempt` row per Checkout Session (FK to `Payment`, unique `session_id`); the webhook looks up by `session_id`, not by anything stored on `Payment` | The original "one `providerRef` on `Payment`, overwritten on retry" design broke exactly the retry case it was meant to handle: the old session stays payable until it expires, so overwriting the reference made its eventual webhook unresolvable. Attempts are additive, not overwritten, so every session ever created for a `Payment` stays resolvable |
-| Business profile updates | Minimal `businesses` module with a single `PATCH /businesses/me` (owner/admin only), rather than a general business-settings module | The only post-registration business field needed so far is the WeChat QR code URL; a fuller business-profile module can be built when more fields (e.g. logo, hours) are actually needed |
+| Cross-method payment dedup (added 2026-07-31) | `payment_booking_paid_unique` partial unique index (one `paid` `Payment` per booking, any method) plus app-level prevention (block starting a new method while another is `pending_verification`; cancel the other method's abandoned `pending` payment on switch) — see §6 | Every existing safeguard (idempotency, `payment_stripe_pending_unique`, `payment_wechat_active_unique`, atomic webhook updates) only deduped *within* one payment method; nothing stopped a Stripe payment and a WeChat payment for the same booking from independently reaching `paid` through their separate paths (webhook vs. owner verification), which is a real double payment, not a theoretical one |
+| Mobile app API base URL (added 2026-07-31) | `EXPO_PUBLIC_API_URL` (Expo's build-time env var inlining) takes priority over the existing Metro-dev-host auto-detection in `client.ts`; set per build profile in `eas.json` | The dev-host detection only resolves to something reachable when a Metro dev server is present (Expo Go, dev-client); a standalone `eas build` release has no Metro server to infer a host from, so it silently fell through to `10.0.2.2`/`localhost` — a build that installs fine but can never reach any backend. This was undetected until reviewed, since local development never exercises that fallback path |
+| Business profile updates (revised 2026-07-31) | Minimal `businesses` module: `GET`/`PATCH /businesses/me` (owner/admin only) covering name, region, and WeChat QR code — still not a general business-settings module | Originally just `PATCH` for the WeChat QR code URL, with no UI at all (owners had to call the API directly). Added `GET` and the name/region fields once `BusinessSettingsScreen` needed something to actually load and edit; still deliberately narrow — hours, logo, etc. can be added when actually needed, not spec'd out in advance |
+| Refund flow (added 2026-07-31) | `PATCH /payments/:id/refund`, full-amount only, no Refund entity — refund metadata lives directly on `Payment` (`refundedAt`/`refundReason`/`refundedById`) | Partial refunds would need a running-total and a one-to-many Payment→Refund relationship; V1 doesn't need that complexity yet, and extending `Payment` directly avoids a join for the common case (a booking has at most one refund) |
+| Care-details endpoint (added 2026-08-01) | New `GET /bookings/:id/care-details` (customer / that booking's assigned staff / owner-admin) returns the pet's full profile — `dietNotes`, `personality`, health records — plus the customer's contact info, rather than opening `GET /pets/:id` to staff generally | `PetsService` only ever let a pet's *owner* read it; the staff member actually carrying out a booking had no way to see the pet's care information at all, which worked against the "centralized care info" goal in `01_Project_Overview.md`. Scoping this to the booking (not "any pet at my business") keeps a staff member from browsing every customer's pet just by knowing an id |
+| Care-details UI policy (added 2026-08-08) | `BookingDetailScreen` only requests and renders care information for the booking customer, assigned staff, owner or admin; the policy mirrors backend authorization and is unit-tested. Failed loads expose an explicit retry action | Prevents an unassigned staff member from seeing a misleading generic load error for a section they are not authorized to access, while preserving the backend as the security boundary |
+| Daily report read permission (tightened 2026-08-01) | `ReportsService.loadBookingForRead` now requires the same access as writing (customer, that booking's *assigned* staff, or owner/admin) — previously any user with a matching `businessId` could read any booking's reports | The write path (`loadBookingForWrite`) already required assigned staff; read was looser than write for no reason, so an unassigned staff member who knew a `bookingId` could read another customer's report photos and notes just by being employed by the same business |
 | Booking status progression | `PATCH /bookings/:id/status`, forward-only through `pending → confirmed → in_progress → completed`, one step at a time (owner/admin only) | Daily reports (US-06.1) require a booking to be `in_progress`, and no endpoint could produce that transition before this was added; forward-only, single-step validation keeps the state machine simple and prevents skipping steps or reviving a cancelled booking |
 | Staff directory endpoint | `GET /auth/staff` (owner/admin only) added to the `auth` module rather than creating a `users` module | The only two frontend consumers (the booking-assignment picker and `StaffManagementScreen`) both need "everyone assignable in my business," which is exactly `auth.service.createStaff`'s counterpart; a separate `users` module would be premature for a single read endpoint |
 | WeChat payment idempotency | `initiateWechat` reuses an existing pending/pending-verification payment for the booking instead of always creating a new `Payment` row | The frontend payment screen calls this endpoint every time it mounts (not just once), since there was no other way to recover the QR/reference note after navigating away mid-flow; making the endpoint idempotent was cheaper than adding client-side caching of payment intents |
-| Daily report photos (interim) | Photos captured client-side as base64 and stored inline in `DailyReport.mediaUrls` (`data:image/jpeg;base64,...`), not uploaded to cloud storage | `ReportComposeScreen` needed to ship before a storage provider was chosen (§5 is still TBD); capped at 3 photos and JPEG quality 0.5 to bound payload size. Explicitly interim — see §5.3 — and must be replaced once presigned uploads exist, not extended |
-| Pet photo (interim) | Same base64-data-URI approach as daily report photos, applied to `Pet.photoUrl` | Consistency: two independent "just ship the photo, storage isn't chosen yet" problems solved the same way, so there's only one pattern to later replace, not two |
+| Media uploads (revised 2026-08-01) | App requests a purpose/role-scoped five-minute presigned PUT URL, uploads directly to S3/R2 and stores only the HTTPS object URL | Keeps image bytes out of PostgreSQL/API traffic; `media:migrate` converts legacy Base64 rows before production rollout |
 | Notifications module scope | A real `notifications` module exists (§7) with a read/mark-read/device-registration surface, but no public "create" endpoint — only `bookings`/`payments` can create rows, by calling `NotificationsService` directly as an injected dependency | Keeps "no dedicated Notification Center in V1" true in spirit (per the original architecture) while still giving in-app notifications somewhere to live; a public create endpoint would let any authenticated user spam notifications at other users, which nothing in V1 needs |
 | Push delivery: best-effort, fail-silent | `expo-push.util.ts` wraps the Expo push gateway call in a try/catch with a 5s timeout; `pushToken.ts` wraps every registration step (permission, device check, token fetch) the same way | Expo Go dropped remote push support entirely as of SDK 53 (both platforms) — registration will routinely fail in the current dev environment, and that failure must never surface as a booking/payment error. Matches the Stripe frontend precedent of deferring a "leave Expo Go" decision rather than forcing it |
+| Help Center before paid AI (added 2026-08-03) | `HelpCenterScreen` consumes a mobile `HelpProvider`; V1 binds it to deterministic bilingual local content and routes personal cases to the public support page | Delivers useful launch-time assistance with zero model cost and no new data processor. A future AI provider can implement the same boundary, but its API key and authorization/tool execution must live on the backend, never in the Expo bundle |
+| Capacity model and cancellation cutoff (added 2026-08-04) | Nullable `maxConcurrentBookings` on Business, Service and staff User; null means unlimited. Booking creation counts active overlapping business/service bookings in its Serializable transaction; assignment checks staff overlap. Cancellation is rejected inside 24 hours for customers and managers alike | One generic overlap model covers boarding pet count and grooming slots without service-name branches, while preserving unlimited launch defaults and owner control |
 | Owner payment verification | `GET /payments/business` (new) returns every payment for the business rather than only `pending_verification` ones | The owner also wants to see settled history for context, not just an action queue; the frontend (`PaymentVerificationScreen`) sorts pending-verification entries first instead of the backend filtering them out |
 | Business/staff home screen | `HomeRouter` (frontend-only, no new route) picks `BusinessHomeScreen` vs. the customer `HomeScreen` by `user.role`, both mounted under the same `"Home"` stack entry | No PRD user story covers this — it was a UX gap (owner/staff saw a customer-oriented booking screen after login) rather than a functional one; solving it at the route-selection level avoids adding a second navigation stack |
 | Stripe integration approach | Checkout Session opened via `expo-web-browser`, not the native `@stripe/stripe-react-native` SDK | The native SDK requires a dev-client build, permanently leaving Expo Go for the whole app, not just the payment screen; Checkout Sessions need only a backend endpoint change and a browser popup, at the cost of a less-native-feeling payment page (acceptable at V1's scale) |
-| Stripe webhook correlation (revised) | `Payment.providerRef` now stores the Checkout Session id, not a PaymentIntent id; webhook matches on `checkout.session.completed`/`.expired` | Follows directly from the Checkout Session decision above — the app never creates or sees a PaymentIntent id anymore, only a Session id |
 | Post-redirect confirmation | Frontend polls `GET /payments/:id` after the in-app browser closes, rather than trusting `WebBrowser.openAuthSessionAsync`'s `success` result | The browser closing (even via Stripe's own success redirect) is a client-side UX event, not proof the webhook fired; the same "server webhook is the only source of truth" principle already governing `Booking`/`Payment` status elsewhere in this document |
 
 ---
@@ -500,3 +540,23 @@ flowchart TB
 | 2026-07-27 | v0.7 | Added `GET /auth/staff` to the `auth` module's responsibilities (backs the frontend's staff directory/assignment picker); documented `initiateWechat`'s new idempotency behavior (§6.2); added §5.3 describing the interim base64-embedded-photo stopgap `ReportComposeScreen` uses in place of the still-unbuilt presigned-upload flow, and its planned removal once §5.1 is implemented; added four ADR entries for these decisions | Xiyun Liu |
 | 2026-07-27 | v0.8 | Rewrote §7 (Notification Architecture) from a design placeholder into a description of the now-implemented `notifications` module — moved it from "Reserved" to "Version 1" in the §1 diagram, added it to the §3.2 module table, and documented that remote push delivery, while implemented, is unverifiable in Expo Go on SDK 53+ (same category of tradeoff as the Stripe frontend deferral); added `Notification` entity, `User.push_token` and `Pet.photo_url` to the §4.1 ERD; added five ADR entries covering the notifications module's deliberately narrow scope, fail-silent push delivery, the pet-photo reuse of the daily-report base64 stopgap, the owner payment-verification endpoint, and the role-based home-screen router (a UX gap closure with no PRD user story behind it) | Xiyun Liu |
 | 2026-07-28 | v0.9 | Resolved the Stripe frontend deferral from v0.7 in favor of Checkout Sessions opened via `expo-web-browser`, not the native SDK — rewrote §6.1's sequence diagram and implementation notes accordingly: `Payment.provider_ref` now stores a Checkout Session id (not a PaymentIntent id), the webhook keys off `checkout.session.completed`/`.expired`, and the client polls `GET /payments/:id` after the in-app browser closes rather than trusting the redirect. Added three ADR entries for these decisions | Xiyun Liu |
+| 2026-07-29 | v0.10 | Money fields (`Service.price`, `Booking.unit_price`, `Payment.amount`) changed from float to `Decimal(10,2)`; `Booking` gained `unit_price`/`pricing_unit` as a snapshot of `Service`'s values at creation time, so a later price edit can't change what an already-placed booking owes; replaced `Payment.provider_ref` (overwritten on every Stripe retry, orphaning older still-payable Checkout Sessions) with a `StripeCheckoutAttempt` row per session; added partial unique indexes (`payment_stripe_pending_unique`, `payment_wechat_active_unique`) plus atomic conditional updates as the concurrency-safety layer for payment creation and the webhook/verification flows, replacing same-isolation transactions that didn't actually serialize the race. Updated §4.1's ERD, §6's amount-calculation and idempotency notes, and four ADR entries | Xiyun Liu |
+| 2026-07-30 | v0.11 | Reversed the v0.5 "self-service registration for any business" decision: `POST /auth/register-business` is now bootstrap-only (`AuthService.registerBusiness` rejects once a `Business` row exists) — V1 serves Y&T Paws exclusively, and open registration meant `services.findAll`'s missing `business_id` filter (§4.2) would start mixing every registered business's listings, real marketplace behavior this project explicitly isn't supposed to have. Removed the app's now-dead-end `RegisterBusinessScreen`/route/API-client call. Updated the business-onboarding ADR row and §4.2's out-of-scope list | Xiyun Liu |
+| 2026-07-31 | v0.12 | Closed a cross-method double-payment gap: every existing payment safeguard only deduped *within* one method, so a Stripe payment and a WeChat payment for the same booking could each independently reach `paid` with no cross-check. Added a `payment_booking_paid_unique` partial unique index plus app-level prevention (§6.2's "Cross-method double payment" note) and a `PaymentStatus.cancelled` value for the losing side of a genuine race. Also documented that the mobile app's API base URL had no path to a real backend outside of local development (`client.ts`'s Metro-dev-host detection silently falls back to `10.0.2.2`/`localhost` in a standalone build) — fixed via `EXPO_PUBLIC_API_URL` support and a starter `eas.json`; added two ADR entries and a new §10 note for these | Xiyun Liu |
+| 2026-07-31 | v0.13 | Fixed the remaining half of the cross-method double-payment gap from v0.12: cancelling the *other* method's pending payment on a method switch only updated local state — the actual Stripe Checkout Session stayed open on Stripe's side, so a charge completed on an abandoned session was silently dropped (no record, no refund notification). `cancelOtherPendingMethodPayments` now proactively calls `stripe.checkout.sessions.expire()`, and the webhook falls back to the existing duplicate-payment handling whenever the pending→paid transition doesn't apply, not just on a unique-constraint error. Added §6.3 (Refund Flow) and its `paymentIntentId`/refund-metadata schema additions; documented the new `ServiceManagementScreen`/`BusinessSettingsScreen` in §3.2's module table and two ADR entries | Xiyun Liu |
+| 2026-08-01 | v0.14 | Two permission fixes: added `GET /bookings/:id/care-details` so the staff member/owner actually caring for a pet can see its full profile (`PetsService` previously only let the *owner* read a pet at all); tightened `ReportsService`'s read permission to match write (assigned staff only, not any business member — a real over-broad-read gap, not just a hardening pass). Revised §6.3's refund state machine from a two-state `paid → refunded` to three states (`paid → refund_pending → refunded`/`paid`): the two-state version released `payment_booking_paid_unique`'s reservation the moment the claim landed, so a new payment could reach `paid` for the same booking while a Stripe refund was still in flight, and a subsequent rollback-to-`paid` on Stripe failure could then collide with it. Added a Stripe refund idempotency key and `stripeRefundId` capture. Documented the known gap this still doesn't close (a crash between Stripe confirming and the final DB write) | Xiyun Liu |
+| 2026-08-01 | v0.15 | Wired booking care details into the mobile booking screen. Closed the refund recovery gap with refund metadata, Stripe refund webhooks, an idempotent owner/admin reconciliation endpoint and UI, provider-status-aware finalization, and atomic manual WeChat finalization. Added a full-test script and isolated PostgreSQL CI workflow | Xiyun Liu |
+| 2026-08-01 | v0.16 | Added account-security lifecycle: `tokenVersion` JWT revocation, hashed/expiring/single-use reset tokens, password change and staff first-password flag, same-business staff activation with self/last-owner protection at Serializable isolation, and password-confirmed in-app account deletion with documented anonymization versus financial-retention behavior | Xiyun Liu |
+| 2026-08-01 | v0.17 | Implemented Resend password-reset delivery with App/web fallback, explicit `ytpaws` deep linking, mandatory first-password access gates, persistent security rate limiting/login lockout/audit events, public legal/deletion pages, and the S3-compatible `media` module with direct uploads and legacy base64 migration | Xiyun Liu |
+| 2026-08-02 | v0.18 | Replaced the deployment placeholder with a production Docker baseline: strict environment validation, platform `PORT`, automatic Prisma migration, liveness/readiness endpoints, shutdown hooks and CI image builds; removed stale Base64-media ADR text | Xiyun Liu |
+| 2026-08-02 | v0.19 | Finalized store-facing native configuration and media scope: explicit image-picker/notification plugins, photo-only minimum permissions, exempt-encryption declaration, explicit EAS `projectId` token attribution, removal of unfinished UI actions, public support route, and a 5 MB V1 image-upload limit with video deferred | Xiyun Liu |
+| 2026-08-03 | v0.20 | Added a provider-neutral Help Center seam without activating an LLM: the App currently uses deterministic bilingual local FAQ search, while any future paid AI implementation must remain behind an authenticated backend boundary | Xiyun Liu |
+| 2026-08-04 | v0.21 | Added nullable unlimited-by-default business/service/staff capacity controls with overlap-safe enforcement, the agreed uniform 24-hour cancellation cutoff, provider-neutral production webhooks for Stripe/email/stale-refund alerts, expanded core e2e coverage, and completed remaining auth/navigation localization | Xiyun Liu |
+| 2026-08-05 | v0.22 | Centralized mobile display-date formatting by selected language (`en-NZ`/`zh-CN`); kept booking/payment API contracts and database timestamps in ISO format | Xiyun Liu |
+| 2026-08-06 | v0.23 | Closed a health-probe wiring gap discovered by e2e: `AppController` existed but was absent from `AppModule`, making both documented probes return 404. Registered it and added live/database-ready HTTP tests. Added alert delivery/dedup/failure tests and enforced HTTPS for `ALERT_WEBHOOK_URL` | Xiyun Liu |
+| 2026-08-07 | v0.24 | Added composite PostgreSQL indexes for booking overlap/capacity queries, verified capacity and cancellation concurrency boundaries through e2e, and published the implementation-derived Database and API design documents | Xiyun Liu |
+| 2026-08-07 | v0.25 | Completed the AI-agent design around the existing `HelpProvider` seam and fixed application shutdown ownership: `PrismaService` now closes its PostgreSQL adapter pool through Nest lifecycle hooks, preventing E2E/production shutdown handle leaks | Xiyun Liu |
+| 2026-08-07 | v0.26 | Completed detailed Payment, Notification, Deployment and Security designs, including explicit implemented-vs-provisioning boundaries; production startup now rejects wildcard/insecure CORS, non-live Stripe keys and malformed Stripe webhook secrets | Xiyun Liu |
+| 2026-08-08 | v0.27 | Recorded Expo Push as the selected V1 provider, aligned the booking care-information UI with backend authorization, and added fail-fast EAS release URL validation plus CI drift checks | Xiyun Liu |
+| 2026-08-08 | v0.28 | Added a database-enforced single-Business invariant, Helmet/CSP, global throttling, privacy-safe request logging, multi-device push tokens and bilingual notification payloads; corrected the nonexistent users-module diagram and made external security/provider checks release gates | Xiyun Liu |
+| 2026-08-09 | v0.29 | Added private authenticated media reads, rotating per-device sessions, Expo receipt reconciliation, and backup/restore/immutable-rollback verification tooling | Xiyun Liu |

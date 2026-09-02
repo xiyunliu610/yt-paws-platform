@@ -1,7 +1,7 @@
 # 01 · Project Overview
 
-**Document Status:** Draft v0.5
-**Last Updated:** 2026-07-26
+**Document Status:** Draft v0.24
+**Last Updated:** 2026-08-11
 **Maintainer:** Xiyun Liu (Product Owner & Developer)
 
 ---
@@ -111,10 +111,10 @@ Instead, it is a business management platform built specifically for independent
 Replace manual workflows with a reliable digital platform. Core features: booking, payment, pet profiles, daily reports, customer management.
 
 ### Mid-term — Version 1.5 / Version 2
-Improve customer experience through intelligence and real-time capability: AI daily report generation, AI customer assistant, live camera access, push notifications, private chat.
+Improve customer experience through intelligence and real-time capability: AI daily report generation, AI customer assistant, private chat, enhanced push notifications.
 
 ### Long-term — Version 3 / Version 4
-Expand PetHome into a comprehensive pet care platform: pet store, membership system, loyalty points and coupons, business analytics, AI operations assistant, multi-business support, open APIs (SaaS).
+Expand PetHome into a comprehensive pet care platform: membership system, loyalty points and coupons, business analytics, AI operations assistant, multi-business support, open APIs (SaaS). Live camera access and the pet store/e-commerce line are also long-term scope but deliberately sequenced *after* the items above — see the sequencing note under Section 10.
 
 > Long-term plans represent future possibilities rather than committed deliverables.
 
@@ -137,7 +137,7 @@ Expand PetHome into a comprehensive pet care platform: pet store, membership sys
 | Performance | Average API response time < 500ms |
 | Availability | 99.9% service uptime target |
 | Scalability | Support thousands of users without redesign; data model reserves multi-tenant (multi-business) extensibility |
-| Security | HTTPS, JWT authentication, encrypted password storage, role-based access control |
+| Security | HTTPS, JWT authentication, encrypted password storage, role-based access control, immediate session revocation after password/account/staff-status changes |
 | Maintainability | Modular architecture, comprehensive documentation, consistent coding standards |
 | Internationalization | Chinese and English language support |
 
@@ -146,28 +146,32 @@ Expand PetHome into a comprehensive pet care platform: pet store, membership sys
 ## 10. Scope
 
 ### Version 1 (Current)
-User registration, login, pet profiles, booking, Stripe payment, WeChat QR payment, daily reports, push notifications, admin dashboard
+User registration, login, pet profiles, booking, Stripe payment, WeChat QR payment, daily reports, push notifications, and role-scoped owner/admin management screens
 
 ### Version 1.5 (Planned)
-AI daily report generation, AI customer assistant, private chat
+AI daily report generation, AI customer assistant, private chat — **in that priority order** (confirmed 2026-08-11)
 
 ### Version 2 (Planned)
-Live camera, camera authorization, remote viewing, enhanced push notifications
+Enhanced push notifications. *Live camera, camera authorization and remote viewing remain Version 2-scoped features but are no longer next in line — see the sequencing note below.*
 
 ### Version 3 (Planned)
-Pet store, inventory management, membership, loyalty points, coupons
+Membership, loyalty points, coupons. *Pet store and inventory management remain Version 3-scoped but are no longer next in line — see the sequencing note below.*
 
 ### Version 4 (Planned)
 Multi-business support, AI business analytics, AI Vision, open APIs
+
+> **Sequencing note (2026-08-11):** Live camera and the pet store/e-commerce line are deliberately deprioritized to *last* among all currently planned work, ahead only of whatever Version 4 turns out to require — see `14_Roadmap.md` §2–§3 for the maintainer's current priority order and rationale, and §5 there for what's still undecided (their exact placement relative to Version 4). The version numbers above (1.5/2/3/4) still describe *scope grouping*, not build order; `14_Roadmap.md` is the authoritative source for order.
 
 ---
 
 ## 11. Scope Boundary and Architecture Principles (Important)
 
-- **Multi-tenant extensibility is reflected in the data model starting from Version 1:** core business-owned tables (Booking, Service) reserve a `business_id` field, so that even though only Y&T Paws currently uses the platform, onboarding future businesses will not require a destructive schema migration. **Pet is deliberately not one of these tables** — a pet profile belongs to its owner (a platform customer), not to a business, so it has no `business_id` and can be booked with any business. The Cross-Module NFR table in `02_Product_Requirements.md` is still draft and should be updated to match this rather than listing Pet alongside Booking/Service/Payment
+- **Multi-tenant extensibility is reflected in the data model starting from Version 1:** core business-owned tables (Booking, Service) reserve a `business_id` field, so that even though only Y&T Paws currently uses the platform, onboarding future businesses will not require a destructive schema migration. **Pet is deliberately not one of these tables** — a pet profile belongs to its owner (a platform customer), not to a business, so it has no `business_id` and can be booked with any business. The Cross-Module NFR table in `02_Product_Requirements.md` already reflects this (updated 2026-07-29)
 - **Version 1's business logic and permission scope still serve Y&T Paws exclusively.** Multi-business capability is a "reserved structure," not a "fully implemented multi-business operation" (e.g. business-level dashboard switching or full cross-business data isolation belongs to Version 4)
+- **The reserved fields reduce schema churn but do not make multi-business or platform admin cheap.** Version 4 must remove the singleton index, introduce customer business discovery/selection, audit every service-layer tenant filter, separate business `admin` from a new platform-level authorization model, add cross-tenant tests and migrate existing roles. This is a substantial product/security project, not an enum switch.
 - **Business onboarding is bootstrap-only, not an ongoing self-service surface (decided 2026-07-30, reversing the original plan below).** `POST /auth/register-business` (US-01.4 in `02_Product_Requirements.md`) can only ever create the platform's one `Business` row — `AuthService.registerBusiness` rejects the call once a `Business` already exists. The original design let anyone self-register a new tenant at any time; in practice this meant a customer's service list (which has no `businessId` filter — see `03_System_Architecture.md` §4.2) would start mixing services from every registered business, which is exactly the marketplace behavior this section says PetHome is not. V1 genuinely serves only Y&T Paws, so the registration surface now enforces that instead of just reserving the data model for it. A real multi-business platform (customer-facing business discovery/selection, per-business verification, actual data isolation) is Version 4 scope, done properly then — not something to half-build now via an onboarding form nobody else can safely use yet
 - Detailed table structures will be defined in `04_Database_Design.md`
+- **Camera is roadmap intent only.** V1 has no `CameraDevice`, stream-session, credential, authorization or retention schema. Version 2 starts with threat modelling and data-model/provider design; the current dashed architecture box is not implemented scaffolding.
 
 ---
 
@@ -215,6 +219,10 @@ The following assumptions underlie all current design decisions. If any assumpti
 | Mobile Only | Version 1 does not provide a web client, only iOS/Android mobile apps; whether the Admin Dashboard needs a web client will be evaluated separately |
 | Single Currency (NZD) | Multi-currency settlement is not currently considered; both Stripe and WeChat payments are priced in New Zealand dollars |
 
+### Account lifecycle and data retention (Version 1 baseline)
+
+Users can change/reset passwords, managers can activate/deactivate staff, and users can initiate account deletion in the app. Deactivation/deletion takes effect on the next authenticated request. Account deletion uses irreversible anonymization rather than deleting financial history: contact/profile data, push tokens, pet care details, health records, report text/photos and notifications are removed; minimal Booking, Service and Payment records (amount, method, status, provider references and timestamps) remain for accounting, refund, fraud and dispute handling. A sole active Owner must transfer responsibility or activate another Owner before being deactivated or deleted.
+
 ---
 
 ## 15. Documentation Map
@@ -226,18 +234,18 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 01 | Project Overview | ✅ Completed (this document) |
 | 02 | Product Requirements | ✅ Completed |
 | 03 | System Architecture | ✅ Completed |
-| 04 | Database Design | ⏳ Not started |
-| 05 | API Design | ⏳ Not started |
-| 06 | AI Agent Design | ⏳ Not started |
-| 07 | Camera System Design | ⏳ Not started |
-| 08 | Payment Design | ⏳ Not started |
-| 09 | Notification Design | ⏳ Not started |
-| 10 | Deployment | ⏳ Not started |
-| 11 | Security | ⏳ Not started |
-| 12 | UI Design | ⏳ Not started |
-| 13 | Testing | ⏳ Not started |
-| 14 | Roadmap | ⏳ Not started |
-| 15 | Development Handbook | ⏳ Not started |
+| 04 | Database Design | ✅ Completed |
+| 05 | API Design | ✅ Completed |
+| 06 | AI Agent Design | ✅ Completed (V1 non-AI Help Center; paid AI deferred) |
+| 07 | Camera System Design | ⏸ Deferred until after core production launch |
+| 08 | Payment Design | ✅ Completed |
+| 09 | Notification Design | ✅ Completed |
+| 10 | Deployment | ✅ Completed (external provisioning pending) |
+| 11 | Security | ✅ Completed (production controls pending) |
+| 12 | UI Design | ✅ Completed |
+| 13 | Testing | ✅ Completed |
+| 14 | Roadmap | 📝 Draft (pending review) |
+| 15 | Development Handbook | 📝 Draft (pending review) |
 
 > Update this table's status as each document is completed to keep the documentation map traceable.
 
@@ -252,3 +260,22 @@ PetHome follows Documentation Driven Development, completed one document at a ti
 | 2026-07-02 | v0.3 | Added project positioning statement (commercial-grade standard, not an academic demo); added Assumptions section; added the 15-document documentation map; translated to English | Xiyun Liu |
 | 2026-07-22 | v0.4 | Clarified in Section 11 that business onboarding is self-service from Version 1 onward (not admin-provisioned), since the platform is intended to be resold to other pet care businesses later | Xiyun Liu |
 | 2026-07-26 | v0.5 | Corrected the Documentation Map: `03_System_Architecture.md` had reached v0.5 but was still listed as "Not started" | Xiyun Liu |
+| 2026-07-29 | v0.6 | Clarified that `Pet` is deliberately not one of the tables reserving `business_id` — a pet belongs to its owning customer, not a business, and can be booked with any business; corrected §11's bullet, which previously listed Pet alongside Booking/Service as if it carried `business_id` | Xiyun Liu |
+| 2026-07-30 | v0.7 | Reversed the v0.4 decision: business onboarding is bootstrap-only as of this date, not an ongoing self-service surface — see `02_Product_Requirements.md` US-01.4 and `03_System_Architecture.md`'s ADR table for why (open registration meant customer service browsing, which has no per-business filter, would mix every registered business's listings) | Xiyun Liu |
+| 2026-08-01 | v0.8 | Added the Version 1 account lifecycle/data-retention baseline: password reset/change and session revocation, staff activation safeguards, in-app account deletion, irreversible anonymization of personal/care media, and retention of only the booking/payment records required for financial and dispute history | Xiyun Liu |
+| 2026-08-01 | v0.9 | Completed the launch-oriented account/media baseline: Resend password-reset delivery with App/web fallback links, mandatory staff first-password gate, `ytpaws://` deep links, public privacy/terms/deletion pages, persistent security-event rate limiting and login lockout, plus S3-compatible direct media uploads and a legacy base64 migration command | Xiyun Liu |
+| 2026-08-02 | v0.10 | Added the vendor-neutral production deployment baseline: Docker image, automatic database migrations, health probes, platform port support, graceful shutdown, strict production environment validation and CI container verification | Xiyun Liu |
+| 2026-08-02 | v0.11 | Added App-store readiness cleanup: formal mobile display name and native permission/export settings, removal of unfinished review-facing actions, explicit EAS push-project handling and a real support page; confirmed V1 daily reports are photo-only with a 5 MB image limit | Xiyun Liu |
+| 2026-08-03 | v0.12 | Added a zero-cost bilingual in-app Help Center as the V1 customer-assistance surface. It uses local curated rules through a provider interface; paid LLM/AI execution remains deferred to v1.5 and is not required for launch | Xiyun Liu |
+| 2026-08-04 | v0.13 | Added production operations and booking-control baseline: configurable unlimited-by-default business/service/staff concurrent capacities, a uniform 24-hour cancellation cutoff, proactive Stripe/email/stuck-refund webhook alerts, expanded core-flow e2e coverage, and removal of remaining auth/navigation English-only surfaces | Xiyun Liu |
+| 2026-08-05 | v0.14 | Completed locale-aware date presentation across booking, business dashboard, payment and notification screens (`en-NZ` / `zh-CN`) without changing ISO API payloads | Xiyun Liu |
+| 2026-08-06 | v0.15 | Verified production observability paths end-to-end: registered the previously orphaned health controller so liveness/readiness routes are actually reachable, required HTTPS for the alert webhook, and added alert/refund-monitor plus health-probe regression tests | Xiyun Liu |
+| 2026-08-07 | v0.16 | Completed `04_Database_Design.md` and `05_API_Design.md`; added production-oriented booking overlap indexes and documented/tested the exact capacity, 24-hour cancellation and payment-retention boundaries | Xiyun Liu |
+| 2026-08-07 | v0.17 | Completed `06_AI_Agent_Design.md`: documented the shipped zero-cost bilingual Help Center and defined backend-only security, privacy, tool authorization, human-handoff and cost gates for any future paid AI agent | Xiyun Liu |
+| 2026-08-07 | v0.18 | Completed Payment, Notification, Deployment and Security design documents from the implemented code; deferred Camera until after core launch and tightened production validation for Stripe credentials and explicit HTTPS CORS origins | Xiyun Liu |
+| 2026-08-08 | v0.19 | Reconciled V1 scope with the shipped role-scoped management screens and added release configuration/document-drift safeguards to CI | Xiyun Liu |
+| 2026-08-08 | v0.20 | Closed the bootstrap Business race at the database layer, completed UI/testing strategy documents and promoted live-provider, private-media, monitoring, penetration-test, restore and rollback evidence to production release gates | Xiyun Liu |
+| 2026-08-09 | v0.21 | Implemented private signed media reads, rotating per-device sessions, Expo receipt reconciliation, and backup/restore/immutable-image verification tools; real-provider evidence remains gated | Xiyun Liu |
+| 2026-08-11 | v0.22 | Added `15_Development_Handbook.md` draft (setup, local run modes, code style, testing, git/CI, migration workflow); `14_Roadmap.md` still pending maintainer input | Xiyun Liu |
+| 2026-08-11 | v0.23 | Added `14_Roadmap.md` draft from maintainer dictation: V1 public launch deliberately deferred past internal testing; V1.5 priority order set (AI daily reports → AI assistant → private chat); Camera and Pet Store/e-commerce reordered to last priority, superseding §10's original V2/V3 placement pending reconciliation | Xiyun Liu |
+| 2026-08-11 | v0.24 | Reconciled §7 and §10 with `14_Roadmap.md`: Version 2/3 scope buckets unchanged, but both sections now note that Camera and Pet Store/e-commerce are sequenced last rather than in version-number order, pointing to the Roadmap as the authoritative sequencing source | Xiyun Liu |

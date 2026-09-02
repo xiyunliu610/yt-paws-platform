@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 
 const API_PORT = 3000;
 
@@ -13,10 +14,33 @@ function resolveDevHost(): string | null {
   return hostUri?.split(':')[0] ?? null;
 }
 
+// EXPO_PUBLIC_-prefixed env vars are inlined into the JS bundle at build
+// time (Expo SDK 49+, no extra config needed) — set per environment via
+// eas.json's per-profile `env`, or a local .env.* file. This is the only
+// way a standalone (non-Metro) build reaches a real backend; without it,
+// the dev-host/localhost fallback below would make a production build
+// silently try to talk to the phone it's running on.
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
+export const PUBLIC_WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || configuredApiUrl || 'http://localhost:3000').replace(/\/$/, '');
+
 const devHost = resolveDevHost();
-const BASE_URL = devHost
-  ? `http://${devHost}:${API_PORT}`
-  : Platform.select({ android: `http://10.0.2.2:${API_PORT}`, default: `http://localhost:${API_PORT}` });
+const BASE_URL =
+  configuredApiUrl ||
+  (devHost
+    ? `http://${devHost}:${API_PORT}`
+    : Platform.select({ android: `http://10.0.2.2:${API_PORT}`, default: `http://localhost:${API_PORT}` }));
+
+if (!configuredApiUrl && !__DEV__) {
+  // A release JS bundle (EAS preview/production build, or `expo export`)
+  // has no Metro dev server to infer a host from, so devHost is always
+  // null here — this only fires when EXPO_PUBLIC_API_URL was left unset
+  // for a non-dev build, which otherwise fails silently (every request
+  // just times out against the phone's own loopback address).
+  console.error(
+    'EXPO_PUBLIC_API_URL is not set for this build — the app cannot reach a backend. ' +
+      "Set it in eas.json's env for this build profile before distributing this build.",
+  );
+}
 
 export class ApiError extends Error {
   constructor(
@@ -27,7 +51,16 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+type RefreshHandler = () => Promise<AuthResponse>;
+let refreshHandler: RefreshHandler | null = null;
+let refreshInFlight: Promise<AuthResponse> | null = null;
+
+export function configureSessionRefresh(handler: RefreshHandler | null) {
+  refreshHandler = handler;
+  if (!handler) refreshInFlight = null;
+}
+
+async function request<T>(path: string, options: RequestInit = {}, token?: string, retried = false): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -38,6 +71,12 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   });
 
   const body = await response.json().catch(() => null);
+
+  if (response.status === 401 && token && !retried && refreshHandler) {
+    refreshInFlight ??= refreshHandler().finally(() => { refreshInFlight = null; });
+    const refreshed = await refreshInFlight;
+    return request<T>(path, options, refreshed.token, true);
+  }
 
   if (!response.ok) {
     const message = body?.message ?? 'Request failed';
@@ -52,26 +91,102 @@ export interface AuthUser {
   email: string;
   name: string | null;
   role: string;
+  mustChangePassword: boolean;
+  locale: 'en' | 'zh';
 }
 
 export interface AuthResponse {
   token: string;
+  refreshToken: string;
   user: AuthUser;
 }
 
+const deviceName = [Device.deviceName, Device.modelName, Device.osName].find(Boolean) ?? 'Mobile device';
+
 export const authApi = {
-  register: (email: string, password: string, name: string, phone?: string) =>
+  register: (email: string, password: string, name: string, phone?: string, locale: 'en' | 'zh' = 'en') =>
     request<AuthResponse>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name, phone }),
+      body: JSON.stringify({ email, password, name, phone, deviceName, locale }),
     }),
 
   login: (email: string, password: string) =>
     request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, deviceName }),
     }),
 
+  refresh: (refreshToken: string) => request<AuthResponse>('/auth/refresh', {
+    method: 'POST', body: JSON.stringify({ refreshToken }),
+  }),
+
+  logout: (token: string) => request<{ loggedOut: true }>('/auth/logout', { method: 'POST' }, token),
+
+  sessions: (token: string) => request<AuthSession[]>('/auth/sessions', {}, token),
+
+  revokeSession: (token: string, sessionId: string) =>
+    request<{ revoked: true }>(`/auth/sessions/${sessionId}`, { method: 'DELETE' }, token),
+
+  updateLocale: (token: string, locale: 'en' | 'zh') =>
+    request<{ locale: 'en' | 'zh' }>('/auth/locale', { method: 'PATCH', body: JSON.stringify({ locale }) }, token),
+
+  forgotPassword: (email: string) =>
+    request<{ accepted: true }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (resetToken: string, newPassword: string) =>
+    request<{ reset: true }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: resetToken, newPassword }),
+    }),
+
+  changePassword: (token: string, currentPassword: string, newPassword: string) =>
+    request<AuthResponse>(
+      '/auth/change-password',
+      { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) },
+      token,
+    ),
+
+  deleteAccount: (token: string, password: string) =>
+    request<{ deleted: true }>(
+      '/auth/account',
+      { method: 'DELETE', body: JSON.stringify({ password }) },
+      token,
+    ),
+
+};
+
+export interface AuthSession {
+  id: string;
+  deviceName: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  current: boolean;
+}
+
+export type MediaPurpose = 'pet' | 'report' | 'wechat-qr';
+
+export const mediaApi = {
+  upload: async (token: string, localUri: string, purpose: MediaPurpose, contentType = 'image/jpeg') => {
+    const fileResponse = await fetch(localUri);
+    const blob = await fileResponse.blob();
+    if (blob.size > 5 * 1024 * 1024) throw new ApiError(413, 'Image must be 5 MB or smaller');
+    const signed = await request<{ uploadUrl: string; publicUrl: string }>(
+      '/media/upload-url',
+      { method: 'POST', body: JSON.stringify({ purpose, contentType, size: blob.size }) },
+      token,
+    );
+    const uploadResponse = await fetch(signed.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: blob,
+    });
+    if (!uploadResponse.ok) throw new ApiError(uploadResponse.status, 'Media upload failed');
+    return signed.publicUrl;
+  },
 };
 
 export interface Service {
@@ -85,11 +200,35 @@ export interface Service {
   // date range (e.g. boarding).
   pricingUnit: 'flat' | 'per_day';
   durationMinutes: number | null;
+  maxConcurrentBookings: number | null;
   isActive: boolean;
 }
 
+export interface ServiceInput {
+  name: string;
+  description?: string;
+  price: number;
+  pricingUnit?: 'flat' | 'per_day';
+  durationMinutes?: number;
+  maxConcurrentBookings?: number | null;
+}
+
+export interface ServiceUpdateInput extends Partial<ServiceInput> {
+  isActive?: boolean;
+}
+
 export const servicesApi = {
+  // For a customer, only active services; for owner/staff, every service on
+  // their business (including delisted ones, so they can re-publish them).
   list: (token: string) => request<Service[]>('/services', {}, token),
+
+  // Owner/admin only.
+  create: (token: string, data: ServiceInput) =>
+    request<Service>('/services', { method: 'POST', body: JSON.stringify(data) }, token),
+
+  // Owner/admin only.
+  update: (token: string, serviceId: string, data: ServiceUpdateInput) =>
+    request<Service>(`/services/${serviceId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
 };
 
 export interface Pet {
@@ -103,8 +242,7 @@ export interface Pet {
   personality: string | null;
   dietNotes: string | null;
   isNeutered: boolean | null;
-  // Same interim base64-data-URI approach as DailyReport.mediaUrls — see
-  // docs/03_System_Architecture.md §5.3.
+  // HTTPS object-storage URL.
   photoUrl: string | null;
 }
 
@@ -168,6 +306,11 @@ export interface Booking {
   service?: { name: string };
 }
 
+export interface BookingCareDetails {
+  pet: Pet & { healthRecords: PetHealthRecord[] };
+  customer: { name: string | null; email: string; phone: string | null };
+}
+
 export const bookingsApi = {
   create: (
     token: string,
@@ -175,6 +318,9 @@ export const bookingsApi = {
   ) => request<Booking>('/bookings', { method: 'POST', body: JSON.stringify(data) }, token),
 
   mine: (token: string) => request<Booking[]>('/bookings/mine', {}, token),
+
+  careDetails: (token: string, bookingId: string) =>
+    request<BookingCareDetails>(`/bookings/${bookingId}/care-details`, {}, token),
 
   cancel: (token: string, bookingId: string) =>
     request<Booking>(`/bookings/${bookingId}/cancel`, { method: 'PATCH' }, token),
@@ -223,8 +369,9 @@ export interface Payment {
   bookingId: string;
   method: 'stripe' | 'wechat_qr';
   amount: number;
-  status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded';
+  status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded' | 'cancelled' | 'refund_pending';
   referenceNote: string | null;
+  refundReason?: string | null;
   createdAt: string;
   // Only present on responses from paymentsApi.mine()/business(), which
   // join these in; business() additionally joins the customer's name/email.
@@ -268,6 +415,19 @@ export const paymentsApi = {
   verify: (token: string, paymentId: string) =>
     request<Payment>(`/payments/${paymentId}/verify`, { method: 'PATCH' }, token),
 
+  // Owner/admin only. Full refund only — no partial amounts in V1. `reason`
+  // is required (surfaced to the customer and kept for audit).
+  refund: (token: string, paymentId: string, reason: string) =>
+    request<Payment>(
+      `/payments/${paymentId}/refund`,
+      { method: 'PATCH', body: JSON.stringify({ reason }) },
+      token,
+    ),
+
+  // Owner/admin recovery path for a Stripe refund left in refund_pending.
+  reconcileRefund: (token: string, paymentId: string) =>
+    request<Payment>(`/payments/${paymentId}/reconcile-refund`, { method: 'POST' }, token),
+
   // Creates a Stripe Checkout Session; returnUrl is where the hosted page
   // redirects back to (see src/screens/PaymentScreen.tsx, which builds it
   // via Linking.createURL and opens checkoutUrl with openAuthSessionAsync).
@@ -290,7 +450,35 @@ export interface StaffMember {
   name: string | null;
   phone: string | null;
   role: string;
+  isActive: boolean;
+  mustChangePassword: boolean;
+  maxConcurrentBookings: number | null;
 }
+
+export interface Business {
+  id: string;
+  name: string;
+  region: string | null;
+  wechatQrCodeUrl: string | null;
+  maxConcurrentBookings: number | null;
+}
+
+export interface BusinessUpdateInput {
+  name?: string;
+  // null clears the field; undefined/omitted leaves it unchanged.
+  region?: string | null;
+  wechatQrCodeUrl?: string | null;
+  maxConcurrentBookings?: number | null;
+}
+
+export const businessesApi = {
+  // Owner/admin only.
+  getMine: (token: string) => request<Business>('/businesses/me', {}, token),
+
+  // Owner/admin only.
+  updateMine: (token: string, data: BusinessUpdateInput) =>
+    request<Business>('/businesses/me', { method: 'PATCH', body: JSON.stringify(data) }, token),
+};
 
 export const staffApi = {
   list: (token: string) => request<StaffMember[]>('/auth/staff', {}, token),
@@ -299,6 +487,20 @@ export const staffApi = {
     request<{ user: StaffMember; temporaryPassword: string }>(
       '/auth/staff',
       { method: 'POST', body: JSON.stringify(data) },
+      token,
+    ),
+
+  updateStatus: (token: string, staffId: string, isActive: boolean) =>
+    request<StaffMember>(
+      `/auth/staff/${staffId}/status`,
+      { method: 'PATCH', body: JSON.stringify({ isActive }) },
+      token,
+    ),
+
+  updateCapacity: (token: string, staffId: string, maxConcurrentBookings: number | null) =>
+    request<StaffMember>(
+      `/auth/staff/${staffId}/capacity`,
+      { method: 'PATCH', body: JSON.stringify({ maxConcurrentBookings }) },
       token,
     ),
 };
@@ -325,6 +527,10 @@ export const notificationsApi = {
       token,
     ),
 
-  unregisterDevice: (token: string) =>
-    request<{ registered: boolean }>('/notifications/unregister-device', { method: 'PATCH' }, token),
+  unregisterDevice: (token: string, pushToken: string) =>
+    request<{ registered: boolean }>(
+      '/notifications/unregister-device',
+      { method: 'PATCH', body: JSON.stringify({ pushToken }) },
+      token,
+    ),
 };
