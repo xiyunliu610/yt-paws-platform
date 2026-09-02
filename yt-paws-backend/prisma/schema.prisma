@@ -24,6 +24,7 @@ enum BookingStatus {
 enum PaymentMethod {
   stripe
   wechat_qr
+  poli
 }
 
 enum PricingUnit {
@@ -56,6 +57,17 @@ enum CheckoutAttemptStatus {
   pending
   succeeded
   expired
+}
+
+// Provider-neutral lifecycle for a POLi transaction attempt. These are
+// internal states only; mapping POLi's UAT response/event values onto them
+// is intentionally deferred until the official integration contract and
+// credentials arrive.
+enum PoliAttemptStatus {
+  pending
+  succeeded
+  failed
+  cancelled
 }
 
 /// A pet care business onboarded to the platform. Version 1 has exactly one
@@ -135,12 +147,12 @@ model AuthSession {
 }
 
 model PushDevice {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @db.Uuid
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String       @unique
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
   tickets   PushTicket[]
 
   @@index([userId])
@@ -280,17 +292,20 @@ model Booking {
 }
 
 // At most one "active" Payment per booking per method, and at most one
-// "paid" Payment per booking across *all* methods — enforced by three
+// "paid" Payment per booking across *all* methods — enforced by
 // partial unique indexes Prisma's schema DSL can't express (no WHERE clause
 // support), added by hand instead:
 //   payment_stripe_pending_unique   ON ("bookingId") WHERE method='stripe' AND status='pending'
 //     (20260729130000_payment_dedup_and_stripe_attempts)
 //   payment_wechat_active_unique    ON ("bookingId") WHERE method='wechat_qr' AND status IN ('pending','pending_verification')
 //     (20260729130000_payment_dedup_and_stripe_attempts)
+//   payment_poli_pending_unique     ON ("bookingId") WHERE method='poli' AND status='pending'
+//     (20260903000000_poli_poc_schema)
 //   payment_booking_paid_unique     ON ("bookingId") WHERE status IN ('paid','refund_pending')
 //     (20260731000000_cross_method_payment_dedup; predicate widened to
 //     include refund_pending by 20260801000001_refund_state_machine_index) — the
-//     second index only dedupes within one method; without this one, a
+//     method-specific indexes only dedupe within one method; without this
+//     cross-method index, a
 //     booking could have a Stripe payment reach `paid` via the webhook
 //     *and* a WeChat payment reach `paid` via owner verification,
 //     independently, since neither path checks the other method. See
@@ -306,12 +321,12 @@ model Booking {
 // for any of them, so it will propose dropping them — always review with
 // --create-only rather than letting it apply automatically.
 model Payment {
-  id               String                  @id @default(uuid()) @db.Uuid
-  bookingId        String                  @db.Uuid
-  booking          Booking                 @relation(fields: [bookingId], references: [id])
+  id               String                   @id @default(uuid()) @db.Uuid
+  bookingId        String                   @db.Uuid
+  booking          Booking                  @relation(fields: [bookingId], references: [id])
   method           PaymentMethod
-  amount           Decimal                 @db.Decimal(10, 2)
-  status           PaymentStatus           @default(pending)
+  amount           Decimal                  @db.Decimal(10, 2)
+  status           PaymentStatus            @default(pending)
   referenceNote    String?
   // One row per Stripe Checkout Session ever created for this Payment (see
   // StripeCheckoutAttempt) — a retry creates a new session rather than
@@ -319,22 +334,26 @@ model Payment {
   // until it expires and its webhook event must still resolve back to this
   // Payment.
   checkoutAttempts StripeCheckoutAttempt[]
+  // One row per POLi transaction initiation attempt. The provider reference
+  // remains nullable until a future implementation receives a confirmed UAT
+  // response; no unverified POLi request/response fields are modelled here.
+  poliAttempts     PoliTransactionAttempt[]
   verifiedAt       DateTime?
   // Refunds: V1 only supports refunding a Payment in full (see
   // PaymentsService.refundPayment) — a distinct Refund model would only
   // earn its keep once partial/multiple refunds per Payment are needed.
   refundedAt       DateTime?
   refundReason     String?
-  refundedById     String?                 @db.Uuid
-  refundedBy       User?                   @relation("PaymentRefundedBy", fields: [refundedById], references: [id])
+  refundedById     String?                  @db.Uuid
+  refundedBy       User?                    @relation("PaymentRefundedBy", fields: [refundedById], references: [id])
   // Stripe's refund id (re_...), captured after a successful
   // stripe.refunds.create call — kept for support/audit lookups against the
   // Stripe dashboard. (The idempotency key that prevents double-refunding
   // on a retried request is the Payment's own id, passed to
   // stripe.refunds.create — this column is the result, not the key.)
   stripeRefundId   String?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
 }
 
 model StripeCheckoutAttempt {
@@ -351,6 +370,23 @@ model StripeCheckoutAttempt {
   // isn't that.
   paymentIntentId String?
   createdAt       DateTime              @default(now())
+}
+
+model PoliTransactionAttempt {
+  id                String            @id @default(uuid()) @db.Uuid
+  paymentId         String            @db.Uuid
+  payment           Payment           @relation(fields: [paymentId], references: [id])
+  // A provider-issued transaction reference is required to correlate a
+  // future POLi status notification with this local attempt. It is nullable
+  // because the local row may be created before any external request, and
+  // its exact UAT response field name is deliberately not assumed here.
+  providerReference String?           @unique
+  status            PoliAttemptStatus @default(pending)
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([paymentId, status])
 }
 
 model DailyReport {

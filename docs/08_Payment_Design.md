@@ -101,12 +101,23 @@ Stripe Checkout for this App pays for real-world pet-care services, not digital 
 - Alerts and customer/business notifications arrive.
 - Dashboard totals match Stripe and bank/WeChat evidence.
 
-## 11. Deferred
+## 11. POLi proof-of-concept boundary
+
+The POLi proof of concept reserves `PaymentMethod.poli`, a local
+`PoliTransactionAttempt` audit model, an inactive NestJS `poli` module and empty
+environment-variable names. It deliberately exposes no API route and makes no
+external request until POLi supplies the official UAT endpoint, credentials,
+authentication rules, payload fields, notification contract and refund flow.
+The provider reference remains nullable so a local attempt can be created before
+a future external request without guessing POLi's response schema.
+
+## 12. Deferred
 
 Partial refunds, deposits, saved cards, subscriptions, automatic WeChat merchant API, chargeback workflow and multi-currency accounting are outside V1.
 
 ## Change Log
 
-| Date | Version | Change |
-|---|---|---|
-| 2026-08-07 | 1.0 | Documented implemented Stripe/WeChat flows, concurrency invariants, refunds, recovery, permissions and production verification. |
+| Date       | Version | Change                                                                                                                          |
+| ---------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-03 | 1.1     | Reserved the provider-neutral POLi POC schema and inactive backend module pending the official UAT integration contract.        |
+| 2026-08-07 | 1.0     | Documented implemented Stripe/WeChat flows, concurrency invariants, refunds, recovery, permissions and production verification. |

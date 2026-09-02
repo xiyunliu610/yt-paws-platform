@@ -7,6 +7,7 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { ServicesModule } from './modules/services/services.module';
 import { BusinessesModule } from './modules/businesses/businesses.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { PoliModule } from './modules/poli/poli.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PublicModule } from './modules/public/public.module';
@@ -29,6 +30,7 @@ import { RequestLoggingInterceptor } from './common/interceptors/request-logging
     ServicesModule,
     BusinessesModule,
     PaymentsModule,
+    PoliModule,
     ReportsModule,
     NotificationsModule,
     PublicModule,
