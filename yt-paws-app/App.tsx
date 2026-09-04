@@ -284,7 +284,7 @@ const App = () => {
     <SafeAreaProvider>
       <LanguageProvider>
         <AuthProvider>
-          <StatusBar style="dark" backgroundColor="#FFFFFF" />
+          <StatusBar style="dark" />
           <Navigation />
         </AuthProvider>
       </LanguageProvider>
