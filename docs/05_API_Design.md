@@ -108,6 +108,11 @@ Booking states follow `pending → confirmed → in_progress → completed`; eli
 | GET | `/payments/mine` | JWT customer | Customer payment history. |
 | GET | `/payments/business` | owner/admin | Business payment queue/history. |
 | GET | `/payments/:id` | authorized JWT | Read one payment subject to ownership/business rules. |
+| GET | `/payments/poli/availability` | JWT | Whether POLi UAT payments are currently configured and enabled. |
+| POST | `/payments/poli/:bookingId` | booking customer | Create/reuse a POLi payment and hosted-payment redirect using the supplied allow-listed return URL. |
+| GET | `/payments/poli/:paymentId/status` | payment customer | Poll the current POLi payment status via an authenticated GetTransaction call. |
+| POST | `/payments/poli/nudge/:attemptId` | unauthenticated (POLi Nudge) | Receive a POLi Nudge callback; the payload is never trusted as payment proof, it only triggers a server-side GetTransaction lookup by attempt id. |
+| GET | `/payments/poli/return/:outcome` | unauthenticated | Redirect the customer back into the app after leaving POLi's hosted payment page. |
 
 Amounts come from the Booking snapshot, never from App input. Stripe webhook authenticity uses `STRIPE_WEBHOOK_SECRET`; Session IDs and PaymentIntent IDs are persisted. Database partial unique indexes and provider idempotency keys protect retries and cross-method races. Switching methods expires/cancels the superseded active attempt where possible.
 
@@ -139,3 +144,4 @@ In-app notification rows are authoritative. The server selects English or Chines
 | 2026-08-08 | 1.1 | Added a backward-compatible API-version migration path, multi-device notification contract and CI controller-route drift detection; explicitly recorded the remaining lack of generated OpenAPI schemas. |
 | 2026-08-09 | 1.2 | Added refresh/logout/session-revocation endpoints and authenticated private-media reads. |
 | 2026-08-10 | 1.3 | Added generated OpenAPI drift enforcement, account locale updates and recipient-language notifications. |
+| 2026-09-04 | 1.4 | Added the POLi UAT payment endpoints (availability, initiate, status, Nudge callback, hosted-page return). |

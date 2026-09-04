@@ -1017,7 +1017,7 @@
     },
     "/payments/{id}/verify": {
       "patch": {
-        "operationId": "PaymentsController_verifyWechatPayment",
+        "operationId": "PaymentsController_verifyManualPayment",
         "parameters": [
           {
             "name": "id",
@@ -1176,6 +1176,113 @@
         },
         "tags": [
           "Payments"
+        ]
+      }
+    },
+    "/payments/poli/availability": {
+      "get": {
+        "operationId": "PoliController_availability",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Poli"
+        ]
+      }
+    },
+    "/payments/poli/nudge/{attemptId}": {
+      "post": {
+        "operationId": "PoliController_handleNudge",
+        "parameters": [
+          {
+            "name": "attemptId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Poli"
+        ]
+      }
+    },
+    "/payments/poli/return/{outcome}": {
+      "get": {
+        "operationId": "PoliController_handleReturn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Poli"
+        ]
+      }
+    },
+    "/payments/poli/{bookingId}": {
+      "post": {
+        "operationId": "PoliController_initiate",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitiatePoliDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Poli"
+        ]
+      }
+    },
+    "/payments/poli/{paymentId}/status": {
+      "get": {
+        "operationId": "PoliController_refresh",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Poli"
         ]
       }
     },
@@ -1913,6 +2020,18 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "InitiatePoliDto": {
+        "type": "object",
+        "properties": {
+          "returnUrl": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "returnUrl"
         ]
       },
       "CreateReportDto": {
