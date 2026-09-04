@@ -1,4 +1,15 @@
-import { Controller, Post, Patch, Get, Param, ParseUUIDPipe, Body, Req, Headers, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Patch,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Body,
+  Req,
+  Headers,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -10,7 +21,10 @@ import { OperationalAlertsService } from '../operations/operational-alerts.servi
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private paymentsService: PaymentsService, private alerts: OperationalAlertsService) {}
+  constructor(
+    private paymentsService: PaymentsService,
+    private alerts: OperationalAlertsService,
+  ) {}
 
   // Must be declared before 'stripe/:bookingId' — Nest/Express match routes
   // in registration order, so the parameterized route would otherwise treat
@@ -24,9 +38,15 @@ export class PaymentsController {
     @Headers('stripe-signature') signature: string,
   ) {
     try {
-      return await this.paymentsService.handleStripeWebhook(req.rawBody, signature);
+      return await this.paymentsService.handleStripeWebhook(
+        req.rawBody,
+        signature,
+      );
     } catch (error) {
-      await this.alerts.send('stripe_webhook_failed', error instanceof Error ? error.message : 'Unknown Stripe webhook error');
+      await this.alerts.send(
+        'stripe_webhook_failed',
+        error instanceof Error ? error.message : 'Unknown Stripe webhook error',
+      );
       throw error;
     }
   }
@@ -38,26 +58,39 @@ export class PaymentsController {
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Body() body: InitiateStripeDto,
   ) {
-    return this.paymentsService.initiateStripe(req.user, bookingId, body.returnUrl);
+    return this.paymentsService.initiateStripe(
+      req.user,
+      bookingId,
+      body.returnUrl,
+    );
   }
 
   @Post('wechat/:bookingId')
   @UseGuards(JwtAuthGuard)
-  initiateWechat(@Req() req: AuthenticatedRequest, @Param('bookingId', ParseUUIDPipe) bookingId: string) {
+  initiateWechat(
+    @Req() req: AuthenticatedRequest,
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+  ) {
     return this.paymentsService.initiateWechat(req.user, bookingId);
   }
 
   @Patch(':id/mark-paid')
   @UseGuards(JwtAuthGuard)
-  markWechatPaid(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+  markWechatPaid(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.paymentsService.markWechatPaid(req.user, id);
   }
 
   @Patch(':id/verify')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner', 'admin')
-  verifyWechatPayment(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
-    return this.paymentsService.verifyWechatPayment(req.user, id);
+  verifyManualPayment(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.paymentsService.verifyManualPayment(req.user, id);
   }
 
   @Patch(':id/refund')
@@ -74,7 +107,10 @@ export class PaymentsController {
   @Post(':id/reconcile-refund')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner', 'admin')
-  reconcileRefund(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+  reconcileRefund(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.paymentsService.reconcileRefund(req.user, id);
   }
 
@@ -95,7 +131,10 @@ export class PaymentsController {
   // captured as :id by this route.
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  findOne(@Req() req: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+  findOne(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.paymentsService.findOne(req.user, id);
   }
 }

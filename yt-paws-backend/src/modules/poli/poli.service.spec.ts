@@ -1,26 +1,31 @@
-import { ConfigService } from '@nestjs/config';
-import { PoliService } from './poli.service';
+import { PoliAttemptStatus } from '@prisma/client';
+import { extractPoliToken, mapPoliProviderStatus } from './poli.service';
 
-describe('PoliService configuration boundary', () => {
-  it('reports every missing UAT setting without exposing values', () => {
-    const configService = new ConfigService();
-    jest.spyOn(configService, 'get').mockReturnValue(undefined);
-    const service = new PoliService(configService);
-
-    expect(service.getConfigurationStatus()).toEqual({
-      configured: false,
-      missing: ['POLI_MERCHANT_CODE', 'POLI_AUTH_CODE', 'POLI_API_BASE_URL'],
-    });
+describe('POLi provider contract mapping', () => {
+  it.each([
+    ['Completed', PoliAttemptStatus.succeeded],
+    ['PaymentPending', PoliAttemptStatus.payment_pending],
+    ['Cancelled', PoliAttemptStatus.cancelled],
+    ['Failed', PoliAttemptStatus.failed],
+    ['ReceiptUnverified', PoliAttemptStatus.receipt_unverified],
+    ['TimedOut', PoliAttemptStatus.timed_out],
+    ['InProcess', PoliAttemptStatus.pending],
+    ['FutureUndocumentedStatus', PoliAttemptStatus.pending],
+  ])('maps %s without treating uncertain values as paid', (provider, local) => {
+    expect(mapPoliProviderStatus(provider)).toBe(local);
   });
 
-  it('reports configured only when all three official settings are present', () => {
-    const configService = new ConfigService();
-    jest.spyOn(configService, 'get').mockReturnValue('provided-by-poli');
-    const service = new PoliService(configService);
-
-    expect(service.getConfigurationStatus()).toEqual({
-      configured: true,
-      missing: [],
-    });
+  it('extracts a token only from an HTTPS paywithpoli.com URL', () => {
+    expect(
+      extractPoliToken(
+        'https://txn.apac.paywithpoli.com/?Token=official-test-token',
+      ),
+    ).toBe('official-test-token');
+    expect(
+      extractPoliToken('https://malicious.example/?Token=stolen'),
+    ).toBeNull();
+    expect(
+      extractPoliToken('http://txn.apac.paywithpoli.com/?Token=insecure'),
+    ).toBeNull();
   });
 });

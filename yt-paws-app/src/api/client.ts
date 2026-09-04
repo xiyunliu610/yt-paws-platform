@@ -367,7 +367,7 @@ export const reportsApi = {
 export interface Payment {
   id: string;
   bookingId: string;
-  method: 'stripe' | 'wechat_qr';
+  method: 'stripe' | 'wechat_qr' | 'poli';
   amount: number;
   status: 'pending' | 'pending_verification' | 'paid' | 'failed' | 'refunded' | 'cancelled' | 'refund_pending';
   referenceNote: string | null;
@@ -397,7 +397,31 @@ export interface StripeCheckoutIntent {
   checkoutUrl: string;
 }
 
+export interface PoliCheckoutIntent {
+  paymentId: string;
+  amount: number;
+  checkoutUrl: string;
+}
+
+export interface PoliPaymentStatus {
+  paymentId: string;
+  status: Payment['status'];
+  providerStatus: string | null;
+}
+
 export const paymentsApi = {
+  poliAvailability: (token: string) => request<{ available: boolean }>('/payments/poli/availability', {}, token),
+
+  initiatePoli: (token: string, bookingId: string, returnUrl: string) =>
+    request<PoliCheckoutIntent>(
+      `/payments/poli/${bookingId}`,
+      { method: 'POST', body: JSON.stringify({ returnUrl }) },
+      token,
+    ),
+
+  refreshPoli: (token: string, paymentId: string) =>
+    request<PoliPaymentStatus>(`/payments/poli/${paymentId}/status`, {}, token),
+
   // Idempotent: reuses an existing pending/pending_verification wechat_qr
   // payment for this booking instead of creating a duplicate.
   initiateWechat: (token: string, bookingId: string) =>

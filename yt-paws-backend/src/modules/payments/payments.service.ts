@@ -48,7 +48,7 @@ export function isAllowedPaymentReturnUrl(
   return false;
 }
 
-interface RequestingUser {
+export interface RequestingUser {
   userId: string;
   role: string;
   businessId: string | null;
@@ -91,7 +91,11 @@ export class PaymentsService {
     return unitPrice;
   }
 
-  private async loadPayableBooking(user: RequestingUser, bookingId: string) {
+  private async loadPayableBooking(
+    user: RequestingUser,
+    bookingId: string,
+    intendedMethod: PaymentMethod,
+  ) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: { service: true },
@@ -113,15 +117,15 @@ export class PaymentsService {
       throw new BadRequestException('This booking has already been paid for');
     }
 
-    // A `pending_verification` WeChat payment means the customer has
-    // already claimed (via markWechatPaid) that real money has moved
-    // outside the app, awaiting the owner's confirmation. Letting them
+    // A `pending_verification` WeChat or POLi payment means real money may
+    // already have moved outside the app and is awaiting the owner's
+    // confirmation. Letting the customer
     // start a *different* payment method on top of that is exactly how a
     // booking ends up with two real payments — see
     // payment_booking_paid_unique on the Payment model. `pending` (not yet
-    // claimed) payments aren't blocked here; initiateStripe/initiateWechat
-    // instead cancel the other method's still-`pending` attempt when the
-    // customer switches, since nothing's actually been paid yet.
+    // claimed) payments aren't blocked here; the initiation paths instead
+    // cancel another method's still-`pending` attempt when it is safe to do
+    // so. A live POLi NavigateURL is handled separately below.
     const awaitingVerification = await this.prisma.payment.findFirst({
       where: { bookingId, status: PaymentStatus.pending_verification },
     });
@@ -131,16 +135,34 @@ export class PaymentsService {
       );
     }
 
+    // POLi has no API for invalidating an already-issued NavigateURL. Until
+    // GetTransaction reports a terminal state, starting a different method
+    // would leave two independently payable flows open.
+    if (intendedMethod !== PaymentMethod.poli) {
+      const activePoli = await this.prisma.payment.findFirst({
+        where: {
+          bookingId,
+          method: PaymentMethod.poli,
+          status: PaymentStatus.pending,
+        },
+      });
+      if (activePoli) {
+        throw new BadRequestException(
+          'A POLi payment is still in progress. Wait for it to finish before switching payment methods',
+        );
+      }
+    }
+
     return booking;
   }
 
-  // Called by initiateStripe/initiateWechat before creating their own
+  // Called by Stripe, WeChat and POLi initiation before creating their own
   // Payment: if the customer had started paying via the *other* method and
   // abandoned it without completing (still `pending`, nothing claimed or
   // captured yet), switching methods should void that attempt rather than
   // leave both alive — two simultaneously "active" payments for the same
   // booking, one per method, is exactly the setup for a double payment (see
-  // payment_booking_paid_unique). Already-`pending_verification` WeChat
+  // payment_booking_paid_unique). Already-`pending_verification` manual
   // payments are never touched here — loadPayableBooking blocks switching
   // methods in that case instead of silently cancelling a claimed payment.
   //
@@ -148,7 +170,7 @@ export class PaymentsService {
   // Stripe payment: the actual Checkout Session stays open and payable on
   // Stripe's side (sessions default to a 24h expiry, not "expires the
   // moment we stop caring locally") — a customer could still complete
-  // payment on an old, still-open tab after switching to WeChat, and the
+  // payment on an old, still-open tab after switching methods, and the
   // resulting real charge needs to land somewhere, not vanish. This
   // proactively expires the Stripe side too; handleStripeWebhook also has
   // a fallback for the case where this call doesn't win the race (the
@@ -296,7 +318,11 @@ export class PaymentsService {
     ) {
       throw new BadRequestException('Payment return URL is not allowed');
     }
-    const booking = await this.loadPayableBooking(user, bookingId);
+    const booking = await this.loadPayableBooking(
+      user,
+      bookingId,
+      PaymentMethod.stripe,
+    );
     await this.cancelOtherPendingMethodPayments(
       bookingId,
       PaymentMethod.stripe,
@@ -353,7 +379,7 @@ export class PaymentsService {
       event.type === 'refund.created' ||
       event.type === 'refund.failed'
     ) {
-      const refund = event.data.object as Stripe.Refund;
+      const refund = event.data.object;
       const paymentId = refund.metadata?.paymentId;
       if (paymentId) {
         await this.applyStripeRefundState(paymentId, refund);
@@ -371,7 +397,7 @@ export class PaymentsService {
       event.type === 'checkout.session.completed' ||
       event.type === 'checkout.session.expired'
     ) {
-      const session = event.data.object as Stripe.Checkout.Session;
+      const session = event.data.object;
       const succeeded = event.type === 'checkout.session.completed';
 
       // For a completed session, `payment_intent` is the id of the charge
@@ -482,6 +508,82 @@ export class PaymentsService {
     return { received: true };
   }
 
+  async preparePoliPayment(user: RequestingUser, bookingId: string) {
+    const booking = await this.loadPayableBooking(
+      user,
+      bookingId,
+      PaymentMethod.poli,
+    );
+    await this.cancelOtherPendingMethodPayments(bookingId, PaymentMethod.poli);
+    const payment = await this.getOrCreateActivePayment({
+      bookingId,
+      method: PaymentMethod.poli,
+      activeStatuses: [
+        PaymentStatus.pending,
+        PaymentStatus.pending_verification,
+      ],
+      amount: this.computeAmount(booking),
+    });
+    return { booking, payment };
+  }
+
+  async confirmPoliPayment(paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { booking: true },
+    });
+    if (!payment || payment.method !== PaymentMethod.poli) {
+      throw new NotFoundException('POLi payment not found');
+    }
+    if (payment.status === PaymentStatus.paid) {
+      return payment;
+    }
+
+    try {
+      const advanced = await this.prisma.payment.updateMany({
+        where: {
+          id: paymentId,
+          method: PaymentMethod.poli,
+          status: {
+            in: [PaymentStatus.pending, PaymentStatus.pending_verification],
+          },
+        },
+        data: { status: PaymentStatus.paid, verifiedAt: new Date() },
+      });
+      if (advanced.count === 1) {
+        await this.notifications.notify(
+          payment.booking.customerId,
+          'Payment Successful / 支付成功',
+          `Your POLi payment of NZD ${Number(payment.amount).toFixed(2)} was successful. / 您的 NZD ${Number(payment.amount).toFixed(2)} POLi 付款已成功。`,
+        );
+      } else {
+        const current = await this.prisma.payment.findUnique({
+          where: { id: paymentId },
+        });
+        if (current?.status !== PaymentStatus.paid) {
+          await this.handleDuplicatePaymentRace(
+            payment,
+            payment.booking.businessId,
+          );
+        }
+      }
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === UNIQUE_CONSTRAINT_VIOLATION
+      ) {
+        await this.handleDuplicatePaymentRace(
+          payment,
+          payment.booking.businessId,
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    return this.prisma.payment.findUnique({ where: { id: paymentId } });
+  }
+
   // US-04.2: no official WeChat merchant API in V1, so this just returns the
   // business's static QR code image plus a reference note for the customer
   // to quote when they transfer manually.
@@ -491,7 +593,11 @@ export class PaymentsService {
   // for the same booking, so an existing pending/pending_verification
   // wechat_qr payment is reused instead of creating a new one each call.
   async initiateWechat(user: RequestingUser, bookingId: string) {
-    const booking = await this.loadPayableBooking(user, bookingId);
+    const booking = await this.loadPayableBooking(
+      user,
+      bookingId,
+      PaymentMethod.wechat_qr,
+    );
     await this.cancelOtherPendingMethodPayments(
       bookingId,
       PaymentMethod.wechat_qr,
@@ -556,7 +662,7 @@ export class PaymentsService {
     // US-05.2: confirms to the customer their "I've paid" tap registered,
     // and — the "notify the business to reconcile" step the architecture
     // doc flagged as unimplemented — tells the business it has a transfer
-    // waiting on GET /payments/business (see verifyWechatPayment below).
+    // waiting on GET /payments/business (see verifyManualPayment below).
     await this.notifications.notify(
       user.userId,
       'Payment Submitted / 付款已提交',
@@ -569,13 +675,14 @@ export class PaymentsService {
     );
 
     const { booking: _booking, ...paymentFields } = payment;
+    void _booking;
     return { ...paymentFields, status: PaymentStatus.pending_verification };
   }
 
-  // US-04.2: the business owner reconciles the manual transfer and confirms
-  // it. Restricted to owner/admin at the controller level (RolesGuard) since
-  // staff don't have payment-verification permission (PRD User Roles).
-  async verifyWechatPayment(user: RequestingUser, paymentId: string) {
+  // The business owner reconciles a manual WeChat transfer or POLi's
+  // ReceiptUnverified outcome and confirms it. Restricted to owner/admin at
+  // the controller level because staff lack payment-verification permission.
+  async verifyManualPayment(user: RequestingUser, paymentId: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       include: { booking: true },
@@ -586,7 +693,11 @@ export class PaymentsService {
     if (!user.businessId || payment.booking.businessId !== user.businessId) {
       throw new ForbiddenException('You do not have access to this payment');
     }
-    if (payment.status !== PaymentStatus.pending_verification) {
+    if (
+      (payment.method !== PaymentMethod.wechat_qr &&
+        payment.method !== PaymentMethod.poli) ||
+      payment.status !== PaymentStatus.pending_verification
+    ) {
       throw new BadRequestException(
         'This payment is not awaiting verification',
       );
@@ -612,14 +723,16 @@ export class PaymentsService {
         // was already confirmed paid (e.g. its webhook landed between this
         // payment reaching pending_verification and the owner clicking
         // verify — loadPayableBooking only blocks *starting* a second
-        // method, not this). The owner is asserting a real WeChat transfer
+        // method, not this). The owner is asserting a real manual transfer
         // was received, so it can't be silently dropped either.
         await this.handleDuplicatePaymentRace(
           payment,
           payment.booking.businessId,
         );
+        const methodName =
+          payment.method === PaymentMethod.poli ? 'POLi' : 'WeChat';
         throw new BadRequestException(
-          'Another payment method for this booking was already confirmed paid. This WeChat payment was recorded as cancelled — refund it manually.',
+          `Another payment method for this booking was already confirmed paid. This ${methodName} payment was recorded as cancelled — refund it manually.`,
         );
       }
       throw err;
@@ -629,10 +742,11 @@ export class PaymentsService {
     await this.notifications.notify(
       payment.booking.customerId,
       'Payment Confirmed / 付款已确认',
-      `Your WeChat payment of NZD ${Number(payment.amount).toFixed(2)} has been confirmed. / 您的 NZD ${Number(payment.amount).toFixed(2)} 微信付款已确认。`,
+      `Your ${payment.method === PaymentMethod.poli ? 'POLi' : 'WeChat'} payment of NZD ${Number(payment.amount).toFixed(2)} has been confirmed. / 您的 NZD ${Number(payment.amount).toFixed(2)} ${payment.method === PaymentMethod.poli ? 'POLi' : '微信'}付款已确认。`,
     );
 
     const { booking: _booking, ...paymentFields } = payment;
+    void _booking;
     return { ...paymentFields, status: PaymentStatus.paid, verifiedAt };
   }
 
@@ -732,8 +846,9 @@ export class PaymentsService {
   //
   // Unknown network/API outcomes remain refund_pending. Refund webhooks and
   // reconcileRefund recover that state with the same idempotency key.
-  // WeChat has no external call, so its paid -> refunded transition is one
-  // atomic database write and cannot be stranded in refund_pending.
+  // WeChat and POLi refunds have no external API call in this app, so their
+  // paid -> refunded transition is one atomic database write and cannot be
+  // stranded in refund_pending.
   async refundPayment(user: RequestingUser, paymentId: string, reason: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
@@ -746,7 +861,10 @@ export class PaymentsService {
       throw new ForbiddenException('You do not have access to this payment');
     }
 
-    if (payment.method === PaymentMethod.wechat_qr) {
+    if (
+      payment.method === PaymentMethod.wechat_qr ||
+      payment.method === PaymentMethod.poli
+    ) {
       const refundedAt = new Date();
       const changed = await this.prisma.payment.updateMany({
         where: { id: paymentId, status: PaymentStatus.paid },

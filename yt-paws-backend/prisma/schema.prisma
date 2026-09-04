@@ -65,9 +65,12 @@ enum CheckoutAttemptStatus {
 // credentials arrive.
 enum PoliAttemptStatus {
   pending
+  payment_pending
   succeeded
   failed
   cancelled
+  receipt_unverified
+  timed_out
 }
 
 /// A pet care business onboarded to the platform. Version 1 has exactly one
@@ -299,8 +302,8 @@ model Booking {
 //     (20260729130000_payment_dedup_and_stripe_attempts)
 //   payment_wechat_active_unique    ON ("bookingId") WHERE method='wechat_qr' AND status IN ('pending','pending_verification')
 //     (20260729130000_payment_dedup_and_stripe_attempts)
-//   payment_poli_pending_unique     ON ("bookingId") WHERE method='poli' AND status='pending'
-//     (20260903000000_poli_poc_schema)
+//   payment_poli_active_unique      ON ("bookingId") WHERE method='poli' AND status IN ('pending','pending_verification')
+//     (20260904000000_poli_uat_contract; replaces the POC's pending-only index)
 //   payment_booking_paid_unique     ON ("bookingId") WHERE status IN ('paid','refund_pending')
 //     (20260731000000_cross_method_payment_dedup; predicate widened to
 //     include refund_pending by 20260801000001_refund_state_machine_index) — the
@@ -381,7 +384,20 @@ model PoliTransactionAttempt {
   // because the local row may be created before any external request, and
   // its exact UAT response field name is deliberately not assumed here.
   providerReference String?           @unique
+  // POLi's transaction token is required for GetTransaction. It is never
+  // returned by payment history endpoints or written to logs.
+  token             String?           @unique
+  navigateUrl       String?
+  // The validated app deep link to restore after POLi redirects through the
+  // public backend return endpoint.
+  returnUrl         String?
   status            PoliAttemptStatus @default(pending)
+  providerStatus    String?
+  amountPaid        Decimal?          @db.Decimal(10, 2)
+  errorCode         Int?
+  errorMessage      String?
+  lastCheckedAt     DateTime?
+  notificationAt    DateTime?
   completedAt       DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt

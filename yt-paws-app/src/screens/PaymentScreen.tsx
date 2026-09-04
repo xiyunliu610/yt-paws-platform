@@ -24,8 +24,9 @@ type RootStackParamList = {
 
 type PaymentRouteProp = RouteProp<RootStackParamList, 'Payment'>;
 
-type Method = 'stripe' | 'wechat';
+type Method = 'stripe' | 'wechat' | 'poli';
 type StripeStatus = 'idle' | 'opening' | 'processing' | 'paid' | 'failed';
+type PoliStatus = StripeStatus | 'verification';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -50,6 +51,19 @@ const PaymentScreen = () => {
   // needs a fresh Session and there's no reason to burn one just from
   // browsing tabs.
   const [stripeStatus, setStripeStatus] = useState<StripeStatus>('idle');
+
+  // POLi is only shown when the backend has official credentials plus a
+  // public HTTPS callback origin configured.
+  const [poliAvailable, setPoliAvailable] = useState(false);
+  const [poliStatus, setPoliStatus] = useState<PoliStatus>('idle');
+
+  useEffect(() => {
+    if (!token) return;
+    paymentsApi
+      .poliAvailability(token)
+      .then(({ available }) => setPoliAvailable(available))
+      .catch(() => setPoliAvailable(false));
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -85,8 +99,7 @@ const PaymentScreen = () => {
             await paymentsApi.markPaid(token, wechatIntent.paymentId);
             setWechatIntent({ ...wechatIntent, status: 'pending_verification' });
           } catch (error) {
-            const message =
-              error instanceof ApiError ? error.message : t.payment.markPaidFailedMessage;
+            const message = error instanceof ApiError ? error.message : t.payment.markPaidFailedMessage;
             Alert.alert(t.payment.markPaidFailedTitle, message);
           } finally {
             setIsMarking(false);
@@ -144,6 +157,56 @@ const PaymentScreen = () => {
     }
   };
 
+  const pollPoliStatus = async (paymentId: string) => {
+    if (!token) return null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const payment = await paymentsApi.refreshPoli(token, paymentId);
+        if (
+          payment.status === 'paid' ||
+          payment.status === 'failed' ||
+          payment.status === 'cancelled' ||
+          payment.status === 'pending_verification'
+        ) {
+          return payment;
+        }
+      } catch {
+        // The Nudge may still be arriving; keep polling briefly.
+      }
+      await sleep(1500);
+    }
+    return null;
+  };
+
+  const handlePayWithPoli = async () => {
+    if (!token) return;
+    setPoliStatus('opening');
+    try {
+      const returnUrl = Linking.createURL('poli-redirect');
+      const intent = await paymentsApi.initiatePoli(token, booking.id, returnUrl);
+      const result = await WebBrowser.openAuthSessionAsync(intent.checkoutUrl, returnUrl);
+
+      if (result.type !== 'success') {
+        setPoliStatus('idle');
+        return;
+      }
+
+      setPoliStatus('processing');
+      const settled = await pollPoliStatus(intent.paymentId);
+      if (settled?.status === 'paid') {
+        setPoliStatus('paid');
+      } else if (settled?.status === 'pending_verification') {
+        setPoliStatus('verification');
+      } else if (settled?.status === 'failed' || settled?.status === 'cancelled') {
+        setPoliStatus('failed');
+      }
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : t.payment.poliPaymentFailedMessage;
+      Alert.alert(t.payment.poliPaymentFailedTitle, message);
+      setPoliStatus('idle');
+    }
+  };
+
   if (checking) {
     return (
       <View style={styles.container}>
@@ -154,7 +217,7 @@ const PaymentScreen = () => {
     );
   }
 
-  if (alreadyPaid || stripeStatus === 'paid') {
+  if (alreadyPaid || stripeStatus === 'paid' || poliStatus === 'paid') {
     return (
       <View style={styles.container}>
         <View style={styles.centerContent}>
@@ -196,6 +259,16 @@ const PaymentScreen = () => {
                 {t.payment.methodWechat}
               </Text>
             </TouchableOpacity>
+            {poliAvailable && (
+              <TouchableOpacity
+                style={[styles.methodTab, method === 'poli' && styles.methodTabActive]}
+                onPress={() => setMethod('poli')}
+              >
+                <Text style={[styles.methodTabText, method === 'poli' && styles.methodTabTextActive]}>
+                  {t.payment.methodPoli}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {method === 'stripe' ? (
@@ -225,6 +298,38 @@ const PaymentScreen = () => {
                     : stripeStatus === 'failed'
                       ? t.payment.retryButton
                       : t.payment.payWithCardButton}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : method === 'poli' ? (
+            <View style={styles.card}>
+              <Text style={styles.cardStripeIntro}>{t.payment.poliIntro}</Text>
+
+              {poliStatus === 'processing' ? (
+                <View style={styles.processingBox}>
+                  <ActivityIndicator color="#1F4A38" style={styles.processingSpinner} />
+                  <Text style={styles.helperText}>{t.payment.poliProcessingMessage}</Text>
+                </View>
+              ) : poliStatus === 'verification' ? (
+                <Text style={styles.helperText}>{t.payment.poliVerificationMessage}</Text>
+              ) : poliStatus === 'failed' ? (
+                <Text style={styles.helperText}>{t.payment.poliFailedMessage}</Text>
+              ) : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.payButton,
+                  (poliStatus === 'opening' || poliStatus === 'processing') && styles.payButtonDisabled,
+                ]}
+                onPress={handlePayWithPoli}
+                disabled={poliStatus === 'opening' || poliStatus === 'processing'}
+              >
+                <Text style={styles.payButtonText}>
+                  {poliStatus === 'opening'
+                    ? t.payment.submitting
+                    : poliStatus === 'failed'
+                      ? t.payment.retryButton
+                      : t.payment.payWithPoliButton}
                 </Text>
               </TouchableOpacity>
             </View>

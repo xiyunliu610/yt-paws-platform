@@ -1,20 +1,23 @@
 # Y&T Paws Platform — Payment Design
 
-**Version:** 1.0  
-**Updated:** 2026-08-07  
-**Status:** V1 code implemented; real Stripe/WeChat production verification remains an external launch gate.
+**Version:** 1.2
+
+**Updated:** 2026-09-04
+
+**Status:** Stripe/WeChat V1 and the POLi UAT integration are implemented; production provider verification remains an external launch gate.
 
 ## 1. Scope and principles
 
-V1 supports Stripe-hosted card checkout in NZD and manual WeChat QR transfers. The backend is the source of truth: the App never supplies an amount, never handles card details and never marks Stripe payments successful from a browser redirect.
+V1 supports Stripe-hosted card checkout in NZD, manual WeChat QR transfers and POLi bank-payment testing in the provider's UAT environment. The backend is the source of truth: the App never supplies an amount, never handles card details and never treats a browser return URL as proof of payment.
 
 Core principles are price snapshots, one payment holding money per booking, signed provider events, atomic state transitions, provider idempotency and visible recovery for ambiguous refunds.
 
 ## 2. Data model
 
 - `Booking.unitPrice` and `Booking.pricingUnit` snapshot the Service at booking creation.
-- `Payment` stores method, decimal amount, state, WeChat reference, verification and refund audit fields.
+- `Payment` stores method, decimal amount, state, manual-payment reference, verification and refund audit fields.
 - `StripeCheckoutAttempt` stores every Checkout Session, its state and captured PaymentIntent ID.
+- `PoliTransactionAttempt` stores the provider transaction reference and token, NavigateURL, mapped/provider states, amount paid, timestamps and errors. Provider tokens are never returned by status/history APIs.
 - Partial unique PostgreSQL indexes enforce one active payment per method and at most one `paid`/`refund_pending` payment across methods.
 
 Flat services charge once. `per_day` services charge `unitPrice × max(1, ceil(duration / 24h))`. Amounts are converted to Stripe minor units only after loading the server snapshot.
@@ -25,14 +28,17 @@ Flat services charge once. `per_day` services charge `unitPrice × max(1, ceil(d
 stateDiagram-v2
   [*] --> pending
   pending --> paid: Stripe signed webhook
+  pending --> paid: verified POLi Completed response
   pending --> pending_verification: customer says WeChat sent
+  pending --> pending_verification: POLi ReceiptUnverified / amount mismatch
   pending_verification --> paid: owner/admin confirms receipt
   pending --> failed: all Stripe sessions expired
-  pending --> cancelled: method switch / race loser
+  pending --> failed: POLi Failed / TimedOut
+  pending --> cancelled: method switch / POLi Cancelled / race loser
   paid --> refund_pending: Stripe refund claimed
   refund_pending --> refunded: provider confirms
   refund_pending --> paid: provider definitively fails
-  paid --> refunded: manual WeChat refund confirmed
+  paid --> refunded: manual WeChat/POLi refund confirmed
 ```
 
 Booking cancellation and payment refund are deliberately independent. Cancelling never changes a Payment; refunding never changes Booking status.
@@ -60,7 +66,7 @@ The customer action “I've paid” changes `pending → pending_verification` a
 
 V1 supports full refunds only. Owner/admin supplies a required reason.
 
-- WeChat: the UI explicitly asks whether money has already been returned; after confirmation the database atomically changes paid to refunded.
+- WeChat/POLi: the UI explicitly asks whether money has already been returned; after confirmation the database atomically changes paid to refunded. POLi does not send the refund.
 - Stripe: backend first claims `paid → refund_pending`, calls Stripe using `refund_<paymentId>` as the idempotency key, and stores `stripeRefundId`.
 - Definite provider rejection returns the Payment to paid.
 - Network/API ambiguity remains `refund_pending`; refund webhooks or `POST /payments/:id/reconcile-refund` recover it.
@@ -68,14 +74,14 @@ V1 supports full refunds only. Owner/admin supplies a required reason.
 
 ## 7. Authorization and data exposure
 
-Customers can start and view only payments for their bookings and mark only their own WeChat payment sent. Owner/admin actions are limited to their `businessId`. Staff cannot verify or refund. Stripe webhooks use signature authentication rather than JWT.
+Customers can start and view only payments for their bookings and mark only their own WeChat payment sent. Owner/admin actions are limited to their `businessId`. Staff cannot verify or refund. Stripe webhooks use signature authentication rather than JWT. A POLi Nudge contains no trusted local state transition: the attempt UUID identifies the local row, then the backend authenticates to POLi and retrieves the authoritative transaction state.
 
 Card numbers, CVC and full card data never enter this system. API responses expose only operational payment state, amount and safe provider/reference metadata required by the relevant user.
 
 ## 8. Failure handling and observability
 
 - In-app notifications are written for success, failure, verification and refund outcomes.
-- Business managers are notified about WeChat verification and double-payment refund needs.
+- Business managers are notified about WeChat/POLi verification and double-payment refund needs.
 - Invalid/failed webhook processing emits an operational alert.
 - Long-lived `refund_pending` rows emit deduplicated alerts.
 - Provider outages do not convert uncertain results into false success/failure.
@@ -84,7 +90,7 @@ Operational support should use internal Payment/Booking IDs plus Stripe Session,
 
 ## 9. Production configuration
 
-Required: verified Stripe business, `sk_live_…`, endpoint-specific `whsec_…`, HTTPS API/web URLs, configured webhook events, real WeChat QR image, support contact and an HTTPS alert receiver. Production startup rejects non-live Stripe keys or malformed webhook secrets.
+Required: verified Stripe business, `sk_live_…`, endpoint-specific `whsec_…`, HTTPS API/web URLs, configured webhook events, real WeChat QR image, support contact and an HTTPS alert receiver. Production startup rejects non-live Stripe keys or malformed webhook secrets. POLi UAT additionally requires `POLI_MERCHANT_CODE`, `POLI_AUTH_CODE`, the allow-listed UAT base URL and a public HTTPS `PUBLIC_WEB_URL` for return/Nudge routes. POLi production credentials and the production base URL must replace the UAT values at launch.
 
 Stripe Checkout for this App pays for real-world pet-care services, not digital content. Store review notes should state this clearly.
 
@@ -100,16 +106,17 @@ Stripe Checkout for this App pays for real-world pet-care services, not digital 
 - Cancellation leaves paid Payment unchanged and explains separate refund.
 - Alerts and customer/business notifications arrive.
 - Dashboard totals match Stripe and bank/WeChat evidence.
+- POLi's required UAT outcomes: Completed, Cancelled, ReceiptUnverified and Failed, each with successful Nudge delivery.
 
-## 11. POLi proof-of-concept boundary
+## 11. POLi UAT flow
 
-The POLi proof of concept reserves `PaymentMethod.poli`, a local
-`PoliTransactionAttempt` audit model, an inactive NestJS `poli` module and empty
-environment-variable names. It deliberately exposes no API route and makes no
-external request until POLi supplies the official UAT endpoint, credentials,
-authentication rules, payload fields, notification contract and refund flow.
-The provider reference remains nullable so a local attempt can be created before
-a future external request without guessing POLi's response schema.
+1. The customer starts `POST /payments/poli/:bookingId`; the backend calculates the NZD amount and sends POLi's documented `Transaction/Initiate` request using HTTP Basic authentication.
+2. The App opens only the returned HTTPS `NavigateURL`. The token and provider reference stay server-side.
+3. POLi POSTs its Nudge to `/payments/poli/nudge/:attemptId`, or the browser returns through `/payments/poli/return/:outcome`. Neither event is accepted as payment proof.
+4. The backend calls POLi's authenticated `GetTransaction`, checks the transaction reference, merchant reference, expected amount and amount paid, then maps the official provider state.
+5. Only a matching `Completed` transaction becomes `paid`. `PaymentPending` remains in progress. `ReceiptUnverified` or an amount mismatch becomes `pending_verification` and requires owner/admin bank reconciliation. Cancelled, Failed and TimedOut are terminal non-paid outcomes.
+
+Initiation and Nudge processing are idempotent and database uniqueness prevents two active POLi attempts for one Payment. Because POLi provides no API for invalidating an issued NavigateURL, the App blocks switching to another payment method while a POLi transaction remains active. Refunds remain manual.
 
 ## 12. Deferred
 
@@ -119,5 +126,6 @@ Partial refunds, deposits, saved cards, subscriptions, automatic WeChat merchant
 
 | Date       | Version | Change                                                                                                                          |
 | ---------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-03 | 1.1     | Reserved the provider-neutral POLi POC schema and inactive backend module pending the official UAT integration contract.        |
+| 2026-09-04 | 1.2     | Implemented the documented POLi UAT initiation, authenticated reconciliation, Nudge/return handling, mobile flow and audit model. |
+| 2026-09-03 | 1.1     | Reserved the provider-neutral POLi POC schema and inactive backend module pending the official UAT integration contract.          |
 | 2026-08-07 | 1.0     | Documented implemented Stripe/WeChat flows, concurrency invariants, refunds, recovery, permissions and production verification. |

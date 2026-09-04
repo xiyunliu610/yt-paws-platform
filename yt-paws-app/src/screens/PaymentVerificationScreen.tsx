@@ -70,7 +70,7 @@ const PaymentVerificationScreen = () => {
     }, [load]),
   );
 
-  const statusLabel = (status: string) => {
+  const statusLabel = (status: string, method: Payment['method']) => {
     switch (status) {
       case 'pending':
         return t.paymentHistory.statusPending;
@@ -83,7 +83,7 @@ const PaymentVerificationScreen = () => {
       case 'refunded':
         return t.paymentHistory.statusRefunded;
       case 'cancelled':
-        return t.paymentHistory.statusCancelled;
+        return method === 'poli' ? t.paymentHistory.statusPoliCancelled : t.paymentHistory.statusCancelled;
       case 'refund_pending':
         return t.paymentHistory.statusRefundPending;
       default:
@@ -94,7 +94,7 @@ const PaymentVerificationScreen = () => {
   const handleVerify = (payment: Payment) => {
     Alert.alert(
       t.paymentVerification.confirmTitle,
-      t.paymentVerification.confirmMessage,
+      payment.method === 'poli' ? t.paymentVerification.confirmPoliMessage : t.paymentVerification.confirmMessage,
       [
         { text: t.staffManagement.cancel, style: 'cancel' },
         {
@@ -106,8 +106,7 @@ const PaymentVerificationScreen = () => {
               await paymentsApi.verify(token, payment.id);
               load();
             } catch (error) {
-              const message =
-                error instanceof ApiError ? error.message : t.paymentVerification.verifyFailedMessage;
+              const message = error instanceof ApiError ? error.message : t.paymentVerification.verifyFailedMessage;
               Alert.alert(t.paymentVerification.verifyFailedTitle, message);
             } finally {
               setVerifyingId(null);
@@ -146,19 +145,16 @@ const PaymentVerificationScreen = () => {
       return;
     }
 
-    // WeChat has no refund API — tapping this only records that the owner
-    // has *already* sent the money back manually. Confirm that explicitly
-    // so the button can't be mistaken for an automatic refund the way the
-    // Stripe path actually is.
-    if (payment.method === 'wechat_qr') {
-      Alert.alert(
-        t.paymentVerification.manualRefundConfirmTitle,
-        t.paymentVerification.manualRefundConfirmMessage,
-        [
-          { text: t.paymentVerification.refundCancelButton, style: 'cancel' },
-          { text: t.paymentVerification.manualRefundConfirmButton, onPress: () => submitRefund(payment) },
-        ],
-      );
+    // WeChat and POLi have no automatic refund API in this app — tapping
+    // this only records that the owner has already sent the money back.
+    if (payment.method !== 'stripe') {
+      Alert.alert(t.paymentVerification.manualRefundConfirmTitle, t.paymentVerification.manualRefundConfirmMessage, [
+        { text: t.paymentVerification.refundCancelButton, style: 'cancel' },
+        {
+          text: t.paymentVerification.manualRefundConfirmButton,
+          onPress: () => submitRefund(payment),
+        },
+      ]);
       return;
     }
 
@@ -202,12 +198,13 @@ const PaymentVerificationScreen = () => {
                       { backgroundColor: STATUS_TINTS[payment.status] ?? '#EDEDED' },
                     ]}
                   >
-                    <Text style={[styles.statusText, { color: STATUS_COLORS[payment.status] ?? '#999' }]}>{statusLabel(payment.status)}</Text>
+                    <Text style={[styles.statusText, { color: STATUS_COLORS[payment.status] ?? '#999' }]}>{statusLabel(payment.status, payment.method)}</Text>
                   </View>
                 </View>
                 <Text style={styles.meta}>
                   {payment.booking?.service?.name}
                   {payment.booking ? ` · ${formatLocalizedDate(payment.booking.startDate, language)}` : ''}
+                  {` · ${payment.method === 'stripe' ? t.paymentHistory.methodStripe : payment.method === 'poli' ? t.paymentHistory.methodPoli : t.paymentHistory.methodWechat}`}
                 </Text>
                 <View style={styles.amountRow}>
                   <Text style={styles.amount}>NZD {payment.amount.toFixed(2)}</Text>
@@ -233,7 +230,7 @@ const PaymentVerificationScreen = () => {
                 {payment.status === 'paid' && refundFormId !== payment.id && (
                   <TouchableOpacity style={styles.refundButton} onPress={() => openRefundForm(payment)}>
                     <Text style={styles.refundButtonText}>
-                      {payment.method === 'wechat_qr'
+                      {payment.method !== 'stripe'
                         ? t.paymentVerification.markManualRefundButton
                         : t.paymentVerification.refundButton}
                     </Text>
@@ -256,7 +253,7 @@ const PaymentVerificationScreen = () => {
 
                 {refundFormId === payment.id && (
                   <View style={styles.refundForm}>
-                    {payment.method === 'wechat_qr' && (
+                    {payment.method !== 'stripe' && (
                       <Text style={styles.manualRefundWarning}>
                         {t.paymentVerification.manualRefundWarning}
                       </Text>
@@ -287,7 +284,7 @@ const PaymentVerificationScreen = () => {
                         <Text style={styles.refundButtonText}>
                           {refundingId === payment.id
                             ? t.paymentVerification.refunding
-                            : payment.method === 'wechat_qr'
+                            : payment.method !== 'stripe'
                               ? t.paymentVerification.markManualRefundButton
                               : t.paymentVerification.refundConfirmButton}
                         </Text>

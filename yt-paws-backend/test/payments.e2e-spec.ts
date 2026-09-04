@@ -8,15 +8,18 @@ import { Role } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { DecimalToNumberInterceptor } from '../src/common/interceptors/decimal-to-number.interceptor';
+import { PoliApiService } from '../src/modules/poli/poli-api.service';
 
 // handleStripeWebhook reads this at call time; must be set before the app
 // (and its ConfigModule) is created, and stay stable for constructEvent to
 // verify signatures generated with the same secret below.
 process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_test_e2e_secret';
+process.env.PUBLIC_WEB_URL = 'https://uat-api.example.com';
 
 describe('Payments correctness (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
+  let poliApi: PoliApiService;
   const stripe = new Stripe('sk_test_unconfigured');
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET as string;
 
@@ -85,6 +88,7 @@ describe('Payments correctness (e2e)', () => {
     await app.init();
 
     prisma = moduleFixture.get(PrismaService);
+    poliApi = moduleFixture.get(PoliApiService);
 
     // Not POST /auth/register-business: it's bootstrap-only as of
     // 2026-07-30 (rejects once a Business exists, which it does in any
@@ -130,6 +134,7 @@ describe('Payments correctness (e2e)', () => {
 
   afterAll(async () => {
     await prisma.notification.deleteMany({ where: { userId: { in: [customerId, ownerId] } } });
+    await prisma.poliTransactionAttempt.deleteMany({ where: { payment: { booking: { customerId } } } });
     await prisma.stripeCheckoutAttempt.deleteMany({ where: { payment: { booking: { customerId } } } });
     await prisma.payment.deleteMany({ where: { booking: { customerId } } });
     await prisma.booking.deleteMany({ where: { customerId } });
@@ -247,6 +252,125 @@ describe('Payments correctness (e2e)', () => {
         where: { userId: customerId, title: 'Payment Failed' },
       });
       expect(failureNotifications).toBe(1);
+    });
+  });
+
+  describe('POLi UAT flow', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    async function initiatePoliPayment() {
+      const booking = await createBooking();
+      const initiateSpy = jest.spyOn(poliApi, 'initiateTransaction').mockResolvedValue({
+        Success: true,
+        NavigateURL: 'https://txn.apac.paywithpoli.com/?Token=uat-test-token-' + booking.id,
+        TransactionRefNo: `996${booking.id.replaceAll('-', '').slice(0, 9)}`,
+      });
+      const response = await request(app.getHttpServer())
+        .post(`/payments/poli/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ returnUrl: 'exp://test/--/poli-redirect' })
+        .expect(201);
+      const attempt = await prisma.poliTransactionAttempt.findFirstOrThrow({
+        where: { paymentId: response.body.paymentId },
+      });
+      return { booking, response, attempt, initiateSpy };
+    }
+
+    it('initiates with the documented request and stores the token server-side', async () => {
+      const { response, attempt, initiateSpy } = await initiatePoliPayment();
+
+      expect(response.body.checkoutUrl).toContain('paywithpoli.com');
+      expect(response.body).not.toHaveProperty('token');
+      expect(attempt.token).toContain('uat-test-token-');
+      expect(initiateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Amount: 60,
+          CurrencyCode: 'NZD',
+          MerchantReference: response.body.paymentId,
+          MerchantHomepageURL: 'https://uat-api.example.com',
+          SuccessURL: 'https://uat-api.example.com/payments/poli/return/success',
+          FailureURL: 'https://uat-api.example.com/payments/poli/return/failure',
+          CancellationURL: 'https://uat-api.example.com/payments/poli/return/cancel',
+          NotificationURL: `https://uat-api.example.com/payments/poli/nudge/${attempt.id}`,
+        }),
+      );
+    });
+
+    it('trusts only GetTransaction and marks a matching Completed payment paid once', async () => {
+      const { response, attempt } = await initiatePoliPayment();
+      jest.spyOn(poliApi, 'getTransaction').mockResolvedValue({
+        TransactionDetails: {
+          TransactionRefNo: attempt.providerReference!,
+          TransactionStatusCode: 'Completed',
+          PaymentAmount: 60,
+          AmountPaid: 60,
+          EndDateTime: new Date().toISOString(),
+        },
+        MerchantDetails: { MerchantReference: response.body.paymentId },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/payments/poli/nudge/${attempt.id}`)
+        .send({ ignored: 'the Nudge body is not payment proof' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .post(`/payments/poli/nudge/${attempt.id}`)
+        .send({})
+        .expect(200);
+
+      const payment = await prisma.payment.findUniqueOrThrow({
+        where: { id: response.body.paymentId },
+      });
+      expect(payment.status).toBe('paid');
+      const notifications = await prisma.notification.count({
+        where: {
+          userId: customerId,
+          title: 'Payment Successful',
+          body: { contains: 'POLi' },
+        },
+      });
+      expect(notifications).toBe(1);
+    });
+
+    it('holds ReceiptUnverified for business reconciliation instead of marking it paid', async () => {
+      const { response, attempt } = await initiatePoliPayment();
+      jest.spyOn(poliApi, 'getTransaction').mockResolvedValue({
+        TransactionDetails: {
+          TransactionRefNo: attempt.providerReference!,
+          TransactionStatusCode: 'ReceiptUnverified',
+          PaymentAmount: 60,
+          AmountPaid: 60,
+          EndDateTime: new Date().toISOString(),
+        },
+        MerchantDetails: { MerchantReference: response.body.paymentId },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/payments/poli/nudge/${attempt.id}`)
+        .send({})
+        .expect(200);
+
+      const uncertain = await prisma.payment.findUniqueOrThrow({
+        where: { id: response.body.paymentId },
+      });
+      expect(uncertain.status).toBe('pending_verification');
+
+      await request(app.getHttpServer())
+        .patch(`/payments/${response.body.paymentId}/verify`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .expect(200);
+      const verified = await prisma.payment.findUniqueOrThrow({
+        where: { id: response.body.paymentId },
+      });
+      expect(verified.status).toBe('paid');
+    });
+
+    it('blocks switching methods while a POLi NavigateURL can still be paid', async () => {
+      const { booking } = await initiatePoliPayment();
+      await request(app.getHttpServer())
+        .post(`/payments/wechat/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(400);
     });
   });
 

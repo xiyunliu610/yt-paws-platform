@@ -65,7 +65,7 @@ flowchart TB
     DB[("PostgreSQL<br/>(Prisma ORM)")]
 
     subgraph External["Third-Party / External Services (Provider-Agnostic)"]
-        PaymentNZ["Payment Service · New Zealand<br/>(Current: Stripe)"]
+        PaymentNZ["Payment Service · New Zealand<br/>(Current: Stripe + POLi UAT)"]
         PaymentCN["Payment Service · China<br/>(Current: WeChat personal QR, manual verification)"]
         Storage["Cloud Object Storage<br/>(Candidates: Cloudflare R2 / AWS S3 / other OSS)"]
         Push["Expo Push Notification Provider<br/>(V1 remote delivery)"]
@@ -74,7 +74,7 @@ flowchart TB
     end
 
     Backend -- "Prisma Client" --> DB
-    Payments -- "Payment Intent" --> PaymentNZ
+    Payments -- "Hosted checkout + authenticated callbacks" --> PaymentNZ
     Payments -- "QR display + manual verification" --> PaymentCN
     Reports -- "Presigned URL upload" --> Storage
     Mobile -. "Direct media upload" .-> Storage
@@ -122,7 +122,7 @@ The following principles underpin all subsequent design decisions (database, API
 | `services` | Display and management of service offerings (boarding / drop-in, etc.) | Module 3 |
 | `bookings` | Booking creation, status transitions, cancellation logic, owner-to-staff assignment | Module 3 |
 | `businesses` | Business profile fields not set at registration — name, region, WeChat QR code image URL — plus reading them back (`GET /businesses/me`, added 2026-07-31) | Module 4 (supporting) |
-| `payments` | Payment initiation, WeChat manual verification flow, payment records | Module 4 |
+| `payments` | Stripe/POLi initiation and provider reconciliation, WeChat/POLi manual verification, payment records | Module 4 |
 | `reports` | Creation and viewing of pet daily reports | Module 6 |
 | `notifications` | In-app notification records, Expo push token registration, best-effort push delivery — called as a side effect from `bookings`/`payments`, not driven by its own business logic | Module 5 |
 
@@ -295,9 +295,9 @@ The `media` module issues five-minute presigned PUT URLs into a private S3-compa
 
 ## 6. Payment Architecture
 
-Payment services also follow the provider-agnostic principle: the architecture defines the abstract concept of a "payment method," with Stripe and WeChat being the two concrete implementations for the current stage.
+Payment services also follow the provider-agnostic principle: the architecture defines the abstract concept of a "payment method," with Stripe, WeChat and POLi as concrete implementations. POLi is currently enabled only for the provider's UAT environment.
 
-**Amount calculation (updated 2026-07-29 — snapshotted at booking time, not recomputed per payment attempt).** `Booking.unit_price`/`pricing_unit` are copied from the `Service` once, when the booking is created (§4.1). The first time a payment is initiated for a booking (Stripe or WeChat), `payments` computes the amount from that snapshot — not from `Service`'s current row — and stores it on the `Payment`: if `pricing_unit` is `flat`, the amount is just `unit_price`; if `per_day`, it's `unit_price × ceil((booking.endDate − booking.startDate) / 1 day)` (minimum 1 day). Every later payment attempt for the same booking (a retried Stripe Checkout Session, a re-opened WeChat screen) reuses that already-computed `Payment.amount` rather than recomputing it — see `PaymentsService.getOrCreateActivePayment`. This is the fix for a real gap in the original design: computing off the live `Service.price` on every attempt meant an owner editing a price could change what an already-placed, still-unpaid booking owed.
+**Amount calculation (updated 2026-07-29 — snapshotted at booking time, not recomputed per payment attempt).** `Booking.unit_price`/`pricing_unit` are copied from the `Service` once, when the booking is created (§4.1). The first time a payment is initiated for a booking (Stripe, WeChat or POLi), `payments` computes the amount from that snapshot — not from `Service`'s current row — and stores it on the `Payment`: if `pricing_unit` is `flat`, the amount is just `unit_price`; if `per_day`, it's `unit_price × ceil((booking.endDate − booking.startDate) / 1 day)` (minimum 1 day). Every later payment attempt reuses that already-computed `Payment.amount` rather than recomputing it — see `PaymentsService.getOrCreateActivePayment`. This is the fix for a real gap in the original design: computing off the live `Service.price` on every attempt meant an owner editing a price could change what an already-placed, still-unpaid booking owed.
 
 ### 6.1 Stripe Payment Flow (New Zealand Users)
 
@@ -357,6 +357,10 @@ sequenceDiagram
 3. A `payment_booking_paid_unique` partial unique index (`Payment.bookingId` `WHERE status='paid'`) is the last-resort backstop for a true race the above two don't cover — e.g. the webhook and an owner's verify click landing close enough together. The losing write hits the constraint; `PaymentsService.handleDuplicatePaymentRace` marks that payment `cancelled` (not `paid`, so revenue reporting isn't double-counted) and notifies the business's owner/admin that a duplicate payment was received and needs a manual refund, since real money had already moved by that point in both the Stripe and WeChat cases.
 
 **Key difference:** The Stripe path is driven automatically by webhook; the WeChat path is driven by the business's manual action. These two paths are two independent strategy implementations within the `payments` module (corresponding to the "pluggable payment method" design principle in `02_Product_Requirements.md`), sharing the same `Payment` state machine but with different triggers for state transitions.
+
+### 6.2A POLi Bank Payment Flow (UAT)
+
+The App requests an official POLi NavigateURL from the backend and opens it in an auth session. Both POLi's POST Nudge and the browser return are treated only as reconciliation triggers: the backend performs an authenticated `GetTransaction` request and validates the provider reference, merchant reference and amount. Only a matching `Completed` result marks the Payment paid. `ReceiptUnverified` and amount mismatches require owner/admin bank reconciliation; `PaymentPending` remains active. Provider tokens and UAT credentials never enter the mobile API response. See `08_Payment_Design.md` for the complete state mapping and release tests.
 
 ### 6.3 Refund Flow (added 2026-07-31, state machine revised 2026-08-01)
 
@@ -482,7 +486,7 @@ flowchart TB
 | Database | PostgreSQL |
 | ORM | Prisma |
 | Authentication | JWT |
-| Payment Services | Payment providers (Current: Stripe [NZ], WeChat personal QR [China, manual verification]) |
+| Payment Services | Payment providers (Current: Stripe [NZ], POLi [NZ, UAT], WeChat personal QR [China, manual verification]) |
 | Media Storage | S3-compatible object storage (AWS S3 or Cloudflare R2 configuration supported) |
 | Push Notifications | Expo Push service for V1 remote delivery; in-app notifications remain provider-independent |
 | AI (from v1.5) | LLM provider (Candidates: OpenAI / Anthropic / Google Gemini) |
@@ -560,3 +564,4 @@ flowchart TB
 | 2026-08-08 | v0.27 | Recorded Expo Push as the selected V1 provider, aligned the booking care-information UI with backend authorization, and added fail-fast EAS release URL validation plus CI drift checks | Xiyun Liu |
 | 2026-08-08 | v0.28 | Added a database-enforced single-Business invariant, Helmet/CSP, global throttling, privacy-safe request logging, multi-device push tokens and bilingual notification payloads; corrected the nonexistent users-module diagram and made external security/provider checks release gates | Xiyun Liu |
 | 2026-08-09 | v0.29 | Added private authenticated media reads, rotating per-device sessions, Expo receipt reconciliation, and backup/restore/immutable-rollback verification tooling | Xiyun Liu |
+| 2026-09-04 | v0.30 | Added the official POLi UAT initiation and authenticated reconciliation path, Nudge/return triggers, provider-state audit model, mobile checkout flow and manual handling for ReceiptUnverified/refunds | Xiyun Liu |

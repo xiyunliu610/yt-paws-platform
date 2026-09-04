@@ -46,7 +46,7 @@ const PaymentHistoryScreen = () => {
     }, [token]),
   );
 
-  const statusLabel = (status: string) => {
+  const statusLabel = (status: string, method: Payment['method']) => {
     switch (status) {
       case 'pending':
         return t.paymentHistory.statusPending;
@@ -59,7 +59,7 @@ const PaymentHistoryScreen = () => {
       case 'refunded':
         return t.paymentHistory.statusRefunded;
       case 'cancelled':
-        return t.paymentHistory.statusCancelled;
+        return method === 'poli' ? t.paymentHistory.statusPoliCancelled : t.paymentHistory.statusCancelled;
       case 'refund_pending':
         return t.paymentHistory.statusRefundPending;
       default:
@@ -67,8 +67,11 @@ const PaymentHistoryScreen = () => {
     }
   };
 
-  const methodLabel = (method: string) =>
-    method === 'stripe' ? t.paymentHistory.methodStripe : t.paymentHistory.methodWechat;
+  const methodLabel = (method: Payment['method']) => {
+    if (method === 'stripe') return t.paymentHistory.methodStripe;
+    if (method === 'poli') return t.paymentHistory.methodPoli;
+    return t.paymentHistory.methodWechat;
+  };
 
   return (
     <View style={styles.container}>
@@ -93,7 +96,7 @@ const PaymentHistoryScreen = () => {
                       { backgroundColor: STATUS_TINTS[payment.status] ?? '#EDEDED' },
                     ]}
                   >
-                    <Text style={[styles.statusText, { color: STATUS_COLORS[payment.status] ?? '#999' }]}>{statusLabel(payment.status)}</Text>
+                    <Text style={[styles.statusText, { color: STATUS_COLORS[payment.status] ?? '#999' }]}>{statusLabel(payment.status, payment.method)}</Text>
                   </View>
                 </View>
                 <Text style={styles.amount}>NZD {payment.amount.toFixed(2)}</Text>
